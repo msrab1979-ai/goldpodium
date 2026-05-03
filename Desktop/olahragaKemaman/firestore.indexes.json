@@ -1,0 +1,37 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "atlet",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kodSekolah", "order": "ASCENDING" },
+        { "fieldPath": "nama",       "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "kejohanan",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "statusKejohanan", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",       "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "jadual_acara",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kejohananId",  "order": "ASCENDING" },
+        { "fieldPath": "tarikhAcara",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bantahan",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "heatId",     "order": "ASCENDING" },
+        { "fieldPath": "hantarPada", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

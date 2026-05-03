@@ -1,0 +1,1926 @@
+/**
+ * InputKeputusan — /dashboard/keputusan
+ *
+ * Flow: Home (Jadual hari ini | Search No.Acara | Accordion kategori)
+ *       → Pilih Heat → Input Keputusan → Simpan
+ *
+ * Model A: Pencatat & Superadmin boleh edit. Admin = baca sahaja.
+ */
+
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import {
+  collection, getDocs, doc, updateDoc, setDoc,
+  query, orderBy, where, serverTimestamp,
+} from 'firebase/firestore'
+import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const inputCls = 'w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-base font-mono focus:outline-none focus:border-[#003399] bg-white transition-colors text-center text-gray-800 placeholder-gray-300'
+
+const JENIS_LABEL = {
+  lorong:        'Larian Lorong',
+  mass_start:    'Mass Start',
+  padang_lompat: 'Padang Lompat',
+  padang_balin:  'Padang Balin',
+  relay:         'Relay',
+}
+
+const KAT_ORDER = ['SR', 'SM', 'PPKI']
+
+// Standard athletics lane assignment: rank1→lane4, rank2→lane5, rank3→lane3, ...
+const LANE_ORDER = [4, 5, 3, 6, 2, 7, 1, 8]
+
+// ─── Select Finalists ─────────────────────────────────────────────────────────
+
+function selectFinalists(heats, acara) {
+  const cara             = acara.caraPilihFinal || 'hybrid'
+  const bilanganFinalis  = acara.bilanganFinalis || 8
+  const wildcardSlot     = acara.wildcardSlot    || 2
+  const isPadang         = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
+
+  const nonFinalHeats = heats.filter(h => h.peringkat !== 'final' && h.statusKeputusan === 'rasmi')
+
+  // Collect all valid athletes from rasmi heats
+  const athletes = []
+  nonFinalHeats.forEach(heat => {
+    ;(heat.peserta || []).forEach(p => {
+      if (['DNS', 'DNF', 'DQ'].includes(p.status)) return
+      const result = Number(p.keputusan)
+      if (!result || isNaN(result)) return
+      athletes.push({
+        noBib:      p.noBib      || '',
+        namaAtlet:  p.namaAtlet  || '',
+        kodSekolah: p.kodSekolah || '',
+        keputusan:  result,
+        heatId:     heat.heatId,
+        noHeat:     heat.noHeat,
+      })
+    })
+  })
+
+  // Global sort — padang: higher = better; masa: lower = better
+  const sorted = [...athletes].sort((a, b) =>
+    isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan
+  )
+
+  if (cara === 'best_time') {
+    return sorted.slice(0, bilanganFinalis)
+  }
+
+  // Helper: pick top N from one heat
+  const topFromHeat = (heatId, n) =>
+    sorted.filter(a => a.heatId === heatId).slice(0, n)
+
+  const selected   = new Map() // noBib → athlete
+  const addBatch   = arr => arr.forEach(a => { if (!selected.has(a.noBib)) selected.set(a.noBib, a) })
+
+  if (cara === 'best_heat') {
+    const perHeat = Math.floor(bilanganFinalis / Math.max(1, nonFinalHeats.length))
+    nonFinalHeats.forEach(h => addBatch(topFromHeat(h.heatId, perHeat)))
+  } else {
+    // hybrid: perHeat from direct, remainder as wildcard
+    const perHeat = Math.max(1, Math.floor((bilanganFinalis - wildcardSlot) / Math.max(1, nonFinalHeats.length)))
+    nonFinalHeats.forEach(h => addBatch(topFromHeat(h.heatId, perHeat)))
+  }
+
+  // Fill remaining slots with best-time wildcards
+  sorted.forEach(a => { if (selected.size < bilanganFinalis && !selected.has(a.noBib)) selected.set(a.noBib, a) })
+
+  return [...selected.values()].slice(0, bilanganFinalis)
+}
+
+// Assign lane: sorted by perf → lane 4,5,3,6,2,7,1,8
+function assignLorong(finalists, acara) {
+  const isPadang = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
+  const ranked = [...finalists].sort((a, b) =>
+    isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan
+  )
+  return ranked.map((f, i) => ({ ...f, lorong: LANE_ORDER[i] || (i + 1) }))
+}
+
+// ─── Heat status dots ─────────────────────────────────────────────────────────
+
+function HeatDots({ total, rasmi, draf }) {
+  if (!total) return <span className="text-[10px] text-gray-300">—</span>
+  return (
+    <span className="flex gap-0.5 items-center">
+      {Array.from({ length: total }, (_, i) => {
+        const cls = i < rasmi
+          ? 'bg-green-500'
+          : i < rasmi + draf
+            ? 'bg-amber-400'
+            : 'bg-gray-200'
+        return <span key={i} className={`w-2 h-2 rounded-full ${cls}`} />
+      })}
+    </span>
+  )
+}
+
+// ─── Jadual masa warna ────────────────────────────────────────────────────────
+
+function jadualMasaInfo(masaMula, nowMs) {
+  if (!masaMula) return null
+  const [h, m] = masaMula.split(':').map(Number)
+  const now = new Date(nowMs)
+  const startMs = new Date(now).setHours(h, m, 0, 0)
+  const diffMin = (startMs - nowMs) / 60000
+  if (nowMs > startMs + 90 * 60000) return { label: masaMula, cls: 'text-gray-300' }
+  if (nowMs > startMs) return { label: `${masaMula} ● SEDANG`, cls: 'text-orange-500 font-bold animate-pulse' }
+  if (diffMin <= 30) return { label: `${masaMula} ↑ ${Math.ceil(diffMin)}min lagi`, cls: 'text-amber-500 font-semibold' }
+  return { label: masaMula, cls: 'text-[#003399]' }
+}
+
+// ─── Acara card (home screen) ─────────────────────────────────────────────────
+
+function AcaraCard({ acara, masa, nowMs, onClick }) {
+  const masaInfo  = masa ? jadualMasaInfo(masa, nowMs || Date.now()) : null
+  const hasRasmi  = (acara._rasmiHeat || 0) > 0
+  const hasDraf   = (acara._drafHeat  || 0) > 0
+  const total     = acara._totalHeat  || 0
+
+  // Left accent colour
+  const accent = hasRasmi ? 'bg-green-500' : hasDraf ? 'bg-amber-400' : total > 0 ? 'bg-gray-200' : 'bg-transparent'
+
+  // Status badge
+  const badge = hasRasmi
+    ? { text: `✓ ${acara._rasmiHeat} Rasmi${acara._drafHeat > 0 ? ` + ${acara._drafHeat} Draf` : ''}`, cls: 'bg-green-100 text-green-700' }
+    : hasDraf
+    ? { text: `⏳ ${acara._drafHeat} Tidak Rasmi`, cls: 'bg-amber-100 text-amber-700' }
+    : total > 0
+    ? { text: `${total} heat · Belum`, cls: 'bg-gray-100 text-gray-400' }
+    : null
+
+  return (
+    <button onClick={onClick}
+      className="w-full text-left bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all active:scale-[0.98] overflow-hidden">
+      <div className="flex">
+        {/* Left accent bar */}
+        <div className={`w-1.5 shrink-0 ${accent}`} />
+
+        <div className="flex-1 px-3.5 py-3">
+          <div className="flex items-start gap-3">
+            {/* No. Acara */}
+            <div className="shrink-0 w-9 h-9 rounded-xl bg-[#003399]/8 flex items-center justify-center mt-0.5">
+              <span className="text-[11px] font-black text-[#003399]">{acara.noAcara ?? '—'}</span>
+            </div>
+
+            {/* Nama + info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-bold text-gray-800 leading-tight">{acara.namaAcara}</p>
+                {badge && (
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full leading-none ${badge.cls}`}>
+                    {badge.text}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {acara.jantina === 'L' ? 'Lelaki' : acara.jantina === 'P' ? 'Perempuan' : acara.jantina}
+                {' · '}{acara.kategoriKod || acara.kategori}
+                {' · '}{JENIS_LABEL[acara.jenisAcara] || acara.jenisAcara}
+              </p>
+              {masaInfo && (
+                <p className={`text-[10px] mt-0.5 ${masaInfo.cls}`}>{masaInfo.label}</p>
+              )}
+            </div>
+
+            {/* Heat dots */}
+            <div className="shrink-0 pt-1">
+              <HeatDots total={total} rasmi={acara._rasmiHeat || 0} draf={acara._drafHeat || 0} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// ─── Accordion section ────────────────────────────────────────────────────────
+
+function AccordionSection({ title, count, open, onToggle, children }) {
+  return (
+    <div className="border border-gray-100 rounded-2xl overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-gray-700">{title}</span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white text-gray-400 border border-gray-200">
+            {count} acara
+          </span>
+        </div>
+        <svg
+          className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="p-3 space-y-2 bg-white">{children}</div>}
+    </div>
+  )
+}
+
+// ─── Heat Selector ────────────────────────────────────────────────────────────
+
+const STATUS_BADGE = {
+  rasmi:          { label: 'Rasmi',    cls: 'bg-green-100 text-green-700' },
+  tidak_rasmi:    { label: 'Draf',     cls: 'bg-amber-100 text-amber-700' },
+  dalam_bantahan: { label: 'Bantahan', cls: 'bg-red-100 text-red-700' },
+}
+
+function HeatSelector({ heats, selectedHeat, onSelect }) {
+  if (!heats.length) return (
+    <p className="text-xs text-gray-400 text-center py-6">Tiada heat untuk acara ini.</p>
+  )
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {heats.map(h => {
+        const badge = STATUS_BADGE[h.statusKeputusan]
+        return (
+          <button key={h.heatId} onClick={() => onSelect(h)}
+            className={`py-3 px-4 rounded-xl border-2 text-left transition-colors ${
+              selectedHeat?.heatId === h.heatId
+                ? 'border-[#003399] bg-[#003399]/5'
+                : 'border-gray-100 bg-white hover:border-gray-200'
+            }`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <p className="text-sm font-bold text-gray-800">Heat {h.noHeat}</p>
+              {badge && (
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${badge.cls}`}>
+                  {badge.label}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400 capitalize">
+              {h.peringkat || '—'}
+            </p>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Input sub-components ─────────────────────────────────────────────────────
+
+// Auto-kira kedudukan dari masa (lorong/relay/mass_start)
+function kiraLaranRank(slots, keputusan) {
+  const rows = slots.map(slot => {
+    const kp = keputusan[slot] || {}
+    const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+    const masa = flagged ? null : (Number(kp.keputusan) || null)
+    return { slot, masa, flagged }
+  })
+  const sorted = [...rows].sort((a, b) => {
+    if (a.masa !== null && b.masa !== null) return a.masa - b.masa
+    if (a.masa !== null) return -1
+    if (b.masa !== null) return 1
+    return 0
+  })
+  const rankMap = {}
+  let rank = 1
+  sorted.forEach((r, i) => {
+    if (r.masa === null) { rankMap[r.slot] = null; return }
+    if (i > 0 && sorted[i - 1].masa === r.masa) {
+      rankMap[r.slot] = rankMap[sorted[i - 1].slot]
+    } else {
+      rankMap[r.slot] = rank
+    }
+    rank++
+  })
+  return rankMap
+}
+
+function formatMasa(val) {
+  if (!val && val !== 0) return ''
+  const n = Number(val)
+  if (isNaN(n) || n === 0) return ''
+  const m = Math.floor(n / 60)
+  const s = (n % 60).toFixed(2).padStart(5, '0')
+  return m > 0 ? `${m}:${s}` : `${Number(s).toFixed(2)}`
+}
+
+function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, sekolahMap = {} }) {
+  const bilLorong   = acara.bilanganLorong || heat.bilanganLorong || 8
+  const isWind      = acara.isWindReading || false
+  const slots       = Array.from({ length: bilLorong }, (_, i) => i + 1)
+  const rankMap     = kiraLaranRank(slots, keputusan)
+
+  return (
+    <div className="space-y-3">
+      {/* Angin */}
+      {isWind && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
+          <span className="text-xs font-bold text-blue-700 shrink-0">Angin (m/s)</span>
+          <input type="number" step="0.1" min="-9.9" max="9.9"
+            value={windSpeed ?? ''}
+            onChange={e => onWind(e.target.value)}
+            placeholder="+1.2"
+            className="flex-1 border border-blue-200 rounded-lg px-3 py-1.5 text-sm font-mono text-center focus:outline-none focus:border-blue-400 bg-white" />
+          {windSpeed !== '' && windSpeed !== null && (
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+              Math.abs(Number(windSpeed)) <= 2
+                ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            }`}>
+              {Math.abs(Number(windSpeed)) <= 2 ? 'SAH' : 'TIDAK SAH'}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="rounded-xl border border-gray-200 overflow-hidden">
+        {/* Header */}
+        <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
+          style={{ gridTemplateColumns: '36px 72px 1fr 72px 52px 90px' }}>
+          <div className="px-2 py-2.5 text-center">Lrg</div>
+          <div className="px-2 py-2.5 text-center">No BIB</div>
+          <div className="px-2 py-2.5">Atlet / Sekolah</div>
+          <div className="px-2 py-2.5 text-center">Masa (s)</div>
+          <div className="px-2 py-2.5 text-center">Kddk</div>
+          <div className="px-2 py-2.5 text-center">Catatan</div>
+        </div>
+
+        {/* Rows */}
+        {slots.map((lorong, idx) => {
+          const kp     = keputusan[lorong] || {}
+          const rank   = rankMap[lorong]
+          const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+          const rowBg  = flagged ? 'bg-red-50' :
+                         rank === 1 ? 'bg-yellow-50' :
+                         rank === 2 ? 'bg-gray-50' :
+                         rank === 3 ? 'bg-orange-50' :
+                         idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+          // Kedudukan yg telah dipilih oleh lorong lain — sembunyikan dari dropdown ini
+          const usedByOthers = new Set(
+            slots.filter(s => s !== lorong)
+              .map(s => keputusan[s]?.kedudukan)
+              .filter(v => v !== '' && v != null)
+          )
+
+          return (
+            <div key={lorong}
+              className={`grid border-t border-gray-100 ${rowBg}`}
+              style={{ gridTemplateColumns: '36px 72px 1fr 72px 52px 90px' }}>
+
+              {/* Lorong */}
+              <div className="px-1 py-2 flex items-center justify-center">
+                <span className="text-xs font-black text-gray-500">{lorong}</span>
+              </div>
+
+              {/* No BIB */}
+              <div className="px-1 py-1.5 flex items-center">
+                <input type="text" inputMode="text"
+                  value={kp.noBib || ''}
+                  onChange={e => onChange(lorong, 'noBib', e.target.value.toUpperCase())}
+                  placeholder="BIB"
+                  disabled={flagged}
+                  className="w-full border border-gray-200 rounded-lg px-1.5 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+              </div>
+
+              {/* Atlet + Sekolah */}
+              <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+                <p className="text-[11px] font-semibold text-gray-700 truncate leading-tight">
+                  {kp.namaAtlet || '—'}
+                </p>
+                <p className="text-[9px] text-gray-400 truncate leading-tight">
+                  {(kp.kodSekolah && (sekolahMap[kp.kodSekolah] || kp.kodSekolah)) || ''}
+                </p>
+              </div>
+
+              {/* Masa */}
+              <div className="px-1 py-1.5 flex items-center">
+                <input type="number" step="0.01" min="0"
+                  value={kp.keputusan ?? ''}
+                  onChange={e => onChange(lorong, 'keputusan', e.target.value)}
+                  placeholder="0.00"
+                  disabled={flagged}
+                  className="w-full border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+              </div>
+
+              {/* Kedudukan */}
+              <div className="px-1 py-1.5 flex items-center justify-center">
+                {flagged ? (
+                  <span className="text-[10px] font-bold text-red-400">—</span>
+                ) : (
+                  <select
+                    value={kp.kedudukan ?? ''}
+                    onChange={e => onChange(lorong, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="w-full border border-gray-200 rounded-lg px-0.5 py-1 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white"
+                  >
+                    <option value="">{rank ? `(${rank})` : '—'}</option>
+                    {Array.from({ length: bilLorong }, (_, i) => {
+                      const val = i + 1
+                      if (usedByOthers.has(val) && kp.kedudukan !== val) return null
+                      return <option key={val} value={val}>{val}</option>
+                    })}
+                  </select>
+                )}
+              </div>
+
+              {/* Catatan DNS/DNF/DQ */}
+              <div className="px-1 py-1.5 flex items-center gap-0.5">
+                {['DNS', 'DNF', 'DQ'].map(flag => (
+                  <button key={flag} type="button"
+                    onClick={() => {
+                      const newStatus = kp.status === flag ? '' : flag
+                      onChange(lorong, 'status', newStatus)
+                      if (newStatus) onChange(lorong, 'keputusan', '')
+                    }}
+                    className={`flex-1 py-1 text-[9px] font-bold rounded transition-colors ${
+                      kp.status === flag
+                        ? 'bg-red-500 text-white'
+                        : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
+                    }`}>
+                    {flag}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function InputMassStart({ heat, keputusan, onChange, sekolahMap = {} }) {
+  const pesertaArr = heat.peserta || []
+  const bilAtlet   = pesertaArr.length || 10
+  const slots      = Array.from({ length: bilAtlet }, (_, i) => i + 1)
+
+  // Auto-rank dari masa (masa terkecil = rank 1)
+  const rankMap = kiraLaranRank(slots, keputusan)
+
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
+        style={{ gridTemplateColumns: '36px 68px 1fr 72px 52px 86px' }}>
+        <div className="px-2 py-2.5 text-center">Bil</div>
+        <div className="px-2 py-2.5 text-center">No BIB</div>
+        <div className="px-2 py-2.5">Atlet / Sekolah</div>
+        <div className="px-2 py-2.5 text-center">Masa (s)</div>
+        <div className="px-2 py-2.5 text-center">Kddk</div>
+        <div className="px-2 py-2.5 text-center">Catatan</div>
+      </div>
+
+      {slots.map((slot, idx) => {
+        const p       = pesertaArr[idx] || {}
+        const kp      = keputusan[slot] || {}
+        const rank    = rankMap[slot]
+        const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+        const usedByOthers = new Set(
+          slots.filter(s => s !== slot).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
+        )
+        const rowBg = flagged ? 'bg-red-50' :
+                      rank === 1 ? 'bg-yellow-50' :
+                      rank === 2 ? 'bg-gray-50' :
+                      rank === 3 ? 'bg-orange-50' :
+                      idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+
+        return (
+          <div key={slot} className={`grid border-t border-gray-100 ${rowBg}`}
+            style={{ gridTemplateColumns: '36px 68px 1fr 72px 52px 86px' }}>
+
+            <div className="px-1 py-2 flex items-center justify-center">
+              <span className="text-xs font-black text-gray-500">{slot}</span>
+            </div>
+
+            <div className="px-1 py-1.5 flex items-center">
+              <input type="text" inputMode="text"
+                value={kp.noBib || ''}
+                onChange={e => onChange(slot, 'noBib', e.target.value.toUpperCase())}
+                placeholder="BIB" disabled={flagged}
+                className="w-full border border-gray-200 rounded-lg px-1.5 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+            </div>
+
+            <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+              <p className="text-[11px] font-semibold text-gray-700 truncate leading-tight">
+                {kp.namaAtlet || p.namaAtlet || '—'}
+              </p>
+              <p className="text-[9px] text-gray-400 truncate leading-tight">
+                {(kp.kodSekolah && (sekolahMap[kp.kodSekolah] || kp.kodSekolah)) ||
+                 (p.kodSekolah  && (sekolahMap[p.kodSekolah]  || p.kodSekolah)) || ''}
+              </p>
+            </div>
+
+            <div className="px-1 py-1.5 flex items-center">
+              <input type="number" step="0.01" min="0"
+                value={kp.keputusan ?? ''}
+                onChange={e => onChange(slot, 'keputusan', e.target.value)}
+                placeholder="0.00" disabled={flagged}
+                className="w-full border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+            </div>
+
+            <div className="px-1 py-1.5 flex items-center justify-center">
+              {flagged ? (
+                <span className="text-[10px] font-bold text-red-400">—</span>
+              ) : (
+                <select value={kp.kedudukan ?? ''}
+                  onChange={e => onChange(slot, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="w-full border border-gray-200 rounded-lg px-0.5 py-1 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white">
+                  <option value="">{rank ? `(${rank})` : '—'}</option>
+                  {slots.map(v => {
+                    if (usedByOthers.has(v) && kp.kedudukan !== v) return null
+                    return <option key={v} value={v}>{v}</option>
+                  })}
+                </select>
+              )}
+            </div>
+
+            <div className="px-1 py-1.5 flex items-center gap-0.5">
+              {['DNS', 'DNF', 'DQ'].map(flag => (
+                <button key={flag} type="button"
+                  onClick={() => {
+                    const n = kp.status === flag ? '' : flag
+                    onChange(slot, 'status', n)
+                    if (n) onChange(slot, 'keputusan', '')
+                  }}
+                  className={`flex-1 py-1 text-[9px] font-bold rounded transition-colors ${
+                    kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
+                  }`}>{flag}</button>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Kira rank live dari keputusan padang
+function kiraPadangRank(peserta, keputusan) {
+  const rows = peserta.map((p, idx) => {
+    const key = p.noBib || idx
+    const kp  = keputusan[key] || {}
+    const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+    const best = flagged ? null : (Number(kp.keputusan) || null)
+    return { key, best, flagged, status: kp.status }
+  })
+
+  // Sort: best distance desc, flagged last, null last
+  const sorted = [...rows].sort((a, b) => {
+    if (a.best !== null && b.best !== null) return b.best - a.best
+    if (a.best !== null) return -1
+    if (b.best !== null) return 1
+    return 0
+  })
+
+  // Assign rank dengan tie
+  const rankMap = {}
+  let rank = 1
+  sorted.forEach((r, i) => {
+    if (r.best === null) { rankMap[r.key] = null; return }
+    if (i > 0 && sorted[i - 1].best === r.best) {
+      rankMap[r.key] = rankMap[sorted[i - 1].key]
+    } else {
+      rankMap[r.key] = rank
+    }
+    rank++
+  })
+  return rankMap
+}
+
+const RANK_MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' }
+
+function RankBadge({ rank }) {
+  if (rank === null || rank === undefined) return null
+  if (rank <= 3) return (
+    <span className="text-base leading-none">{RANK_MEDAL[rank]}</span>
+  )
+  return (
+    <span className="text-xs font-black text-gray-500 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+      {rank}
+    </span>
+  )
+}
+
+function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
+  const bil     = acara.bilanganCubaan || 3
+  const rankMap = kiraPadangRank(peserta, keputusan)
+  const bilPes  = peserta.length
+
+  // Live leaderboard strip
+  const board = peserta
+    .map((p, idx) => {
+      const key = p.noBib || idx
+      const kp  = keputusan[key] || {}
+      return { key, nama: p.namaAtlet || p.noBib || `#${idx+1}`, best: Number(kp.keputusan) || null, status: kp.status, rank: rankMap[key] }
+    })
+    .filter(r => r.best !== null || ['DNS','DNF','DQ'].includes(r.status))
+    .sort((a, b) => {
+      if (a.best !== null && b.best !== null) return b.best - a.best
+      if (a.best !== null) return -1; return 1
+    })
+
+  // Grid: No | BIB+Atlet | C1..CN | Best | Kddk | DQ
+  const colTemplate = `32px 1fr ${Array(bil).fill('48px').join(' ')} 56px 44px 36px`
+
+  return (
+    <div className="space-y-3">
+      {/* Live leaderboard */}
+      {board.length > 0 && (
+        <div className="bg-[#003399]/5 rounded-xl p-3 border border-[#003399]/10">
+          <p className="text-[9px] font-black text-[#003399] uppercase tracking-widest mb-2">Kedudukan Semasa</p>
+          <div className="space-y-1.5">
+            {board.map(r => (
+              <div key={r.key} className="flex items-center gap-2">
+                <div className="w-6 flex justify-center shrink-0"><RankBadge rank={r.rank} /></div>
+                <span className="text-xs font-semibold text-gray-700 flex-1 truncate">{r.nama}</span>
+                <span className="text-xs font-mono font-bold text-gray-800 shrink-0">
+                  {r.best ? `${r.best.toFixed(2)} m` : <span className="text-red-400">{r.status}</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="rounded-xl border border-gray-200 overflow-x-auto">
+        {/* Header */}
+        <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider min-w-max"
+          style={{ gridTemplateColumns: colTemplate }}>
+          <div className="px-1.5 py-2.5 text-center">No</div>
+          <div className="px-2 py-2.5">Atlet / Sekolah</div>
+          {Array.from({ length: bil }, (_, c) => (
+            <div key={c} className="px-1 py-2.5 text-center">C{c+1}</div>
+          ))}
+          <div className="px-1 py-2.5 text-center">Best</div>
+          <div className="px-1 py-2.5 text-center">Kddk</div>
+          <div className="px-1 py-2.5 text-center">DQ</div>
+        </div>
+
+        {peserta.map((p, idx) => {
+          const key    = p.noBib || idx
+          const kp     = keputusan[key] || {}
+          const cubaan = kp.cubaan || {}
+          const vals   = Object.values(cubaan).map(Number).filter(v => !isNaN(v) && v > 0)
+          const best   = vals.length ? Math.max(...vals) : null
+          const rank   = rankMap[key]
+          const isDQ   = kp.status === 'DQ'
+          const isDNS  = ['DNS', 'DNF'].includes(kp.status)
+          const usedByOthers = new Set(
+            peserta.filter((_, i) => i !== idx).map(pp => keputusan[pp.noBib || i]?.kedudukan).filter(v => v !== '' && v != null)
+          )
+          const rowBg = isDQ || isDNS ? 'bg-red-50' :
+                        rank === 1 ? 'bg-yellow-50' :
+                        rank === 2 ? 'bg-gray-50' :
+                        rank === 3 ? 'bg-orange-50' :
+                        idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+
+          return (
+            <div key={key} className={`grid border-t border-gray-100 min-w-max ${rowBg}`}
+              style={{ gridTemplateColumns: colTemplate }}>
+
+              {/* No */}
+              <div className="px-1 py-2 flex items-center justify-center">
+                <div className="w-5 flex justify-center"><RankBadge rank={rank} /></div>
+              </div>
+
+              {/* Atlet + Sekolah */}
+              <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+                <p className="text-[11px] font-semibold text-gray-700 truncate leading-tight">{p.namaAtlet || `#${idx+1}`}</p>
+                <p className="text-[9px] text-gray-400 truncate leading-tight">
+                  {p.noBib && <span className="font-mono">{p.noBib} · </span>}
+                  {(p.kodSekolah && (sekolahMap[p.kodSekolah] || p.kodSekolah)) || ''}
+                </p>
+              </div>
+
+              {/* Cubaan C1..CN */}
+              {Array.from({ length: bil }, (_, c) => {
+                const val  = cubaan[c + 1] ?? ''
+                const isX  = val === 'X' || val === 'x'
+                const isDash = val === '-'
+                return (
+                  <div key={c} className="px-0.5 py-1.5 flex items-center">
+                    <input type="text" value={val}
+                      disabled={isDQ || isDNS}
+                      onChange={e => {
+                        const nc = { ...cubaan, [c + 1]: e.target.value }
+                        const v2 = Object.values(nc).map(Number).filter(v => !isNaN(v) && v > 0)
+                        onChange(key, 'cubaan', nc)
+                        onChange(key, 'keputusan', v2.length ? Math.max(...v2) : '')
+                      }}
+                      placeholder="—"
+                      className={`w-full border rounded-md px-0.5 py-1 text-[10px] font-mono text-center focus:outline-none transition-colors ${
+                        isX    ? 'bg-red-50 border-red-200 text-red-600' :
+                        isDash ? 'bg-gray-100 border-gray-200 text-gray-400' :
+                        val    ? 'bg-white border-[#003399] text-gray-800' :
+                                 'bg-white border-gray-200 focus:border-[#003399]'
+                      } disabled:bg-gray-100 disabled:text-gray-300`} />
+                  </div>
+                )
+              })}
+
+              {/* Best */}
+              <div className="px-1 py-1.5 flex items-center justify-center">
+                <span className={`text-[10px] font-black font-mono ${best ? 'text-[#003399]' : 'text-gray-300'}`}>
+                  {best ? best.toFixed(2) : '—'}
+                </span>
+              </div>
+
+              {/* Kddk */}
+              <div className="px-0.5 py-1.5 flex items-center justify-center">
+                {isDQ || isDNS ? (
+                  <span className="text-[10px] font-bold text-red-400">—</span>
+                ) : (
+                  <select value={kp.kedudukan ?? ''}
+                    onChange={e => onChange(key, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
+                    className="w-full border border-gray-200 rounded px-0.5 py-1 text-[10px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white">
+                    <option value="">{rank ? `(${rank})` : '—'}</option>
+                    {Array.from({ length: bilPes }, (_, i) => {
+                      const v = i + 1
+                      if (usedByOthers.has(v) && kp.kedudukan !== v) return null
+                      return <option key={v} value={v}>{v}</option>
+                    })}
+                  </select>
+                )}
+              </div>
+
+              {/* DQ / DNS */}
+              <div className="px-0.5 py-1.5 flex flex-col items-center gap-0.5">
+                {['DQ', 'DNS'].map(flag => (
+                  <button key={flag} type="button"
+                    onClick={() => onChange(key, 'status', kp.status === flag ? '' : flag)}
+                    className={`w-full py-0.5 text-[8px] font-bold rounded transition-colors ${
+                      kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300'
+                    }`}>{flag}</button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {} }) {
+  const bilPasukan = acara.bilPasukan || heat.bilPasukan || acara.bilanganLorong || 8
+  const slots      = Array.from({ length: bilPasukan }, (_, i) => i + 1)
+  const rankMap    = kiraLaranRank(slots, keputusan)
+
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
+        style={{ gridTemplateColumns: '36px 1fr 72px 52px 86px' }}>
+        <div className="px-2 py-2.5 text-center">Lrg</div>
+        <div className="px-2 py-2.5">Sekolah</div>
+        <div className="px-2 py-2.5 text-center">Masa (s)</div>
+        <div className="px-2 py-2.5 text-center">Kddk</div>
+        <div className="px-2 py-2.5 text-center">Catatan</div>
+      </div>
+
+      {slots.map((lorong, idx) => {
+        const kp      = keputusan[lorong] || {}
+        const rank    = rankMap[lorong]
+        const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+        const usedByOthers = new Set(
+          slots.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
+        )
+        const rowBg = flagged ? 'bg-red-50' :
+                      rank === 1 ? 'bg-yellow-50' :
+                      rank === 2 ? 'bg-gray-50' :
+                      rank === 3 ? 'bg-orange-50' :
+                      idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+
+        return (
+          <div key={lorong} className={`grid border-t border-gray-100 ${rowBg}`}
+            style={{ gridTemplateColumns: '36px 1fr 72px 52px 86px' }}>
+
+            <div className="px-1 py-2 flex items-center justify-center">
+              <span className="text-xs font-black text-gray-500">{lorong}</span>
+            </div>
+
+            {/* Sekolah — input kod, papar nama */}
+            <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+              <input type="text" inputMode="text"
+                value={kp.kodSekolah || ''}
+                onChange={e => onChange(lorong, 'kodSekolah', e.target.value.toUpperCase())}
+                placeholder="Kod Sekolah" disabled={flagged}
+                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100" />
+              {kp.kodSekolah && sekolahMap[kp.kodSekolah] && (
+                <p className="text-[9px] text-gray-400 truncate mt-0.5">{sekolahMap[kp.kodSekolah]}</p>
+              )}
+            </div>
+
+            <div className="px-1 py-1.5 flex items-center">
+              <input type="number" step="0.01" min="0"
+                value={kp.keputusan ?? ''}
+                onChange={e => onChange(lorong, 'keputusan', e.target.value)}
+                placeholder="0.00" disabled={flagged}
+                className="w-full border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+            </div>
+
+            <div className="px-1 py-1.5 flex items-center justify-center">
+              {flagged ? (
+                <span className="text-[10px] font-bold text-red-400">—</span>
+              ) : (
+                <select value={kp.kedudukan ?? ''}
+                  onChange={e => onChange(lorong, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
+                  className="w-full border border-gray-200 rounded-lg px-0.5 py-1 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white">
+                  <option value="">{rank ? `(${rank})` : '—'}</option>
+                  {slots.map(v => {
+                    if (usedByOthers.has(v) && kp.kedudukan !== v) return null
+                    return <option key={v} value={v}>{v}</option>
+                  })}
+                </select>
+              )}
+            </div>
+
+            <div className="px-1 py-1.5 flex items-center gap-0.5">
+              {['DNS', 'DNF', 'DQ'].map(flag => (
+                <button key={flag} type="button"
+                  onClick={() => {
+                    const n = kp.status === flag ? '' : flag
+                    onChange(lorong, 'status', n)
+                    if (n) onChange(lorong, 'keputusan', '')
+                  }}
+                  className={`flex-1 py-1 text-[9px] font-bold rounded transition-colors ${
+                    kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
+                  }`}>{flag}</button>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Jana Final Panel ─────────────────────────────────────────────────────────
+
+function JanaFinalPanel({ finalists, acara, sekolahMap, onJana, loading }) {
+  const isPadang = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
+  const cara     = acara?.caraPilihFinal || 'hybrid'
+
+  return (
+    <div className="bg-[#003399]/5 border border-[#003399]/20 rounded-2xl p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black text-[#003399] uppercase tracking-widest">Semua Heat Rasmi</p>
+          <p className="text-[11px] text-gray-600 mt-0.5 font-semibold">
+            Jana senarai final — {finalists.length} finalis
+          </p>
+          <p className="text-[10px] text-gray-400 mt-0.5">
+            Kaedah: <span className="font-semibold capitalize">{cara}</span>
+            {!isPadang && ` · Lorong ditentukan auto`}
+          </p>
+        </div>
+        <button onClick={() => onJana(finalists)} disabled={loading}
+          className="shrink-0 px-4 py-2.5 bg-[#003399] text-white text-sm font-bold rounded-xl hover:bg-[#002277] disabled:opacity-50 transition-all active:scale-95">
+          {loading ? 'Menjana…' : 'Jana Final ▶'}
+        </button>
+      </div>
+
+      {/* Preview table */}
+      <div className="rounded-xl border border-[#003399]/15 overflow-hidden">
+        <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
+          style={{ gridTemplateColumns: '32px 40px 1fr 56px 36px' }}>
+          {!isPadang && <div className="px-1.5 py-2 text-center">Lrg</div>}
+          {isPadang  && <div className="px-1.5 py-2 text-center">#</div>}
+          <div className="px-1.5 py-2 text-center">BIB</div>
+          <div className="px-2 py-2">Atlet / Sekolah</div>
+          <div className="px-1.5 py-2 text-center">{isPadang ? 'Jarak' : 'Masa'}</div>
+          <div className="px-1.5 py-2 text-center">H</div>
+        </div>
+        {finalists.map((f, idx) => (
+          <div key={f.noBib || idx}
+            className={`grid border-t border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+            style={{ gridTemplateColumns: '32px 40px 1fr 56px 36px' }}>
+            <div className="px-1.5 py-2 flex items-center justify-center">
+              <span className="text-xs font-black text-[#003399]">
+                {!isPadang ? f.lorong : idx + 1}
+              </span>
+            </div>
+            <div className="px-1.5 py-2 flex items-center justify-center">
+              <span className="text-[11px] font-mono text-gray-600">{f.noBib || '—'}</span>
+            </div>
+            <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+              <p className="text-[11px] font-semibold text-gray-700 truncate leading-tight">{f.namaAtlet || '—'}</p>
+              <p className="text-[9px] text-gray-400 truncate leading-tight">
+                {(f.kodSekolah && (sekolahMap[f.kodSekolah] || f.kodSekolah)) || ''}
+              </p>
+            </div>
+            <div className="px-1.5 py-2 flex items-center justify-center">
+              <span className="text-[11px] font-mono font-bold text-gray-800">
+                {f.keputusan ? f.keputusan.toFixed(2) : '—'}
+              </span>
+            </div>
+            <div className="px-1.5 py-2 flex items-center justify-center">
+              <span className="text-[10px] text-gray-400">H{f.noHeat}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+// Format jam HH:MM:SS
+function fmtJam(d) {
+  return d.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+}
+
+// Format countdown mm:ss
+function fmtCountdown(ms) {
+  if (ms <= 0) return '00:00'
+  const m = Math.floor(ms / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+// Timestamp Firestore → ms
+function tsToMs(ts) {
+  if (!ts) return 0
+  if (typeof ts.toDate === 'function') return ts.toDate().getTime()
+  if (ts.seconds) return ts.seconds * 1000
+  return 0
+}
+
+export default function InputKeputusan() {
+  const { userData } = useAuth()
+
+  // Model A: pencatat + superadmin boleh edit sahaja
+  const bolehEdit = userData?.role === 'pencatat' || userData?.role === 'superadmin'
+
+  // Step: 'home' | 'heat' | 'input'
+  const [step, setStep] = useState('home')
+  const [search, setSearch] = useState('')
+
+  // Live clock — refresh setiap saat
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Data
+  const [kejohananId,   setKejohananId]   = useState(null)
+  const [kejohananData, setKejohananData] = useState(null) // untuk timerAutoRasmi default
+  const [acaraList,     setAcaraList]     = useState([])
+  const [jadualHariIni, setJadualHariIni] = useState([])
+  const [sekolahMap,    setSekolahMap]    = useState({}) // kodSekolah → namaSekolah
+  const [loading,       setLoading]       = useState(true)
+
+  // Accordion open state — terbuka semua by default, dikemas bila data load
+  const [openKat, setOpenKat] = useState({})
+
+  // Filter tab untuk accordion
+  const [filterTab, setFilterTab] = useState('semua') // semua | belum | draf | rasmi
+
+  // Selection
+  const [selectedAcara, setSelectedAcara] = useState(null)
+  const [heats,         setHeats]         = useState([])
+  const [selectedHeat,  setSelectedHeat]  = useState(null)
+  const [heatsLoading,  setHeatsLoading]  = useState(false)
+
+  // Input state
+  const [keputusan, setKeputusan] = useState({})
+  const [windSpeed, setWindSpeed] = useState('')
+  const [peserta,   setPeserta]   = useState([])
+  const [saving,          setSaving]          = useState(false)
+  const [saved,           setSaved]           = useState(false)
+  const [janaFinalLoading, setJanaFinalLoading] = useState(false)
+
+  // ── Load data ──────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const kejSnap = await getDocs(query(
+          collection(db, 'kejohanan'),
+          where('statusKejohanan', '==', 'aktif')
+        ))
+        if (kejSnap.empty) { setLoading(false); return }
+        const kej = kejSnap.docs[0]
+        const kejId = kej.id
+        setKejohananId(kejId)
+        setKejohananData(kej.data())
+
+        // Load sekolah untuk nama sekolah lookup
+        getDocs(collection(db, 'sekolah')).then(snap => {
+          const map = {}
+          snap.docs.forEach(d => { map[d.id] = d.data().namaSekolah || d.id })
+          setSekolahMap(map)
+        }).catch(() => {})
+
+        // Semua acara — tanpa orderBy untuk elak index error, sort client-side
+        const acaraSnap = await getDocs(
+          collection(db, 'kejohanan', kejId, 'acara')
+        )
+        const acaraDocs = acaraSnap.docs
+          .map(d => ({ acaraId: d.id, ...d.data() }))
+          .sort((a, b) => (a.noAcara ?? 999) - (b.noAcara ?? 999))
+
+        // Heat status per acara (parallel) — guna aceraId (field) bukan acaraId (d.id)
+        const counts = await Promise.all(
+          acaraDocs.map(async a => {
+            const aceraKey = a.aceraId || a.acaraId
+            const hSnap = await getDocs(
+              collection(db, 'kejohanan', kejId, 'acara', aceraKey, 'heat')
+            )
+            const rasmi = hSnap.docs.filter(h => h.data().statusKeputusan === 'rasmi').length
+            const draf  = hSnap.docs.filter(h => h.data().statusKeputusan === 'tidak_rasmi').length
+            return { acaraId: a.acaraId, total: hSnap.size, rasmi, draf }
+          })
+        )
+        const countMap = Object.fromEntries(counts.map(c => [c.acaraId, c]))
+
+        const acaraWithCounts = acaraDocs.map(a => ({
+          ...a,
+          _totalHeat: countMap[a.acaraId]?.total || 0,
+          _rasmiHeat: countMap[a.acaraId]?.rasmi || 0,
+          _drafHeat:  countMap[a.acaraId]?.draf  || 0,
+        }))
+        setAcaraList(acaraWithCounts)
+        // Buka semua accordion secara default
+        const allKat = [...new Set(acaraWithCounts.map(a => a.kategoriKod || a.kategori || 'Lain'))]
+        setOpenKat(Object.fromEntries(allKat.map(k => [k, true])))
+
+        // Jadual hari ini — tanpa orderBy (composite index), sort client-side
+        const today = new Date().toISOString().slice(0, 10)
+        const jadualSnap = await getDocs(query(
+          collection(db, 'jadual_acara'),
+          where('tarikhAcara', '==', today)
+        )).catch(() => ({ docs: [] }))
+
+        // acaraMap — index by both aceraId field AND document id untuk cover semua kes
+        const acaraMap = {}
+        acaraWithCounts.forEach(a => {
+          acaraMap[a.acaraId] = a
+          if (a.aceraId) acaraMap[a.aceraId] = a
+        })
+        setJadualHariIni(
+          jadualSnap.docs
+            .map(d => ({ ...d.data(), jadualId: d.id }))
+            .filter(j => j.statusJadual !== 'batal' && (acaraMap[j.aceraId] || acaraMap[j.acaraId]))
+            .map(j => ({ ...j, acara: acaraMap[j.aceraId] || acaraMap[j.acaraId] }))
+            .sort((a, b) => (a.masaMula || '').localeCompare(b.masaMula || ''))
+        )
+      } catch (e) {
+        console.error('load error:', e)
+      }
+      finally { setLoading(false) }
+    }
+    load()
+  }, [])
+
+  // ── Load heats ─────────────────────────────────────────────────────────────
+
+  const loadHeats = useCallback(async (acara) => {
+    if (!kejohananId) return
+    setHeatsLoading(true)
+    // Guna aceraId (field dalam doc) — sama seperti StartList & admin components
+    const aceraKey = acara.aceraId || acara.acaraId
+    try {
+      const snap = await getDocs(
+        collection(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat')
+      )
+      const list = snap.docs
+        .map(d => ({ heatId: d.id, ...d.data() }))
+        .sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0))
+      setHeats(list)
+    } catch (e) {
+      console.error('loadHeats error:', aceraKey, e)
+      setHeats([])
+    }
+    finally { setHeatsLoading(false) }
+  }, [kejohananId])
+
+  // ── Init keputusan dari peserta[] ──────────────────────────────────────────
+
+  function initKeputusanDariPeserta(acara, heat) {
+    const kpMap = {}
+    const pesertaArr = heat.peserta || []
+
+    if (acara.jenisAcara === 'lorong' || acara.jenisAcara === 'relay') {
+      pesertaArr.forEach(p => {
+        if (p.lorong != null) kpMap[p.lorong] = {
+          noBib:      p.noBib      || '',
+          namaAtlet:  p.namaAtlet  || '',
+          kodSekolah: p.kodSekolah || '',
+          keputusan:  p.keputusan  != null ? String(p.keputusan) : '',
+          kedudukan:  p.kedudukan  != null ? p.kedudukan : '',
+          status:     (p.status && p.status !== 'belum') ? p.status : '',
+        }
+      })
+    } else if (acara.jenisAcara === 'mass_start') {
+      pesertaArr.forEach((p, i) => {
+        const slot = p.giliran ?? (i + 1)
+        kpMap[slot] = {
+          noBib:     p.noBib     || '',
+          namaAtlet: p.namaAtlet || '',
+          keputusan: p.keputusan != null ? String(p.keputusan) : '',
+          status:    (p.status && p.status !== 'belum') ? p.status : '',
+        }
+      })
+    } else {
+      pesertaArr.forEach(p => {
+        kpMap[p.noBib] = {
+          noBib:     p.noBib     || '',
+          namaAtlet: p.namaAtlet || '',
+          keputusan: p.keputusan != null ? String(p.keputusan) : '',
+          status:    (p.status && p.status !== 'belum') ? p.status : '',
+          cubaan: Array.isArray(p.cubaan)
+            ? Object.fromEntries((p.cubaan || []).map((v, i) => [i + 1, v != null ? String(v) : '']))
+            : {},
+        }
+      })
+    }
+    return kpMap
+  }
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
+  function selectAcara(acara) {
+    setSelectedAcara(acara)
+    setSelectedHeat(null)
+    setHeats([])
+    setKeputusan({})
+    setWindSpeed('')
+    setSaved(false)
+    setStep('heat')
+    loadHeats(acara)
+  }
+
+  async function selectHeat(heat) {
+    let h = heat
+
+    // Auto-rasmi: semak jika timer sudah luput
+    // BUG1 FIX: jangan auto-rasmi heat FINAL — biarkan KeputusanRasmi handle (postRasmi perlu jalan)
+    const isFinalHeat = ['final', 'terus_final'].includes(h.fasa) || heats.length === 1
+    if (h.statusKeputusan === 'tidak_rasmi' && h.publishedAt && kejohananId && !isFinalHeat) {
+      const timer = selectedAcara?.timerAutoRasmi ?? kejohananData?.timerAutoRasmi ?? 15
+      const pubMs = tsToMs(h.publishedAt)
+      const elapsedMin = pubMs > 0 ? (Date.now() - pubMs) / 60000 : 0
+      if (elapsedMin >= timer) {
+        try {
+          const aceraKey = selectedAcara.aceraId || selectedAcara.acaraId
+          await updateDoc(
+            doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', h.heatId),
+            { statusKeputusan: 'rasmi', autoRasmiAt: serverTimestamp() }
+          )
+          h = { ...h, statusKeputusan: 'rasmi' }
+          const updatedHeats = heats.map(x => x.heatId === h.heatId ? { ...x, statusKeputusan: 'rasmi' } : x)
+          setHeats(updatedHeats)
+          // Update statusAcara
+          const finalHeat = updatedHeats.find(x => x.peringkat === 'final' || x.fasa === 'terus_final')
+          let newAcaraStatus
+          if (finalHeat) {
+            newAcaraStatus = finalHeat.statusKeputusan === 'rasmi' ? 'rasmi' : 'tidak_rasmi'
+          } else {
+            newAcaraStatus = updatedHeats.every(x => x.statusKeputusan === 'rasmi') ? 'rasmi' : 'tidak_rasmi'
+          }
+          await updateDoc(
+            doc(db, 'kejohanan', kejohananId, 'acara', aceraKey),
+            { statusAcara: newAcaraStatus }
+          ).catch(() => {})
+        } catch { /* ignore, akan cuba semula lain kali */ }
+      }
+    }
+
+    setSelectedHeat(h)
+    setSaved(false)
+    setWindSpeed(h.windSpeed != null ? String(h.windSpeed) : '')
+    setKeputusan(initKeputusanDariPeserta(selectedAcara, h))
+    setPeserta(h.peserta || [])
+    setStep('input')
+  }
+
+  function goBack() {
+    if (step === 'input') {
+      setStep('heat')
+      setSelectedHeat(null)
+      setKeputusan({})
+    } else if (step === 'heat') {
+      // Refresh acaraList counts dari heats state semasa (fix: counts stale selepas save)
+      if (selectedAcara) {
+        const rasmi = heats.filter(h => h.statusKeputusan === 'rasmi').length
+        const draf  = heats.filter(h => h.statusKeputusan === 'tidak_rasmi').length
+        setAcaraList(prev => prev.map(a =>
+          a.acaraId === selectedAcara.acaraId
+            ? { ...a, _rasmiHeat: rasmi, _drafHeat: draf, _totalHeat: heats.length }
+            : a
+        ))
+      }
+      setStep('home')
+      setSelectedAcara(null)
+      setHeats([])
+    }
+  }
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  function handleChange(slot, field, value) {
+    setKeputusan(prev => ({ ...prev, [slot]: { ...(prev[slot] || {}), [field]: value } }))
+    setSaved(false)
+  }
+
+  async function handleSave() {
+    if (!kejohananId || !selectedAcara || !selectedHeat) return
+    if (!bolehEdit) return
+    setSaving(true)
+    setSaved(false)
+    try {
+      const aceraKey = selectedAcara.aceraId || selectedAcara.acaraId
+      const heatRef = doc(
+        db, 'kejohanan', kejohananId,
+        'acara', aceraKey,
+        'heat', selectedHeat.heatId
+      )
+      const jenisAcara = selectedAcara.jenisAcara
+      const updatedPeserta = (selectedHeat.peserta || []).map((p, i) => {
+        let slot
+        if (jenisAcara === 'lorong' || jenisAcara === 'relay') slot = p.lorong
+        else if (jenisAcara === 'mass_start') slot = p.giliran ?? (i + 1)
+        else slot = p.noBib
+
+        const kp  = keputusan[slot] || {}
+        const val = kp.keputusan !== '' && kp.keputusan !== undefined
+          ? (Number(kp.keputusan) || null) : p.keputusan
+
+        let cubaan = p.cubaan
+        if ((jenisAcara === 'padang_lompat' || jenisAcara === 'padang_balin') && kp.cubaan) {
+          const bil = selectedAcara.bilanganCubaan || 3
+          cubaan = Array.from({ length: bil }, (_, c) => {
+            const v = kp.cubaan[c + 1]
+            if (v === '' || v == null) return null
+            const n = Number(v)
+            return isNaN(n) ? v : n
+          })
+        }
+        // Simpan kedudukan manual jika ada (lorong/relay)
+        const kedudukan = (jenisAcara === 'lorong' || jenisAcara === 'relay')
+          ? (kp.kedudukan !== '' && kp.kedudukan != null ? kp.kedudukan : (p.kedudukan ?? null))
+          : (p.kedudukan ?? null)
+        return { ...p, keputusan: val, kedudukan, status: kp.status || p.status || 'belum', cubaan, updatedBy: userData?.uid || '' }
+      })
+
+      // ── Kira rankDalamHeat ─────────────────────────────────────────────────
+      // rankDalamHeat diperlukan oleh KeputusanRasmi.postRasmi() untuk assign mata & medal.
+      // Tanpa field ini, postRasmi() skip semua atlet secara senyap.
+      const isPadang = ['padang_lompat', 'padang_balin'].includes(jenisAcara)
+      const finishers = [...updatedPeserta]
+        .filter(p => p.status === 'selesai' && p.keputusan != null)
+        .sort((a, b) => isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan)
+      const autoRankMap = new Map()
+      finishers.forEach((p, i) => {
+        const prevSame = i > 0 && p.keputusan === finishers[i - 1].keputusan
+        autoRankMap.set(p.noBib, prevSame ? autoRankMap.get(finishers[i - 1].noBib) : i + 1)
+      })
+      const pesertaDenganRank = updatedPeserta.map(p => ({
+        ...p,
+        rankDalamHeat: (p.status === 'selesai' && p.keputusan != null)
+          ? (p.kedudukan || autoRankMap.get(p.noBib) || null)
+          : null,
+      }))
+
+      const updates = { peserta: pesertaDenganRank, updatedAt: serverTimestamp() }
+      if (selectedAcara.isWindReading && windSpeed !== '') {
+        updates.windSpeed = Number(windSpeed) || null
+      }
+      // TIDAK tukar status — Simpan Draf hanya simpan data sahaja
+
+      await updateDoc(heatRef, updates)
+
+      const curStatus = selectedHeat.statusKeputusan
+      setSelectedHeat(prev => ({ ...prev, ...updates, statusKeputusan: curStatus, peserta: pesertaDenganRank }))
+      setHeats(prev => prev.map(h =>
+        h.heatId === selectedHeat.heatId
+          ? { ...h, statusKeputusan: curStatus, peserta: pesertaDenganRank }
+          : h
+      ))
+      setSaved(true)
+    } catch (e) {
+      alert(`Ralat menyimpan: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── HANTAR: simpan data + publish (tidak_rasmi + publishedAt) ──────────────
+
+  async function handleHantar() {
+    if (!kejohananId || !selectedAcara || !selectedHeat || !bolehEdit) return
+    setSaving(true)
+    setSaved(false)
+    try {
+      // Simpan data dulu
+      await handleSave()
+      // Set published
+      const aceraKey = selectedAcara.aceraId || selectedAcara.acaraId
+      const heatRef  = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', selectedHeat.heatId)
+      const pubTs    = serverTimestamp()
+      await updateDoc(heatRef, { statusKeputusan: 'tidak_rasmi', publishedAt: pubTs, updatedAt: pubTs })
+      // Update statusAcara pada acara doc → sekurang-kurangnya tidak_rasmi
+      try {
+        await updateDoc(
+          doc(db, 'kejohanan', kejohananId, 'acara', aceraKey),
+          { statusAcara: 'tidak_rasmi' }
+        )
+      } catch { /* ignore — acara doc mungkin tiada field ini */ }
+      const fakeTs   = { toDate: () => new Date(), seconds: Math.floor(Date.now() / 1000) }
+      setSelectedHeat(prev => ({ ...prev, statusKeputusan: 'tidak_rasmi', publishedAt: fakeTs }))
+      setHeats(prev => prev.map(h =>
+        h.heatId === selectedHeat.heatId
+          ? { ...h, statusKeputusan: 'tidak_rasmi', publishedAt: fakeTs }
+          : h
+      ))
+      setSaved(true)
+    } catch (e) {
+      alert(`Ralat hantar: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── Sahkan Rasmi (dari bantahan / manual) ──────────────────────────────────
+
+  async function handleSahkanRasmi() {
+    if (!kejohananId || !selectedAcara || !selectedHeat || !bolehEdit) return
+    setSaving(true)
+    try {
+      const aceraKey = selectedAcara.aceraId || selectedAcara.acaraId
+      const heatRef  = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', selectedHeat.heatId)
+      await updateDoc(heatRef, { statusKeputusan: 'rasmi', rasmiAt: serverTimestamp() })
+
+      // Kira statusAcara baharu berdasarkan semua heats
+      const updatedHeats = heats.map(h =>
+        h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: 'rasmi' } : h
+      )
+      const finalHeat = updatedHeats.find(h => h.peringkat === 'final')
+      let newAcaraStatus
+      if (finalHeat) {
+        // Ada final → rasmi hanya bila final heat sendiri yang rasmi
+        newAcaraStatus = finalHeat.statusKeputusan === 'rasmi' ? 'rasmi' : 'tidak_rasmi'
+      } else {
+        // Tiada final (direct final) → rasmi bila SEMUA heat rasmi
+        newAcaraStatus = updatedHeats.every(h => h.statusKeputusan === 'rasmi') ? 'rasmi' : 'tidak_rasmi'
+      }
+      try {
+        await updateDoc(
+          doc(db, 'kejohanan', kejohananId, 'acara', aceraKey),
+          { statusAcara: newAcaraStatus }
+        )
+      } catch { /* ignore */ }
+
+      setSelectedHeat(prev => ({ ...prev, statusKeputusan: 'rasmi' }))
+      setHeats(updatedHeats)
+    } catch (e) {
+      alert(`Ralat: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── Hantar Semula (selepas bantahan diedit) ────────────────────────────────
+
+  async function handleHantarSemula() {
+    await handleHantar()
+  }
+
+  // ── Jana Final ─────────────────────────────────────────────────────────────
+
+  async function handleJanaFinal(finalists) {
+    if (!kejohananId || !selectedAcara) return
+    setJanaFinalLoading(true)
+    try {
+      const aceraKey  = selectedAcara.aceraId || selectedAcara.acaraId
+      const maxHeatNo = Math.max(0, ...heats.map(h => h.noHeat || 0))
+      const newHeatId = `final_${Date.now()}`
+      const isPadang  = ['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara)
+
+      const finalPeserta = finalists.map(f => ({
+        lorong:     !isPadang ? (f.lorong || null) : null,
+        noBib:      f.noBib,
+        namaAtlet:  f.namaAtlet,
+        kodSekolah: f.kodSekolah,
+        keputusan:  null,
+        kedudukan:  null,
+        status:     'belum',
+        dariHeat:   f.noHeat,
+        masaHeat:   f.keputusan,
+      }))
+
+      await setDoc(
+        doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', newHeatId),
+        {
+          noHeat:          maxHeatNo + 1,
+          peringkat:       'final',
+          statusKeputusan: 'belum',
+          peserta:         finalPeserta,
+          bilanganLorong:  finalists.length,
+          createdAt:       serverTimestamp(),
+          caraPilih:       selectedAcara.caraPilihFinal || 'hybrid',
+          janaFinalDari:   heats.filter(h => h.peringkat !== 'final').map(h => h.heatId),
+        }
+      )
+      await loadHeats(selectedAcara)
+    } catch (e) {
+      alert(`Ralat jana final: ${e.message}`)
+    } finally {
+      setJanaFinalLoading(false)
+    }
+  }
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return []
+    return acaraList.filter(a =>
+      (a.noAcara != null && String(a.noAcara).includes(q)) ||
+      (a.namaAcara || '').toLowerCase().includes(q)
+    )
+  }, [search, acaraList])
+
+  // ── Grouped by kategori ────────────────────────────────────────────────────
+
+  const filteredAcaraList = useMemo(() => {
+    if (filterTab === 'semua')  return acaraList
+    if (filterTab === 'belum')  return acaraList.filter(a => a._drafHeat === 0 && a._rasmiHeat === 0)
+    if (filterTab === 'draf')   return acaraList.filter(a => a._drafHeat > 0)
+    if (filterTab === 'rasmi')  return acaraList.filter(a => a._rasmiHeat > 0)
+    return acaraList
+  }, [acaraList, filterTab])
+
+  const acaraByKat = useMemo(() => {
+    const groups = {}
+    filteredAcaraList.forEach(a => {
+      const kat = a.kategoriKod || a.kategori || 'Lain'
+      if (!groups[kat]) groups[kat] = []
+      groups[kat].push(a)
+    })
+    return groups
+  }, [filteredAcaraList])
+
+  const katKeys = [...KAT_ORDER.filter(k => acaraByKat[k]), ...Object.keys(acaraByKat).filter(k => !KAT_ORDER.includes(k))]
+
+  // Count untuk filter badge
+  const filterCounts = useMemo(() => ({
+    semua: acaraList.length,
+    belum: acaraList.filter(a => a._drafHeat === 0 && a._rasmiHeat === 0).length,
+    draf:  acaraList.filter(a => a._drafHeat > 0).length,
+    rasmi: acaraList.filter(a => a._rasmiHeat > 0).length,
+  }), [acaraList])
+
+  // ── Jana Final computations ────────────────────────────────────────────────
+
+  const janaFinalEligible = useMemo(() => {
+    if (!selectedAcara || heats.length === 0) return false
+    const jenis = selectedAcara.jenisAcara
+    if (!['lorong', 'mass_start', 'relay'].includes(jenis)) return false
+    const nonFinal = heats.filter(h => h.peringkat !== 'final')
+    if (nonFinal.length === 0) return false
+    const finalExists = heats.some(h => h.peringkat === 'final')
+    if (finalExists) return false
+    return nonFinal.every(h => h.statusKeputusan === 'rasmi')
+  }, [heats, selectedAcara])
+
+  const janaFinalists = useMemo(() => {
+    if (!janaFinalEligible || !selectedAcara) return []
+    const raw = selectFinalists(heats, selectedAcara)
+    const isPadang = ['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara)
+    return isPadang ? raw : assignLorong(raw, selectedAcara)
+  }, [janaFinalEligible, heats, selectedAcara])
+
+  // ── Guards ─────────────────────────────────────────────────────────────────
+
+  const isRasmi         = selectedHeat?.statusKeputusan === 'rasmi'
+  const isDalamBantahan = selectedHeat?.statusKeputusan === 'dalam_bantahan'
+  const isPublished     = selectedHeat?.statusKeputusan === 'tidak_rasmi'
+  const bolehInputSekarang = bolehEdit && !isRasmi
+
+  // Timer auto-rasmi countdown
+  const timerMenit = selectedAcara?.timerAutoRasmi ?? kejohananData?.timerAutoRasmi ?? 15
+  const pubMs      = tsToMs(selectedHeat?.publishedAt)
+  const countdownMs = (isPublished && pubMs)
+    ? Math.max(0, timerMenit * 60000 - (now - pubMs))
+    : null
+  const autoRasmiExpired = countdownMs === 0
+
+  // ── Loading ────────────────────────────────────────────────────────────────
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-64">
+      <div className="text-center">
+        <svg className="w-8 h-8 animate-spin text-[#003399] mx-auto" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+        </svg>
+        <p className="text-sm text-gray-400 mt-3">Memuatkan…</p>
+      </div>
+    </div>
+  )
+
+  if (!kejohananId) return (
+    <div className="p-8 text-center">
+      <p className="text-gray-400 text-sm">Tiada kejohanan aktif.</p>
+      <p className="text-gray-300 text-xs mt-1">Hubungi Admin untuk aktifkan kejohanan.</p>
+    </div>
+  )
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="max-w-lg mx-auto pb-12">
+
+      {/* ── Top Bar ── */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+        <div className="flex items-center gap-2 px-4 py-3">
+          {step !== 'home' && (
+            <button onClick={goBack} className="p-2 -ml-2 text-gray-400 hover:text-gray-700 transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+          <div className="flex-1 min-w-0">
+            {step === 'home' && <p className="text-sm font-bold text-gray-800">Input Keputusan</p>}
+            {step === 'heat' && (
+              <div>
+                <p className="text-sm font-bold text-gray-800 truncate">
+                  {selectedAcara?.noAcara ? `No.${selectedAcara.noAcara} · ` : ''}{selectedAcara?.namaAcara}
+                </p>
+                <p className="text-[10px] text-gray-400">Pilih Heat</p>
+              </div>
+            )}
+            {step === 'input' && (
+              <div>
+                <p className="text-sm font-bold text-gray-800 truncate">
+                  {selectedAcara?.noAcara ? `No.${selectedAcara.noAcara} · ` : ''}{selectedAcara?.namaAcara}
+                </p>
+                <p className="text-[10px] text-gray-400">
+                  Heat {selectedHeat?.noHeat} · {selectedHeat?.peringkat || '—'}
+                  {isRasmi && ' · 🔒 Rasmi'}
+                  {isDalamBantahan && ' · ⚠️ Bantahan'}
+                </p>
+              </div>
+            )}
+          </div>
+          {/* Live clock */}
+          <span className="text-[10px] font-mono text-gray-400 shrink-0">{fmtJam(new Date(now))}</span>
+          {/* Top-bar Simpan Draf (shortcut) */}
+          {step === 'input' && bolehInputSekarang && !isPublished && (
+            <button onClick={handleSave} disabled={saving}
+              className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                saved ? 'bg-green-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+              }`}>
+              {saving ? '…' : saved ? '✓' : 'Draf'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════
+          STEP: HOME
+      ══════════════════════════════════════════════ */}
+      {step === 'home' && (
+        <div className="px-4 pt-3 space-y-4">
+
+          {/* ── Progress strip ── */}
+          {acaraList.length > 0 && (
+            <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3 shadow-sm">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Progress Hari Ini</span>
+                <span className="text-[10px] font-mono font-bold text-gray-700">
+                  {filterCounts.rasmi} / {acaraList.length} Rasmi
+                </span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden flex">
+                <div className="h-full bg-green-500 transition-all"
+                  style={{ width: `${acaraList.length ? filterCounts.rasmi / acaraList.length * 100 : 0}%` }} />
+                <div className="h-full bg-amber-400 transition-all"
+                  style={{ width: `${acaraList.length ? filterCounts.draf / acaraList.length * 100 : 0}%` }} />
+              </div>
+              <div className="flex gap-3 mt-1.5">
+                <span className="text-[9px] font-bold text-green-700">✓ {filterCounts.rasmi} Rasmi</span>
+                <span className="text-[9px] font-bold text-amber-600">⏳ {filterCounts.draf} Draf</span>
+                <span className="text-[9px] text-gray-400">{filterCounts.belum} Belum</span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Search bar ── */}
+          <div className="relative">
+            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-300"
+              fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm bg-gray-50 focus:outline-none focus:border-[#003399] focus:bg-white transition-colors"
+              placeholder="Cari No. Acara atau nama…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* ── Search results ── */}
+          {search && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                Hasil Carian ({searchResults.length})
+              </p>
+              {searchResults.length === 0
+                ? <p className="text-sm text-gray-400 text-center py-6">Tiada acara dijumpai.</p>
+                : searchResults.map(a => <AcaraCard key={a.acaraId} acara={a} nowMs={now} onClick={() => selectAcara(a)} />)
+              }
+            </div>
+          )}
+
+          {!search && (
+            <>
+              {/* ── Jadual hari ini ── */}
+              {jadualHariIni.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Jadual Hari Ini</p>
+                  {jadualHariIni.map(j => (
+                    <AcaraCard key={j.jadualId} acara={j.acara} masa={j.masaMula} nowMs={now} onClick={() => selectAcara(j.acara)} />
+                  ))}
+                </div>
+              )}
+
+              {/* ── Filter tabs + Accordion ── */}
+              <div className="space-y-3">
+                {/* Tab header */}
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Semua Acara</p>
+                </div>
+
+                {/* Filter pills */}
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1">
+                  {[
+                    { key: 'semua', label: 'Semua',       cls: 'bg-[#003399] text-white',      inact: 'bg-gray-100 text-gray-500 hover:bg-gray-200' },
+                    { key: 'belum', label: 'Belum',       cls: 'bg-gray-600 text-white',        inact: 'bg-gray-100 text-gray-500 hover:bg-gray-200' },
+                    { key: 'draf',  label: '⏳ Tidak Rasmi', cls: 'bg-amber-500 text-white',   inact: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+                    { key: 'rasmi', label: '✓ Rasmi',     cls: 'bg-green-600 text-white',       inact: 'bg-green-50 text-green-700 hover:bg-green-100' },
+                  ].map(t => (
+                    <button key={t.key} onClick={() => setFilterTab(t.key)}
+                      className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
+                        filterTab === t.key ? t.cls : t.inact
+                      }`}>
+                      {t.label}
+                      <span className={`min-w-[18px] text-center text-[9px] font-black px-1 py-0.5 rounded-full ${
+                        filterTab === t.key ? 'bg-white/25 text-white' : 'bg-white text-gray-600'
+                      }`}>{filterCounts[t.key]}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Empty state for filter */}
+                {katKeys.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-400">
+                      {filterTab === 'rasmi' ? 'Tiada keputusan rasmi lagi.' :
+                       filterTab === 'draf'  ? 'Tiada keputusan draf.' :
+                       filterTab === 'belum' ? 'Semua acara sudah ada keputusan!' :
+                       'Tiada acara.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Accordion by kategori */}
+                {katKeys.map(kat => (
+                  <AccordionSection key={kat}
+                    title={kat}
+                    count={acaraByKat[kat]?.length || 0}
+                    open={openKat[kat] ?? false}
+                    onToggle={() => setOpenKat(prev => ({ ...prev, [kat]: !prev[kat] }))}>
+                    {(acaraByKat[kat] || []).map(a => (
+                      <AcaraCard key={a.acaraId} acara={a} nowMs={now} onClick={() => selectAcara(a)} />
+                    ))}
+                  </AccordionSection>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
+          STEP: PILIH HEAT
+      ══════════════════════════════════════════════ */}
+      {step === 'heat' && (
+        <div className="px-4 pt-4 space-y-4">
+          <div className="bg-[#003399]/5 rounded-2xl p-4 border border-[#003399]/10">
+            <p className="text-xs font-bold text-[#003399] uppercase tracking-widest mb-1">
+              {JENIS_LABEL[selectedAcara?.jenisAcara] || selectedAcara?.jenisAcara}
+            </p>
+            <p className="text-base font-black text-gray-800">{selectedAcara?.namaAcara}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {selectedAcara?.jantina === 'L' ? 'Lelaki' : 'Perempuan'} · {selectedAcara?.kategoriKod || selectedAcara?.kategori}
+            </p>
+          </div>
+
+          {heatsLoading ? (
+            <p className="text-sm text-gray-400 text-center py-6">Memuatkan heat…</p>
+          ) : (
+            <>
+              <HeatSelector heats={heats} selectedHeat={selectedHeat} onSelect={selectHeat} />
+
+              {/* Jana Final panel — muncul bila semua heat rasmi & tiada final lagi */}
+              {janaFinalEligible && janaFinalists.length > 0 && (
+                <JanaFinalPanel
+                  finalists={janaFinalists}
+                  acara={selectedAcara}
+                  sekolahMap={sekolahMap}
+                  onJana={handleJanaFinal}
+                  loading={janaFinalLoading}
+                />
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
+          STEP: INPUT KEPUTUSAN
+      ══════════════════════════════════════════════ */}
+      {step === 'input' && selectedAcara && selectedHeat && (
+        <div className="px-4 pt-4 space-y-4">
+
+          {/* Heat info bar */}
+          <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+            <div className="flex-1">
+              <p className="text-xs text-gray-500">
+                Heat <span className="font-bold text-gray-800">{selectedHeat.noHeat}</span>
+                {' · '}<span className="capitalize">{selectedHeat.peringkat || '—'}</span>
+              </p>
+            </div>
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#003399]/10 text-[#003399]">
+              {JENIS_LABEL[selectedAcara.jenisAcara] || selectedAcara.jenisAcara}
+            </span>
+          </div>
+
+          {/* ── Status Banners ── */}
+
+          {/* RASMI — terkunci */}
+          {isRasmi && (
+            <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+              <svg className="w-5 h-5 text-green-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <div>
+                <p className="text-sm font-bold text-green-800">Keputusan Rasmi — Terkunci</p>
+                <p className="text-[11px] text-green-600 mt-0.5">
+                  Hubungi Pengurus Teknik untuk buka semula melalui proses bantahan.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* DALAM BANTAHAN — boleh edit semula */}
+          {isDalamBantahan && bolehEdit && (
+            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <p className="text-sm font-bold text-amber-800">Bantahan Diterima — Boleh Edit Semula</p>
+                <p className="text-[11px] text-amber-600 mt-0.5">
+                  Betulkan keputusan dan simpan. PT perlu sahkan semula.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Admin — baca sahaja (Model A) */}
+          {!bolehEdit && (
+            <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+              <svg className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zm-3-9a9 9 0 100 18A9 9 0 0012 3z" />
+              </svg>
+              <div>
+                <p className="text-sm font-bold text-blue-700">Paparan Sahaja</p>
+                <p className="text-[11px] text-blue-500 mt-0.5">Hanya Pencatat boleh edit keputusan.</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Input form (locked if rasmi or not pencatat) ── */}
+          <div className={!bolehInputSekarang ? 'opacity-50 pointer-events-none select-none' : ''}>
+            {selectedAcara.jenisAcara === 'lorong' && (
+              <InputLorong heat={selectedHeat} acara={selectedAcara} keputusan={keputusan}
+                onChange={handleChange} onWind={setWindSpeed} windSpeed={windSpeed} sekolahMap={sekolahMap} />
+            )}
+            {selectedAcara.jenisAcara === 'mass_start' && (
+              <InputMassStart heat={selectedHeat} keputusan={keputusan} onChange={handleChange} sekolahMap={sekolahMap} />
+            )}
+            {['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara) && (
+              <InputPadang acara={selectedAcara} peserta={peserta} keputusan={keputusan}
+                onChange={handleChange} sekolahMap={sekolahMap} />
+            )}
+            {selectedAcara.jenisAcara === 'relay' && (
+              <InputRelay heat={selectedHeat} acara={selectedAcara} keputusan={keputusan} onChange={handleChange} sekolahMap={sekolahMap} />
+            )}
+          </div>
+
+          {/* ── Action Buttons ── */}
+          {bolehInputSekarang && (
+            <div className="pt-2 pb-6 space-y-3">
+
+              {/* ── BANTAHAN: Sahkan Rasmi + Hantar Semula ── */}
+              {isDalamBantahan && (() => {
+                const isFinalHeatNow = ['final', 'terus_final'].includes(selectedHeat?.fasa) || heats.length === 1
+                return (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={handleHantarSemula} disabled={saving}
+                      className="py-3.5 text-sm font-bold rounded-2xl border-2 border-[#003399] text-[#003399] hover:bg-[#003399]/5 disabled:opacity-50 transition-all">
+                      {saving ? '…' : 'Hantar Semula'}
+                    </button>
+                    {isFinalHeatNow ? (
+                      <div className="py-3.5 text-xs font-bold rounded-2xl bg-gray-100 text-gray-500 text-center flex items-center justify-center px-2">
+                        Hubungi Admin untuk sahkan final
+                      </div>
+                    ) : (
+                      <button onClick={handleSahkanRasmi} disabled={saving}
+                        className="py-3.5 text-sm font-bold rounded-2xl bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-all">
+                        {saving ? '…' : 'Sahkan Rasmi'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {/* ── BELUM HANTAR: Simpan Draf + HANTAR ── */}
+              {!isDalamBantahan && !isPublished && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={handleSave} disabled={saving}
+                      className={`py-3.5 text-sm font-bold rounded-2xl border-2 transition-all ${
+                        saved
+                          ? 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      } disabled:opacity-50`}>
+                      {saving ? '…' : saved ? '✓ Tersimpan' : 'Simpan Draf'}
+                    </button>
+                    <button onClick={handleHantar} disabled={saving}
+                      className="py-3.5 text-sm font-bold rounded-2xl bg-[#003399] hover:bg-[#002277] text-white disabled:bg-gray-300 transition-all">
+                      {saving ? 'Menghantar…' : 'HANTAR ▶'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 text-center">
+                    Draf = simpan lokal · HANTAR = hantar untuk disahkan · auto-Rasmi dalam {timerMenit} min
+                  </p>
+                </div>
+              )}
+
+              {/* ── SUDAH HANTAR (tidak_rasmi): countdown + Simpan sahaja ── */}
+              {isPublished && !isDalamBantahan && (
+                <div className="space-y-2">
+                  {/* Countdown bar */}
+                  <div className={`rounded-2xl px-4 py-3 border flex items-center gap-3 ${
+                    autoRasmiExpired ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+                  }`}>
+                    <div className="flex-1">
+                      {autoRasmiExpired ? (
+                        <p className="text-sm font-bold text-green-800">Menunggu konfirmasi Rasmi…</p>
+                      ) : (
+                        <>
+                          <p className="text-xs font-bold text-amber-800">Auto-Rasmi dalam</p>
+                          <p className="text-2xl font-black font-mono text-amber-700 leading-tight">
+                            {fmtCountdown(countdownMs)}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-[9px] text-amber-600 font-semibold">Timer: {timerMenit} min</p>
+                      <p className="text-[9px] text-amber-500">Sudah dihantar</p>
+                    </div>
+                  </div>
+                  <button onClick={handleSave} disabled={saving}
+                    className={`w-full py-3 text-sm font-bold rounded-2xl border-2 transition-all ${
+                      saved ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    } disabled:opacity-50`}>
+                    {saving ? 'Menyimpan…' : saved ? '✓ Data Dikemas Kini' : 'Kemaskini Data'}
+                  </button>
+                  <p className="text-[10px] text-gray-400 text-center">
+                    Keputusan sudah dihantar · kemaskini data tidak akan reset timer
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

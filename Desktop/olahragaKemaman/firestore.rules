@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Kejohanan + sub-koleksi ──────────────────────────────────────────────
+    match /kejohanan/{id} {
+      allow read:  if true;
+      allow write: if true; // admin/superadmin urus status kejohanan
+
+      match /acara/{aceraId} {
+        allow read:  if true;
+        allow write: if true; // admin jana/urus acara
+
+        match /heat/{heatId} {
+          allow read:  if true;
+          allow write: if true; // admin/pencatat jana & isi keputusan
+
+          match /keputusan/{kId} {
+            allow read:  if true;
+            allow write: if true; // pencatat input keputusan
+          }
+        }
+      }
+
+      match /pendaftaran/{noBib} {
+        allow read:  if true;
+        allow write: if true; // pengurus pasukan & admin daftar/buang atlet
+      }
+    }
+
+    // ─── Sekolah — login + setup ───────────────────────────────────────────────
+    match /sekolah/{kodSekolah} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Atlet — data peribadi tapi dalaman ───────────────────────────────────
+    match /atlet/{noKP} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Rekod — papan awam ───────────────────────────────────────────────────
+    match /rekod/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    match /rekod_tuntutan/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Medal Tally — papan awam ─────────────────────────────────────────────
+    match /medal_tally/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    match /medal_tally_kat/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Olahragawan — papan awam ─────────────────────────────────────────────
+    match /mata_olahragawan/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Tetapan sistem ───────────────────────────────────────────────────────
+    match /tetapan/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Jadual Acara ─────────────────────────────────────────────────────────
+    match /jadual_acara/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Pengguna sistem ──────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Kategori ─────────────────────────────────────────────────────────────
+    match /kategori/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Bantahan ─────────────────────────────────────────────────────────────
+    match /bantahan/{id} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ─── Lain-lain ────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read:  if true;
+      allow write: if true;
+    }
+  }
+}

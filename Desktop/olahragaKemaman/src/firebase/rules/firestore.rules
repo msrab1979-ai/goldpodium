@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isSuperAdmin() {
+      return isAuth() && getRole() == 'superadmin';
+    }
+
+    function isAdmin() {
+      return isAuth() && getRole() == 'admin';
+    }
+
+    function isPencatat() {
+      return isAuth() && getRole() == 'pencatat';
+    }
+
+    function isPengurusTeknik() {
+      return isAuth() && getRole() == 'pengurus_teknik';
+    }
+
+    function isAdminOrAbove() {
+      return isAuth() && getRole() in ['superadmin', 'admin'];
+    }
+
+    function isStaff() {
+      return isAuth() && getRole() in ['superadmin', 'admin', 'pencatat', 'pengurus_teknik'];
+    }
+
+    // ── users ─────────────────────────────────────────────────────
+    // User boleh baca profil sendiri; superadmin boleh baca/tulis semua
+    match /users/{uid} {
+      allow read: if isAuth() && (request.auth.uid == uid || isSuperAdmin());
+      allow write: if isSuperAdmin();
+    }
+
+    // ── sekolah ───────────────────────────────────────────────────
+    match /sekolah/{kodSekolah} {
+      allow read: if true;  // awam boleh lihat senarai sekolah
+      allow write: if isSuperAdmin();
+    }
+
+    // ── atlet ─────────────────────────────────────────────────────
+    // Admin hanya boleh tulis atlet sekolah sendiri
+    match /atlet/{noKP} {
+      allow read: if isStaff();
+      allow create: if isAdminOrAbove();
+      allow update: if isSuperAdmin() ||
+        (isAdmin() && resource.data.kodSekolah ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── kejohanan ─────────────────────────────────────────────────
+    match /kejohanan/{kejohananId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+
+      // acara (sub-collection)
+      match /acara/{aceraId} {
+        allow read: if true;
+        allow write: if isSuperAdmin();
+
+        // heat (sub-collection)
+        match /heat/{heatId} {
+          allow read: if true;
+          allow write: if isSuperAdmin() || isPencatat();
+
+          // keputusan (sub-collection)
+          match /keputusan/{keputusanId} {
+            allow read: if true;
+            allow create, update: if isSuperAdmin() || isPencatat();
+            allow delete: if isSuperAdmin();
+          }
+        }
+      }
+
+      // pendaftaran (sub-collection)
+      match /pendaftaran/{noBib} {
+        allow read: if isStaff();
+        allow create: if isAdminOrAbove();
+        allow update: if isSuperAdmin() ||
+          (isAdmin() && resource.data.kodSekolah ==
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
+        allow delete: if isSuperAdmin();
+      }
+
+      // relay_pasukan (sub-collection)
+      match /relay_pasukan/{relayId} {
+        allow read: if isStaff();
+        allow create: if isAdminOrAbove();
+        allow update: if isSuperAdmin() ||
+          (isAdmin() && resource.data.kodSekolah ==
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
+        allow delete: if isSuperAdmin();
+      }
+    }
+
+    // ── rekod ─────────────────────────────────────────────────────
+    match /rekod/{rekodId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || isPengurusTeknik();
+    }
+
+    // ── rekod_sejarah ─────────────────────────────────────────────
+    match /rekod_sejarah/{sejarahId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin() || isPengurusTeknik();
+    }
+
+    // ── bantahan ─────────────────────────────────────────────────
+    match /bantahan/{bantahanId} {
+      allow read: if isStaff();
+      allow create: if isAdmin();
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── mata_olahragawan ─────────────────────────────────────────
+    match /mata_olahragawan/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();  // dikira oleh Cloud Functions
+    }
+
+    // ── jadual_acara ─────────────────────────────────────────────
+    match /jadual_acara/{jadualId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ── notifikasi ───────────────────────────────────────────────
+    match /notifikasi/{notifId} {
+      allow read: if isAuth() &&
+        resource.data.penerimUid == request.auth.uid;
+      allow create: if false;   // tulis oleh Cloud Functions sahaja
+      allow update: if isAuth() &&
+        resource.data.penerimUid == request.auth.uid;  // mark as read
+      allow delete: if false;
+    }
+
+    // ── audit_log ────────────────────────────────────────────────
+    // KRITIKAL: client TIDAK boleh tulis terus — Cloud Functions sahaja
+    match /audit_log/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;  // Cloud Functions sahaja
+    }
+
+  }
+}
