@@ -70,18 +70,7 @@ function kiraKategori(tarikhLahir, jantina, tahunKejohanan, kategoriList = []) {
     candidates.sort((a, b) => a.umurHad - b.umurHad)  // paling spesifik dahulu
     return candidates[0].kod
   }
-  // Fallback hardcode (guna jantina)
-  if (jantina === 'L') {
-    if (umur >= 9  && umur <= 10) return 'A'
-    if (umur >= 11 && umur <= 12) return 'C'
-    if (umur >= 13 && umur <= 15) return 'E'
-    if (umur >= 16 && umur <= 18) return 'G'
-  } else {
-    if (umur >= 9  && umur <= 10) return 'B'
-    if (umur >= 11 && umur <= 12) return 'D'
-    if (umur >= 13 && umur <= 15) return 'F'
-    if (umur >= 16 && umur <= 18) return 'H'
-  }
+  // kategoriList kosong (belum load) — jangan return kod salah format lama
   return null
 }
 
@@ -141,12 +130,18 @@ const KAT_UMUR_FULL  = {A:'Bawah 10 Tahun',B:'Bawah 12 Tahun',C:'Bawah 14 Tahun'
 
 function KategoriBadge({ kat, full = false, firestoreLabel }) {
   const colors = {A:'bg-blue-100 text-blue-700',B:'bg-cyan-100 text-cyan-700',C:'bg-green-100 text-green-700',D:'bg-yellow-100 text-yellow-700',E:'bg-orange-100 text-orange-700',PPKI:'bg-purple-100 text-purple-700'}
-  // Guna firestoreLabel jika ada, fallback ke hardcode (untuk backward-compat)
-  const displayLabel = firestoreLabel || KAT_UMUR_LABEL[kat] || kat
-  const displayFull  = firestoreLabel || KAT_UMUR_FULL[kat] || kat
-  const label  = full
-    ? `Kat ${kat} — ${displayFull}`
-    : `Kat ${kat} (${displayLabel})`
+  // Format lama: huruf tunggal A-H atau PPKI → "Kat C (B14)"
+  // Format baru: L10, L12, OPEN-SK-L, dll → tunjuk label terus
+  const isOldFormat = /^[A-H]$/.test(kat) || kat === 'PPKI'
+  let label
+  if (isOldFormat) {
+    const displayLabel = firestoreLabel || KAT_UMUR_LABEL[kat] || kat
+    const displayFull  = firestoreLabel || KAT_UMUR_FULL[kat] || kat
+    label = full ? `Kat ${kat} — ${displayFull}` : `Kat ${kat} (${displayLabel})`
+  } else {
+    // Format baru — tunjuk firestoreLabel atau kod terus (L10, P12, OPEN-SK-L...)
+    label = firestoreLabel || kat
+  }
   return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colors[kat]||'bg-gray-100 text-gray-500'}`}>{kat ? label : '?'}</span>
 }
 
@@ -166,15 +161,46 @@ function KatDropdown({ noKP, value, kategoriList, disabled, onSaved,
     if (newKat === (value || '')) return
     setSaving(true)
     try {
+      // ── GATE: semak pendaftaran aktif sebelum benarkan tukar kategori ────────
+      if (kejohananId) {
+        const pendSnap = await getDoc(doc(db, 'kejohanan', kejohananId, 'pendaftaran', noKP))
+        if (pendSnap.exists()) {
+          const acaraIds = pendSnap.data().acaraIds || []
+          if (acaraIds.length > 0) {
+            // Semak setiap acara — adakah OPEN (isTerbuka) atau tidak
+            const acaraSnaps = await Promise.all(
+              acaraIds.map(id => getDoc(doc(db, 'kejohanan', kejohananId, 'acara', id)))
+            )
+            // Kumpul acara BUKAN OPEN
+            const bukanOpen = acaraSnaps.filter(s => {
+              if (!s.exists()) return false
+              const katId = s.data().kategoriId || s.data().kategoriKod || ''
+              const katObj = kategoriList.find(k => (k.id === katId) || (k.kod === katId))
+              return !katObj?.isTerbuka
+            })
+            if (bukanOpen.length > 0) {
+              const namaAcara = bukanOpen
+                .map(s => s.data().namaAcara || s.data().nama || s.id)
+                .join(', ')
+              alert(
+                `Tidak boleh tukar kategori.\n\n` +
+                `Atlet ini sudah mendaftar acara: ${namaAcara}.\n\n` +
+                `Buang pendaftaran acara dahulu, kemudian tukar kategori.`
+              )
+              setSaving(false)
+              return
+            }
+            // Hanya ada acara OPEN — buang pendaftaran keseluruhan tidak perlu,
+            // acara OPEN kekal. Tukar kategori dibenar.
+          }
+        }
+      }
+      // ── Tukar kategori ────────────────────────────────────────────────────────
       await updateDoc(doc(db, 'atlet', noKP), {
         kategoriKod: newKat || null,
         updatedAt: serverTimestamp(),
       })
-      // Buang pendaftaran acara lama — kategori bertukar, acara lama tidak lagi sah
-      // deleteDoc idempoten — selamat walaupun dokumen tiada
-      if (kejohananId) {
-        await deleteDoc(doc(db, 'kejohanan', kejohananId, 'pendaftaran', noKP))
-      }
+      // Tiada acara bukan-OPEN — pendaftaran tidak perlu dibuang
       onSaved(newKat)
     } catch (err) {
       alert('Gagal kemaskini kategori: ' + err.message)
@@ -761,7 +787,8 @@ function DaftarModal({ acara, kejohanan, atletSekolah, pendaftaranList, jadualLi
             <div className="space-y-1.5">
               <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">Pilih Atlet ({atletLayak.length} layak)</p>
               {atletLayak.map(a => {
-                const kat = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                const kat = a.kategoriKod || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                const katObj = kategoriList.find(k => (k.kod || k.id) === kat)
                 const isSelected = selected.includes(a.noKP)
                 // Semak jika memilih ini akan melebihi had
                 const willExceed = !isSelected && selected.length >= slotSekolahBaki
@@ -786,7 +813,7 @@ function DaftarModal({ acara, kejohanan, atletSekolah, pendaftaranList, jadualLi
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <KategoriBadge kat={kat} />
+                      <KategoriBadge kat={kat} firestoreLabel={katObj?.label || katObj?.nama || undefined} />
                       <JantinaBadge j={a.jantina} />
                     </div>
                   </button>
