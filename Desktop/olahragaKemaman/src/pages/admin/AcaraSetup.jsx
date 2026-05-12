@@ -1783,6 +1783,298 @@ function HadPesertaPanel({ acaraList, kejohananId, onRefresh, kategoriList = [] 
   )
 }
 
+// ─── SemakAcara Tab ───────────────────────────────────────────────────────────
+
+function SemakAcara({ acaraList, kategoriList, kejohananId, onHadUpdated }) {
+  const [fJantina,   setFJantina]   = useState('semua')
+  const [fPeringkat, setFPeringkat] = useState('semua')
+  const [fKat,       setFKat]       = useState('semua')
+  const [editId,     setEditId]     = useState(null)
+  const [editVal,    setEditVal]    = useState('')
+  const [saving,     setSaving]     = useState(false)
+
+  // Bina set aceraId yg menjadi parent (ada final linked padanya)
+  const parentIds = new Set(
+    acaraList.filter(a => a.parentAcaraId).map(a => String(a.parentAcaraId))
+  )
+
+  function getPeringkat(a) {
+    const key = String(a.noAcara || a.aceraId || a.id)
+    if (a.parentAcaraId) return 'final'
+    if (parentIds.has(key)) return 'saringan'
+    return 'biasa'
+  }
+
+  // Filter
+  const listed = acaraList.filter(a => {
+    if (fJantina !== 'semua' && a.jantina !== fJantina) return false
+    if (fKat     !== 'semua' && a.kategoriKod !== fKat) return false
+    if (fPeringkat === 'final'    && getPeringkat(a) !== 'final')                     return false
+    if (fPeringkat === 'saringan' && !['saringan','biasa'].includes(getPeringkat(a))) return false
+    return true
+  })
+
+  // Group by kategoriKod ikut susunan kategoriList
+  const katOrder = kategoriList.map(k => k.kod)
+  const groups   = {}
+  listed.forEach(a => {
+    const k = a.kategoriKod || '—'
+    if (!groups[k]) groups[k] = []
+    groups[k].push(a)
+  })
+  const sortedKats = Object.keys(groups).sort((a, b) => {
+    const ia = katOrder.indexOf(a), ib = katOrder.indexOf(b)
+    if (ia === -1 && ib === -1) return a.localeCompare(b)
+    if (ia === -1) return 1; if (ib === -1) return -1
+    return ia - ib
+  })
+
+  // Simpan had inline
+  async function saveHad(a) {
+    const val = parseInt(editVal, 10)
+    if (isNaN(val) || val < 1) { setEditId(null); return }
+    const key = String(a.noAcara || a.aceraId || a.id)
+    setSaving(true)
+    try {
+      await updateDoc(doc(db, 'kejohanan', kejohananId, 'acara', key),
+        { hadAtletPerSekolah: val, updatedAt: serverTimestamp() })
+      onHadUpdated(key, val)
+    } catch (e) { alert('Ralat: ' + e.message) }
+    finally { setSaving(false); setEditId(null) }
+  }
+
+  const JENIS_SHORT = { lorong:'Lorong', mass_start:'Mass', padang_lompat:'Lompat', padang_balin:'Balin', relay:'Relay' }
+  const P_BADGE     = { saringan:'bg-blue-100 text-blue-700', final:'bg-amber-100 text-amber-700', biasa:'bg-gray-100 text-gray-400' }
+  const P_LABEL     = { saringan:'Saringan', final:'Final', biasa:'—' }
+
+  return (
+    <div className="space-y-4">
+
+      {/* Stats ringkas */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { l:'Jumlah Acara',    v: acaraList.length,                              c:'text-[#003399]', bg:'bg-blue-50' },
+          { l:'Lelaki',          v: acaraList.filter(a=>a.jantina==='L').length,   c:'text-blue-600',  bg:'bg-blue-50' },
+          { l:'Perempuan',       v: acaraList.filter(a=>a.jantina==='P').length,   c:'text-pink-600',  bg:'bg-pink-50' },
+          { l:'Final Dirancang', v: acaraList.filter(a=>a.parentAcaraId).length,   c:'text-amber-600', bg:'bg-amber-50' },
+        ].map(s => (
+          <div key={s.l} className={`${s.bg} rounded-xl px-3 py-2.5 text-center`}>
+            <p className={`text-xl font-black ${s.c}`}>{s.v}</p>
+            <p className="text-[9px] text-gray-500 uppercase tracking-wide">{s.l}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
+          {['semua','L','P'].map(f => (
+            <button key={f} onClick={() => setFJantina(f)}
+              className={`px-3 py-1.5 font-bold transition-colors ${fJantina===f?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
+              {f==='semua'?'L+P':f}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
+          {[['semua','Semua'],['saringan','Saringan'],['final','Final']].map(([v,l]) => (
+            <button key={v} onClick={() => setFPeringkat(v)}
+              className={`px-3 py-1.5 font-bold transition-colors ${fPeringkat===v?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {kategoriList.length > 0 && (
+          <div className="flex flex-wrap rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
+            {['semua', ...kategoriList.map(k=>k.kod).filter(Boolean)].map(f => (
+              <button key={f} onClick={() => setFKat(f)}
+                className={`px-2.5 py-1.5 font-bold transition-colors border-r border-gray-100 last:border-r-0 ${fKat===f?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
+                {f==='semua' ? 'Semua Kat' : (kategoriList.find(k=>k.kod===f)?.label || f)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <p className="text-[10px] text-gray-400 ml-auto">{listed.length} acara dipaparkan</p>
+      </div>
+
+      {/* Info inline edit */}
+      <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+        <svg className="w-3.5 h-3.5 text-blue-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+        </svg>
+        <p className="text-[10px] text-blue-700">
+          Klik angka <strong>Max/Skl</strong> untuk edit had atlet per sekolah terus dalam jadual ini.
+          Simpan dengan <kbd className="bg-blue-100 px-1 rounded font-mono">Enter</kbd> atau klik luar.
+          Untuk edit nama / kategori / no acara — guna tab <strong>Urus Acara</strong>.
+        </p>
+      </div>
+
+      {/* Table per kumpulan kategori */}
+      {listed.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-100 py-12 text-center text-sm text-gray-400">
+          Tiada acara yang sepadan dengan penapis.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sortedKats.map(katKod => {
+            const katObj = kategoriList.find(k => k.kod === katKod)
+            const warna  = katObj?.warna || '#6b7280'
+            const rows   = groups[katKod]
+            const jL     = rows.filter(a => a.jantina === 'L').length
+            const jP     = rows.filter(a => a.jantina === 'P').length
+
+            return (
+              <div key={katKod} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+
+                {/* Header kumpulan */}
+                <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100"
+                  style={{ borderLeftWidth: 4, borderLeftColor: warna }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[11px] font-black shrink-0"
+                    style={{ backgroundColor: warna }}>
+                    {katObj?.label || katKod}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-gray-800 leading-tight">{katObj?.nama || katKod}</p>
+                    <p className="text-[9px] text-gray-400">{katObj?.jenisSekolah || '—'}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="bg-blue-50 text-blue-700 font-bold text-[9px] px-1.5 py-0.5 rounded-full">{jL}L</span>
+                    <span className="bg-pink-50 text-pink-700 font-bold text-[9px] px-1.5 py-0.5 rounded-full">{jP}P</span>
+                    <span className="text-[9px] text-gray-400">{rows.length} acara</span>
+                  </div>
+                </div>
+
+                {/* Jadual */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100 text-[9px] font-bold text-gray-400 uppercase tracking-wide">
+                        <th className="px-3 py-2 text-left w-12">No</th>
+                        <th className="px-3 py-2 text-left">Nama Acara</th>
+                        <th className="px-3 py-2 text-center w-10">J</th>
+                        <th className="px-3 py-2 text-center w-16">Jenis</th>
+                        <th className="px-3 py-2 text-center w-28">
+                          Max/Skl
+                          <span className="ml-1 normal-case text-[8px] font-normal text-gray-300">(klik edit)</span>
+                        </th>
+                        <th className="px-3 py-2 text-center w-24">Peringkat</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((a, ri) => {
+                        const key      = String(a.noAcara || a.aceraId || a.id)
+                        const peringkat = getPeringkat(a)
+                        const isEditing = editId === key
+
+                        return (
+                          <tr key={key}
+                            className={`border-b border-gray-50 last:border-0 transition-colors
+                              ${ri % 2 === 0 ? '' : 'bg-gray-50/30'}
+                              ${!a.isAktif ? 'opacity-40' : ''}
+                            `}>
+
+                            {/* No Acara */}
+                            <td className="px-3 py-2.5">
+                              <span className="font-mono font-black text-[11px] text-[#003399]">{a.noAcara || key}</span>
+                            </td>
+
+                            {/* Nama Acara */}
+                            <td className="px-3 py-2.5 font-semibold text-gray-800">{a.namaAcara}</td>
+
+                            {/* Jantina */}
+                            <td className="px-3 py-2.5 text-center">
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
+                                ${a.jantina==='L' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                                {a.jantina}
+                              </span>
+                            </td>
+
+                            {/* Jenis */}
+                            <td className="px-3 py-2.5 text-center">
+                              <span className="text-[9px] font-semibold text-gray-500">
+                                {JENIS_SHORT[a.jenisAcara] || a.jenisAcara}
+                              </span>
+                            </td>
+
+                            {/* Had Atlet — inline edit */}
+                            <td className="px-3 py-2.5 text-center">
+                              {isEditing ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <input
+                                    autoFocus
+                                    type="number" min={1} max={99}
+                                    value={editVal}
+                                    onChange={e => setEditVal(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') saveHad(a)
+                                      if (e.key === 'Escape') setEditId(null)
+                                    }}
+                                    onBlur={() => saveHad(a)}
+                                    className="w-14 text-center text-sm font-black border-2 border-[#003399] rounded-lg px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-[#003399]/25"
+                                  />
+                                  {saving && (
+                                    <svg className="w-3 h-3 animate-spin text-[#003399]" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                                    </svg>
+                                  )}
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => { setEditId(key); setEditVal(String(a.hadAtletPerSekolah ?? 2)) }}
+                                  className="group inline-flex items-center gap-1 hover:text-[#003399] transition-colors"
+                                  title="Klik untuk edit">
+                                  <span className="text-sm font-black text-gray-800 group-hover:text-[#003399]">
+                                    {a.hadAtletPerSekolah ?? '—'}
+                                  </span>
+                                  <svg className="w-3 h-3 text-gray-300 group-hover:text-[#003399] opacity-0 group-hover:opacity-100 transition-opacity"
+                                    fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round"
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                  </svg>
+                                </button>
+                              )}
+                            </td>
+
+                            {/* Peringkat */}
+                            <td className="px-3 py-2.5 text-center">
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${P_BADGE[peringkat]}`}>
+                                {P_LABEL[peringkat]}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-3 items-center pt-1">
+        <span className="flex gap-1.5 items-center">
+          <span className="bg-blue-100 text-blue-700 font-bold text-[9px] px-1.5 py-0.5 rounded-full">Saringan</span>
+          <span className="text-[9px] text-gray-400">= ada final dirancang</span>
+        </span>
+        <span className="flex gap-1.5 items-center">
+          <span className="bg-amber-100 text-amber-700 font-bold text-[9px] px-1.5 py-0.5 rounded-full">Final</span>
+          <span className="text-[9px] text-gray-400">= perlawanan akhir</span>
+        </span>
+        <span className="flex gap-1.5 items-center">
+          <span className="bg-gray-100 text-gray-400 font-bold text-[9px] px-1.5 py-0.5 rounded-full">—</span>
+          <span className="text-[9px] text-gray-400">= tiada struktur final</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
 // ─── Halaman Utama ────────────────────────────────────────────────────────────
 
 export default function AcaraSetup() {
@@ -1810,6 +2102,9 @@ export default function AcaraSetup() {
   const [renameVal, setRenameVal]         = useState('')
   const [renaming, setRenaming]           = useState(false)
   const [renameErr, setRenameErr]         = useState('')
+
+  // Tab utama
+  const [activeTab, setActiveTab]         = useState('setup') // 'setup' | 'semak'
 
   // Inline add row per hari
   const [addingHari, setAddingHari]       = useState(null) // tarikhAcara string
@@ -2011,7 +2306,34 @@ export default function AcaraSetup() {
         </button>
       </div>
 
+      {/* Tab bar */}
       {selectedKej && (
+        <div className="flex rounded-xl border border-gray-200 overflow-hidden text-xs bg-white w-fit shadow-sm">
+          {[
+            { key: 'setup', label: 'Urus Acara' },
+            { key: 'semak', label: 'Semak Acara' },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
+              className={`px-5 py-2.5 font-semibold transition-colors border-r border-gray-200 last:border-r-0 ${
+                activeTab === t.key ? 'bg-[#003399] text-white' : 'text-gray-500 hover:bg-gray-50'
+              }`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Tab: Semak Acara */}
+      {selectedKej && activeTab === 'semak' && (
+        <SemakAcara
+          acaraList={acaraList}
+          kategoriList={kategoriList}
+          kejohananId={selectedKej}
+          onHadUpdated={handleHadUpdated}
+        />
+      )}
+
+      {selectedKej && activeTab === 'setup' && (
         <>
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -2410,6 +2732,7 @@ export default function AcaraSetup() {
           <HadPesertaPanel acaraList={acaraList} kejohananId={selectedKej} onRefresh={fetchAcara} kategoriList={kategoriList} />
         </>
       )}
+
 
       {/* Modals */}
       {modal?.mode === 'add' && (
