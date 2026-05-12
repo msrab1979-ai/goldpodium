@@ -21,6 +21,8 @@ import {
   serverTimestamp, query, orderBy, where, writeBatch, getDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
 
@@ -1785,7 +1787,7 @@ function HadPesertaPanel({ acaraList, kejohananId, onRefresh, kategoriList = [] 
 
 // ─── SemakAcara Tab ───────────────────────────────────────────────────────────
 
-function SemakAcara({ acaraList, kategoriList, kejohananId, onHadUpdated }) {
+function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdated }) {
   const [fJantina,   setFJantina]   = useState('semua')
   const [fPeringkat, setFPeringkat] = useState('semua')
   const [fKat,       setFKat]       = useState('semua')
@@ -1840,9 +1842,169 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, onHadUpdated }) {
     finally { setSaving(false); setEditId(null) }
   }
 
-  const JENIS_SHORT = { lorong:'Lorong', mass_start:'Mass', padang_lompat:'Lompat', padang_balin:'Balin', relay:'Relay' }
+  const JENIS_SHORT = { lorong:'Lorong', mass_start:'Mass Start', padang_lompat:'Lompat', padang_balin:'Balin', relay:'Relay' }
   const P_BADGE     = { saringan:'bg-blue-100 text-blue-700', final:'bg-amber-100 text-amber-700', akhir:'bg-green-100 text-green-700' }
   const P_LABEL     = { saringan:'Saringan', final:'Final', akhir:'Akhir' }
+
+  // ── Cetak PDF ───────────────────────────────────────────────────────────────
+  function cetakPDF() {
+    const pdf    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW  = 210
+    const pageH  = 297
+    const mL     = 14   // margin kiri
+    const mR     = 14   // margin kanan
+    const usable = pageW - mL - mR  // 182mm
+
+    const tarikh = new Date().toLocaleDateString('ms-MY', {
+      day: '2-digit', month: 'long', year: 'numeric',
+    })
+    const masa = new Date().toLocaleTimeString('ms-MY', {
+      hour: '2-digit', minute: '2-digit',
+    })
+
+    // ── Header halaman pertama ─────────────────────────────────────────────
+    // Bar biru atas
+    pdf.setFillColor(0, 51, 153)
+    pdf.rect(mL, 10, usable, 14, 'F')
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(12)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text('SENARAI ACARA KEJOHANAN', mL + 5, 19.5)
+
+    // Nama kejohanan
+    pdf.setTextColor(20, 20, 20)
+    pdf.setFontSize(10)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(namaKej || 'Kejohanan Olahraga', mL, 33)
+
+    // Maklumat cetak
+    pdf.setFontSize(7.5)
+    pdf.setFont('helvetica', 'normal')
+    pdf.setTextColor(100, 100, 100)
+    pdf.text(`Dicetak: ${tarikh}  •  ${masa}`, mL, 38)
+
+    // Summary stats bar
+    const saringanCount = acaraList.filter(a => a.peringkat === 'saringan').length
+    const finalCount    = acaraList.filter(a => a.parentAcaraId).length
+    const akhirCount    = acaraList.filter(a => a.peringkat !== 'saringan' && !a.parentAcaraId).length
+    const statsRow = [
+      `Jumlah Acara: ${acaraList.length}`,
+      `Saringan: ${saringanCount}`,
+      `Akhir: ${akhirCount}`,
+      `Final: ${finalCount}`,
+      `Dipapar: ${listed.length}`,
+    ]
+    pdf.setFontSize(7.5)
+    pdf.setTextColor(40, 40, 40)
+    statsRow.forEach((s, i) => {
+      pdf.text(s, mL + i * (usable / statsRow.length), 44)
+    })
+
+    // Garis pemisah
+    pdf.setDrawColor(0, 51, 153)
+    pdf.setLineWidth(0.5)
+    pdf.line(mL, 47, mL + usable, 47)
+
+    // ── Jadual per kategori ────────────────────────────────────────────────
+    let startY = 51
+    const colWidths = { no: 13, nama: 77, jantina: 13, jenis: 24, had: 22, peringkat: 27 }
+
+    // Helper parse warna hex → [r, g, b]
+    function hexRGB(hex) {
+      const h = (hex || '#6b7280').replace('#', '')
+      return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]
+    }
+
+    sortedKats.forEach((katKod) => {
+      const katObj = kategoriList.find(k => k.kod === katKod)
+      const warna  = katObj?.warna || '#6b7280'
+      const [r, g, b] = hexRGB(warna)
+      const rows   = groups[katKod]
+      const jL     = rows.filter(a => a.jantina === 'L').length
+      const jP     = rows.filter(a => a.jantina === 'P').length
+
+      // Header kumpulan sebagai baris pertama — gabung semua kolum
+      const groupHeader = `${katObj?.label || katKod}   ${katObj?.nama || katKod}   |   ${katObj?.jenisSekolah || '—'}   |   ${jL}L  ${jP}P   |   ${rows.length} acara`
+
+      autoTable(pdf, {
+        startY,
+        margin: { left: mL, right: mR },
+        head: [
+          // Row 1 — header kumpulan (warna kategori)
+          [{ content: groupHeader, colSpan: 6,
+             styles: { fillColor: [r, g, b], textColor: [255,255,255], fontStyle: 'bold', fontSize: 8.5, cellPadding: { top:3, bottom:3, left:4, right:4 } }
+          }],
+          // Row 2 — header kolum
+          ['No', 'Nama Acara', 'J', 'Jenis', 'Max/Skl', 'Peringkat'],
+        ],
+        body: rows.map(a => [
+          a.noAcara || a.aceraId || a.id,
+          a.namaAcara || '—',
+          a.jantina || '—',
+          JENIS_SHORT[a.jenisAcara] || a.jenisAcara || '—',
+          a.hadAtletPerSekolah ?? '—',
+          P_LABEL[getPeringkat(a)],
+        ]),
+        columnStyles: {
+          0: { cellWidth: colWidths.no,       halign: 'center', fontStyle: 'bold'   },
+          1: { cellWidth: colWidths.nama                                             },
+          2: { cellWidth: colWidths.jantina,  halign: 'center'                      },
+          3: { cellWidth: colWidths.jenis,    halign: 'center'                      },
+          4: { cellWidth: colWidths.had,      halign: 'center', fontStyle: 'bold'   },
+          5: { cellWidth: colWidths.peringkat, halign: 'center'                     },
+        },
+        headStyles: {
+          fillColor: [30, 58, 120],
+          textColor: [255, 255, 255],
+          fontSize: 7.5,
+          fontStyle: 'bold',
+          cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+        },
+        bodyStyles: {
+          fontSize: 8,
+          cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+          textColor: [20, 20, 20],
+          lineColor: [220, 220, 230],
+          lineWidth: 0.1,
+        },
+        alternateRowStyles: { fillColor: [247, 249, 255] },
+        didParseCell(data) {
+          // Warnakan badge peringkat
+          if (data.section === 'body' && data.column.index === 5) {
+            const val = data.cell.raw
+            if (val === 'Saringan') { data.cell.styles.textColor = [29, 78, 216]; data.cell.styles.fontStyle = 'bold' }
+            if (val === 'Final')    { data.cell.styles.textColor = [180, 83, 9];  data.cell.styles.fontStyle = 'bold' }
+            if (val === 'Akhir')    { data.cell.styles.textColor = [21, 128, 61]; data.cell.styles.fontStyle = 'bold' }
+          }
+          // Warnakan jantina
+          if (data.section === 'body' && data.column.index === 2) {
+            if (data.cell.raw === 'L') data.cell.styles.textColor = [29, 78, 216]
+            if (data.cell.raw === 'P') data.cell.styles.textColor = [190, 24, 93]
+            data.cell.styles.fontStyle = 'bold'
+          }
+        },
+        didDrawPage(data) {
+          // Footer setiap halaman
+          const pg = pdf.internal.getNumberOfPages()
+          pdf.setFontSize(7)
+          pdf.setTextColor(150, 150, 150)
+          pdf.setFont('helvetica', 'normal')
+          pdf.text('KOAM — Sistem Pengurusan Kejohanan Olahraga', mL, pageH - 8)
+          pdf.text(`Halaman ${pg}`, pageW / 2, pageH - 8, { align: 'center' })
+          pdf.text(tarikh, pageW - mR, pageH - 8, { align: 'right' })
+          // Garis footer
+          pdf.setDrawColor(200, 210, 230)
+          pdf.setLineWidth(0.3)
+          pdf.line(mL, pageH - 11, pageW - mR, pageH - 11)
+        },
+      })
+
+      startY = pdf.lastAutoTable.finalY + 5
+    })
+
+    const fname = `Semak_Acara_${(namaKej || 'kejohanan').replace(/\s+/g,'_')}.pdf`
+    pdf.save(fname)
+  }
 
   return (
     <div className="space-y-4">
@@ -1860,6 +2022,17 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, onHadUpdated }) {
             <p className="text-[9px] text-gray-500 uppercase tracking-wide">{s.l}</p>
           </div>
         ))}
+      </div>
+
+      {/* Toolbar: Cetak PDF */}
+      <div className="flex justify-end">
+        <button onClick={cetakPDF}
+          className="flex items-center gap-2 px-4 py-2 bg-[#003399] text-white text-xs font-bold rounded-lg hover:bg-[#002288] shadow-sm transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+          </svg>
+          Cetak PDF
+        </button>
       </div>
 
       {/* Filter bar */}
@@ -2326,6 +2499,7 @@ export default function AcaraSetup() {
           acaraList={acaraList}
           kategoriList={kategoriList}
           kejohananId={selectedKej}
+          namaKej={namaKej}
           onHadUpdated={handleHadUpdated}
         />
       )}
