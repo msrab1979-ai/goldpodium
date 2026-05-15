@@ -378,7 +378,7 @@ function AtletRow({ atlet, rank, isDipilih, onPilih, onDetail }) {
     const items = rekodList.filter(r => r.peringkat === peringkat)
     for (const r of items) {
       const key = makeRekodKey(
-        r.namaAcara, r.jantina || atlet.jantina,
+        r.namaAcaraPendek || r.namaAcara, r.jantina || atlet.jantina,
         r.kategoriKod || atlet.kategoriKod, peringkat
       )
       if (rekodCache[key]) continue

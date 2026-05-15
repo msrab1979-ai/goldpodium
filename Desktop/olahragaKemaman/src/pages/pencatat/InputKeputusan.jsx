@@ -1032,6 +1032,7 @@ export default function InputKeputusan() {
   const [sekolahMap,    setSekolahMap]    = useState({})
   const [kategoriMap,   setKategoriMap]   = useState({}) // kod → label (L12/P15...)
   const [cetakLoading,  setCetakLoading]  = useState(false)
+  const [cetakBilangan, setCetakBilangan] = useState(3)
   const [finalSetup,    setFinalSetup]    = useState(null) // tetapan/finalSetup
   const [loading,       setLoading]       = useState(true)
 
@@ -1641,7 +1642,8 @@ export default function InputKeputusan() {
       // Fetch rekod — rujuk koleksi rekod base acara + kategori
       const PKOD = { daerah: 'D', negeri: 'N', kebangsaan: 'K' }
       const peringkatKej = PKOD[(kejohananData?.peringkat || '').toLowerCase()] || 'D'
-      const rKey = [selectedAcara.namaAcara, selectedAcara.jantina, selectedAcara.kategoriKod, peringkatKej]
+      const rekodNamaCetak = selectedAcara.namaAcaraPendek || selectedAcara.namaAcara
+      const rKey = [rekodNamaCetak, selectedAcara.jantina, selectedAcara.kategoriKod, peringkatKej]
         .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
       let rekodDoc = null
       try {
@@ -1651,12 +1653,11 @@ export default function InputKeputusan() {
       // rekodBaru = rekod dipecah dalam kejohanan ini (postRasmi dah run)
       const isRekodBaru = rekodDoc && rekodDoc.kejohananId === kejohananId
 
-      // Peserta final — had kepada bilanganKedudukan, sort by rank
-      const bilanganKedudukan = kejohananData?.bilanganKedudukan ?? 8
+      // Peserta final — had kepada cetakBilangan (3 atau 5)
       const pesertaFinal = (selectedHeat.peserta || [])
         .filter(p => p.rankDalamHeat && (p.status === 'selesai' || p.keputusan != null))
         .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
-        .slice(0, bilanganKedudukan)
+        .slice(0, cetakBilangan)
 
       // Helpers
       function fmtPrestasi(val) {
@@ -1755,18 +1756,21 @@ export default function InputKeputusan() {
           head: [['No.', 'Nama Atlet', 'Sekolah', 'Prestasi', 'Status']],
           body: pesertaFinal.map(p => {
             const flagged = ['DNS', 'DNF', 'DQ'].includes(p.status)
+            const MEDAL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5' }
+            const medalLabel = flagged ? p.status : (MEDAL[p.rankDalamHeat] || '')
             return [
               String(p.rankDalamHeat),
               p.namaAtlet || '—',
               sekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '—',
               flagged ? '—' : fmtPrestasi(p.keputusan),
-              flagged ? p.status : '',
+              medalLabel,
             ]
           }),
           styles: {
             fontSize: sal.tblSize,
             cellPadding: sal.tblSize >= 12 ? 3 : 2.5,
             minCellHeight: sal.tblSize >= 12 ? 8 : 7,
+            overflow: 'hidden',
           },
           headStyles: {
             fillColor: sal.clr,
@@ -1777,11 +1781,11 @@ export default function InputKeputusan() {
             minCellHeight: 8,
           },
           columnStyles: {
-            0: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
-            1: { cellWidth: 56 },
-            2: { cellWidth: 66 },
-            3: { halign: 'center', cellWidth: 28, fontStyle: 'bold', textColor: [0, 51, 153] },
-            4: { halign: 'center', cellWidth: 14, fontSize: sal.tblSize - 2, textColor: [180, 60, 60] },
+            0: { halign: 'center', cellWidth: 12, fontStyle: 'bold' },
+            1: { cellWidth: 'auto' },
+            2: { cellWidth: 58 },
+            3: { halign: 'center', cellWidth: 26, fontStyle: 'bold', textColor: [0, 51, 153] },
+            4: { halign: 'center', cellWidth: 28, fontStyle: 'bold', textColor: [180, 60, 60] },
           },
           alternateRowStyles: { fillColor: [248, 248, 252] },
           margin: { left: M, right: M },
@@ -2634,7 +2638,22 @@ export default function InputKeputusan() {
             return (
               <div className="pb-4">
                 <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 space-y-2">
-                  <p className="text-xs font-bold text-green-800">✓ Keputusan Rasmi — Sedia untuk Cetak</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-green-800">✓ Keputusan Rasmi — Sedia untuk Cetak</p>
+                    <div className="flex items-center gap-1 bg-white border border-green-200 rounded-lg p-0.5">
+                      {[3, 4, 5].map(n => (
+                        <button key={n}
+                          onClick={() => setCetakBilangan(n)}
+                          className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
+                            cetakBilangan === n
+                              ? 'bg-[#003399] text-white'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}>
+                          {n} pemenang
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <button
                     onClick={handleCetakHasil}
                     disabled={cetakLoading}

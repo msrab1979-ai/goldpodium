@@ -165,11 +165,12 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
     if (
       grantMedal && !isRelay && rank === 1 &&
       p.keputusan != null && p.keputusan !== '' &&
-      acaraDoc.namaAcara && acaraDoc.jantina && acaraDoc.kategoriKod
+      acaraDoc.jantina && acaraDoc.kategoriKod && (acaraDoc.namaAcaraPendek || acaraDoc.namaAcara)
     ) {
       try {
         const unit        = isPadangAcara ? 'm' : 's'
-        const rKey        = rekodKeyStr(acaraDoc.namaAcara, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
+        const rekodNama   = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
+        const rKey        = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
         const rekodRef    = doc(db, 'rekod', rKey)
         const tuntutanRef = doc(db, 'rekod', rKey + '_tuntutan')
         const [rekodSnap, tuntutanSnap] = await Promise.all([getDoc(rekodRef), getDoc(tuntutanRef)])
@@ -199,8 +200,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
             const rekodLama = rekodSedia ?? null
             await setDoc(doc(db, 'mata_olahragawan', `${p.noKP}_${kejId}`), {
               [`rekod_${acaraDoc.id}`]: {
-                namaAcara:    acaraDoc.namaAcara,
-                kategoriKod:  acaraDoc.kategoriKod,
+                namaAcara:        acaraDoc.namaAcara,
+                namaAcaraPendek:  acaraDoc.namaAcaraPendek || acaraDoc.namaAcara,
+                kategoriKod:      acaraDoc.kategoriKod,
                 jantina:      acaraDoc.jantina,
                 peringkat:    peringkatKej,
                 unit,
@@ -253,10 +255,11 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
     if (
       grantMedal && isRelay && rank === 1 &&
       p.keputusan != null && p.keputusan !== '' && p.kodSekolah &&
-      acaraDoc.namaAcara && acaraDoc.jantina && acaraDoc.kategoriKod
+      acaraDoc.jantina && acaraDoc.kategoriKod && (acaraDoc.namaAcaraPendek || acaraDoc.namaAcara)
     ) {
       try {
-        const rKey        = rekodKeyStr(acaraDoc.namaAcara, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
+        const rekodNama   = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
+        const rKey        = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
         const rekodRef    = doc(db, 'rekod', rKey)
         const tuntutanRef = doc(db, 'rekod', rKey + '_tuntutan')
         const [rekodSnap, tuntutanSnap] = await Promise.all([getDoc(rekodRef), getDoc(tuntutanRef)])

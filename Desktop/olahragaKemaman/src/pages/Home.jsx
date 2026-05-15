@@ -386,7 +386,8 @@ function RekodModal({ peserta, acara, onClose }) {
   }
 
   useEffect(() => {
-    const rKey = rekodKeyHome(acara.namaAcara, acara.jantina, acara.kategoriKod, peringkat)
+    const rekodNama = acara.namaAcaraPendek || acara.namaAcara
+    const rKey = rekodKeyHome(rekodNama, acara.jantina, acara.kategoriKod, peringkat)
     Promise.all([
       getDoc(doc(db, 'rekod', rKey + '_tuntutan')),
       getDoc(doc(db, 'rekod', rKey)),
@@ -1166,12 +1167,9 @@ export default function Home() {
   const _kepAllItems = _allJadualItems
     .filter(item => {
       const s = item.acara.statusAcara
-      return s === 'rasmi' || s === 'tidak_rasmi'
+      return s === 'rasmi' || s === 'tidak_rasmi' || s === 'ada_keputusan'
     })
     .sort((a, b) => {
-      const sa = a.acara.statusAcara === 'rasmi' ? 0 : 1
-      const sb = b.acara.statusAcara === 'rasmi' ? 0 : 1
-      if (sa !== sb) return sa - sb
       if (a.tarikhAcara !== b.tarikhAcara) return (a.tarikhAcara || '').localeCompare(b.tarikhAcara || '')
       return (Number(a.acara.noAcara) || 0) - (Number(b.acara.noAcara) || 0)
     })
@@ -1838,7 +1836,6 @@ export default function Home() {
                         const aceraKey = item.acara.noAcara || item.acara.aceraId || item.acara.acaraId
                         const expKey   = item.acara.acaraId || aceraKey
                         const isExp    = expandedAcara.has(expKey)
-                        const isRasmi  = item.acara.statusAcara === 'rasmi'
                         return (
                           <div key={aceraKey + '_kep_' + i} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                             <button
@@ -1854,12 +1851,8 @@ export default function Home() {
                                 </p>
                               </div>
                               <div className="flex items-center gap-2 shrink-0 ml-2">
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                                  isRasmi
-                                    ? 'bg-green-100 text-green-700'
-                                    : 'bg-amber-100 text-amber-700'
-                                }`}>
-                                  {isRasmi ? '✓ RASMI' : '⏳ SEMENTARA'}
+                                <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                                  KEPUTUSAN
                                 </span>
                                 <svg
                                   className={`w-3.5 h-3.5 text-gray-300 transition-transform duration-150 ${isExp ? 'rotate-180' : ''}`}

@@ -239,7 +239,7 @@ export default function CetakKeputusan() {
         if (peserta.length === 0) continue
 
         // Rekod: rujuk koleksi rekod base acara + kategori
-        const rKey     = rekodKey(acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
+        const rKey     = rekodKey(acara.namaAcaraPendek || acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
         const rekodDoc = rekodMap[rKey] || null
         const top1     = peserta[0]
         // rekodBaru = rekod dipecah dalam kejohanan ini (postRasmi dah jalankan)
@@ -452,7 +452,7 @@ export default function CetakKeputusan() {
           .sort((a, b) => (a.rankDalamHeat || 99) - (b.rankDalamHeat || 99))
           .slice(0, bilanganKedudukan)
 
-        const rKey     = rekodKey(acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
+        const rKey     = rekodKey(acara.namaAcaraPendek || acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
         const rekodDoc = rekodMap[rKey] || null
 
         peserta.forEach(p => {
@@ -656,7 +656,7 @@ export default function CetakKeputusan() {
                     const isRelay  = acara.jenisAcara === 'relay'
 
                     // Semak rekod
-                    const rKey     = rekodKey(acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
+                    const rKey     = rekodKey(acara.namaAcaraPendek || acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
                     const rekodDoc = rekodMap[rKey]
                     const top1     = isRasmi ? (heat.peserta || []).find(p => p.rankDalamHeat === 1 && p.status === 'selesai') : null
                     const pecah    = top1 && rekodDoc && (() => {

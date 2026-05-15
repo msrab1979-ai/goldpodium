@@ -634,7 +634,7 @@ export default function BukuKejohanan() {
           if (peserta.length === 0) return
 
           // Semak rekod
-          const rKey    = rekodKey(acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
+          const rKey    = rekodKey(acara.namaAcaraPendek || acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
           const rekodDoc = rekodMap[rKey] || rekodMap[rKey + '_tuntutan']
           const top1    = peserta[0]
           const adaRekod = rekodDoc && top1 && (() => {

@@ -563,7 +563,7 @@ export default function CetakAcara() {
 
       // Load rekod
       if (acaraData.namaAcara && acaraData.jantina && acaraData.kategoriKod) {
-        const rKey = rekodKeyStr(acaraData.namaAcara, acaraData.jantina, acaraData.kategoriKod, peringkatKod)
+        const rKey = rekodKeyStr(acaraData.namaAcaraPendek || acaraData.namaAcara, acaraData.jantina, acaraData.kategoriKod, peringkatKod)
         const [rSnap, tSnap] = await Promise.all([
           getDoc(doc(db, 'rekod', rKey)),
           getDoc(doc(db, 'rekod', rKey + '_tuntutan')),
