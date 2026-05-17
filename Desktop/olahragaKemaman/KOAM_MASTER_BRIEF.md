@@ -1548,7 +1548,7 @@ SETERUSNYA (ikut keutamaan):
 ### Selesai sesi ini:
 
 ```
-✅ BukuKejohanan — major overhaul (10 bahagian PDF)
+✅ BukuKejohanan — major overhaul (10 bahagian PDF) ✔ TESTED OK
    - Muka Depan: redesign KOAM Official (band gelap 55mm, logo dalam band,
      jalur emas, trek decoration titik-titik, 4 stat boxes, penganjur, footer band)
    - Medal Tally (baharu): fetch medal_tally collection, separate SR/SM dinamik,
@@ -1594,7 +1594,7 @@ Selesai sesi ini:
 ```
 
 ---
-*Versi: 9.0 — BukuKejohanan major overhaul, rekod badge saringan, Olahragawan fix. Deploy 2026-05-17.*
+*Versi: 9.1 — BukuKejohanan tested OK, nameAreaW formula fix. Deploy 2026-05-17.*
 
 ---
 
