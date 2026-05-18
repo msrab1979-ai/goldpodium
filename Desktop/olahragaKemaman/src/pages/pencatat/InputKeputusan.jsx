@@ -2069,7 +2069,7 @@ export default function InputKeputusan() {
             const newNama = rekodDoc.namaAtlet  || '—'
             const newSkol = rekodDoc.namaSekolah || sekolahMap[rekodDoc.kodSekolah] || ''
             pdf.text(
-              '[REKOD ' + pLabel.toUpperCase() + ' BARU]  ' + fmtPrestasi(rekodDoc.prestasi) +
+              '[RBK — REKOD BARU KEJOHANAN]  ' + fmtPrestasi(rekodDoc.prestasi) +
               '  --  ' + newNama + (newSkol ? ' (' + newSkol + ')' : ''),
               M + 3, y + 5.5
             )
@@ -2117,6 +2117,28 @@ export default function InputKeputusan() {
             pdf.setTextColor(0, 0, 0)
             y += 14
           }
+        }
+
+        // ── Kotak MRKL — jika ada peserta menyamai rekod ──
+        const mrkl = pesertaFinal.find(p => p.samaiRekod)
+        if (mrkl) {
+          const mrklNama = mrkl.namaAtlet || (sekolahMap[mrkl.kodSekolah] || mrkl.kodSekolah) || '—'
+          const mrklSkol = isRelayAcara ? '' : (sekolahMap[mrkl.kodSekolah] || mrkl.kodSekolah || '')
+          const mrklPrestasi = fmtPrestasi(mrkl.keputusan)
+          pdf.setLineWidth(0.3)
+          pdf.setFontSize(8)
+          pdf.setFillColor(209, 250, 229)
+          pdf.setDrawColor(20, 150, 100)
+          pdf.rect(M, y, W - M * 2, 10, 'FD')
+          pdf.setFont('helvetica', 'bold')
+          pdf.setTextColor(10, 80, 50)
+          pdf.text(
+            '[MRKL — MENYAMAI REKOD KEJOHANAN LEPAS]  ' + mrklPrestasi +
+            '  --  ' + mrklNama + (mrklSkol ? ' (' + mrklSkol + ')' : ''),
+            M + 3, y + 7
+          )
+          pdf.setTextColor(0, 0, 0)
+          y += 14
         }
 
         // ── Footer ──
