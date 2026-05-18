@@ -171,12 +171,32 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       acaraDoc.jantina && acaraDoc.kategoriKod && (acaraDoc.namaAcaraPendek || acaraDoc.namaAcara)
     ) {
       try {
-        const unit        = isPadangAcara ? 'm' : 's'
-        const rekodNama   = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
-        const rKey        = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
+        const unit      = isPadangAcara ? 'm' : 's'
+        const rekodNama = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
+
+        // Cuba pelbagai key format — sama seperti rekodUtils.cariRekodUntukAcara
+        // Format baru: kategoriKod (A/B/C) | Format lama: kelasDariNama (L12/P12)
+        const namaPenuh  = (acaraDoc.namaAcara      || '').trim()
+        const namaPendek = (acaraDoc.namaAcaraPendek || '').trim()
+        const kelasDariNamaI = (namaPenuh && namaPendek && namaPenuh !== namaPendek)
+          ? namaPenuh.slice(namaPendek.length).trim() : ''
+        const katsToTryI = [...new Set([acaraDoc.kategoriKod, kelasDariNamaI].filter(Boolean))]
+
+        // Cari key yang wujud dalam Firestore
+        let rKey = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
+        let rekodSnap = null, tuntutanSnap = null
+        for (const kat of katsToTryI) {
+          const k = rekodKeyStr(rekodNama, acaraDoc.jantina, kat, peringkatKej)
+          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
+          if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break }
+        }
+        // Jika tiada yang jumpa — fetch primary key (return not-exists snap)
+        if (!rekodSnap) {
+          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', rKey)), getDoc(doc(db, 'rekod', rKey + '_tuntutan'))])
+          rekodSnap = rs; tuntutanSnap = ts
+        }
         const rekodRef    = doc(db, 'rekod', rKey)
         const tuntutanRef = doc(db, 'rekod', rKey + '_tuntutan')
-        const [rekodSnap, tuntutanSnap] = await Promise.all([getDoc(rekodRef), getDoc(tuntutanRef)])
         const newPrestasi = Number(p.keputusan)
 
         // Semak rekod sedia ada — dari rekodRef (aktif) atau tuntutanRef (aktif/tuntutan)
@@ -261,11 +281,28 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       acaraDoc.jantina && acaraDoc.kategoriKod && (acaraDoc.namaAcaraPendek || acaraDoc.namaAcara)
     ) {
       try {
-        const rekodNama   = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
-        const rKey        = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
+        const rekodNama = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
+
+        // Cuba pelbagai key format (sama seperti individu di atas)
+        const namaPenuhR  = (acaraDoc.namaAcara      || '').trim()
+        const namaPendekR = (acaraDoc.namaAcaraPendek || '').trim()
+        const kelasDariNamaR = (namaPenuhR && namaPendekR && namaPenuhR !== namaPendekR)
+          ? namaPenuhR.slice(namaPendekR.length).trim() : ''
+        const katsToTryR = [...new Set([acaraDoc.kategoriKod, kelasDariNamaR].filter(Boolean))]
+
+        let rKey = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
+        let rekodSnap = null, tuntutanSnap = null
+        for (const kat of katsToTryR) {
+          const k = rekodKeyStr(rekodNama, acaraDoc.jantina, kat, peringkatKej)
+          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
+          if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break }
+        }
+        if (!rekodSnap) {
+          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', rKey)), getDoc(doc(db, 'rekod', rKey + '_tuntutan'))])
+          rekodSnap = rs; tuntutanSnap = ts
+        }
         const rekodRef    = doc(db, 'rekod', rKey)
         const tuntutanRef = doc(db, 'rekod', rKey + '_tuntutan')
-        const [rekodSnap, tuntutanSnap] = await Promise.all([getDoc(rekodRef), getDoc(tuntutanRef)])
         const newPrestasi = Number(p.keputusan)
 
         const rekodSediaRelay = rekodSnap.exists() && rekodSnap.data().statusRekod === 'aktif'

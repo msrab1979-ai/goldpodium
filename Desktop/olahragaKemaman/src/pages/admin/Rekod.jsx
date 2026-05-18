@@ -900,7 +900,12 @@ export default function Rekod() {
   const [acaraList,    setAcaraList]    = useState([])
   const [loading,      setLoading]      = useState(true)
   const [selPeringkat, setSelPeringkat] = useState('D')
-  const [activeTab,    setActiveTab]    = useState('semasa')  // 'semasa' | 'tuntutan'
+  const [activeTab,    setActiveTab]    = useState('semasa')  // 'semasa' | 'tuntutan' | 'semak'
+  const [semakPeringkat, setSemakPeringkat] = useState('D')
+  const [semakFilter,    setSemakFilter]    = useState('semua')  // 'semua' | 'tiada' | 'orphan'
+  const [baikiOrphanId,    setBaikiOrphanId]    = useState(null)   // r.id orphan yang sedang dibaiki
+  const [baikiTargetAcara, setBaikiTargetAcara] = useState('')     // namaAcara dipilih dari dropdown
+  const [baikiSaving,      setBaikiSaving]      = useState(false)
   const [modal,        setModal]        = useState(null)      // null | { mode, initial }
   const [showImport,   setShowImport]   = useState(false)
   const [showCetak,    setShowCetak]    = useState(false)
@@ -1157,6 +1162,83 @@ export default function Rekod() {
     }
   }
 
+  // ── Baiki Orphan — re-key rekod ke namaAcara yang betul ─────────────────────
+
+  async function handleBaikiOrphan(orphan, targetNamaAcara) {
+    if (!targetNamaAcara) return
+    const peringkat = orphan.peringkat || semakPeringkat
+    const newKey  = rekodKey(targetNamaAcara, orphan.jantina, orphan.kategoriKod, peringkat)
+    const oldKey  = orphan.id
+
+    if (newKey === oldKey) {
+      setMsg({ type: 'err', text: 'Key sama — tiada perubahan diperlukan.' })
+      return
+    }
+
+    setBaikiSaving(true)
+    try {
+      const newRef  = doc(db, 'rekod', newKey)
+      const newSnap = await getDoc(newRef)
+
+      if (newSnap.exists()) {
+        // Key baru sudah wujud — tanya sama ada padam orphan sahaja
+        if (!confirm(
+          `Rekod dengan key "${newKey}" sudah wujud dalam sistem.\n\n` +
+          `Padam orphan ini sahaja dan kekalkan rekod sedia ada?`
+        )) { setBaikiSaving(false); return }
+        await deleteDoc(doc(db, 'rekod', oldKey))
+        setMsg({ type: 'ok', text: 'Orphan dipadam. Rekod sedia ada dikekalkan.' })
+      } else {
+        // Selamat — pindah ke key baru
+        const { id: _id, rekodId: _rId, ...rest } = orphan
+        await setDoc(newRef, {
+          ...rest,
+          rekodId:   newKey,
+          namaAcara: targetNamaAcara,
+          updatedAt: serverTimestamp(),
+        })
+        await deleteDoc(doc(db, 'rekod', oldKey))
+        setMsg({ type: 'ok', text: `Rekod berjaya dipindah: ${oldKey} → ${newKey}` })
+      }
+
+      setBaikiOrphanId(null)
+      setBaikiTargetAcara('')
+      load()
+    } catch (e) {
+      setMsg({ type: 'err', text: 'Gagal: ' + e.message })
+    } finally {
+      setBaikiSaving(false)
+    }
+  }
+
+  // ── Baiki Key — tukar key lama (L12) ke key baru (C) tanpa tukar data ───────
+
+  async function handleBaikiKey(x) {
+    if (!confirm(
+      `Kemaskini key rekod?\n\n` +
+      `Lama: ${x.rKey}\n` +
+      `Baru: ${x.rKeyBaru}\n\n` +
+      `Data rekod dikekalkan, hanya key diubah.`
+    )) return
+    try {
+      const newRef  = doc(db, 'rekod', x.rKeyBaru)
+      const newSnap = await getDoc(newRef)
+      if (newSnap.exists()) {
+        if (!confirm(`Key "${x.rKeyBaru}" sudah wujud.\nPadam rekod lama (${x.rKey}) sahaja?`)) return
+        await deleteDoc(doc(db, 'rekod', x.rKey))
+        setMsg({ type: 'ok', text: 'Rekod lama dipadam. Rekod baru dikekalkan.' })
+      } else {
+        const { id: _id, rekodId: _rId, ...rest } = x.rekodItem
+        await setDoc(newRef, { ...rest, rekodId: x.rKeyBaru, updatedAt: serverTimestamp() })
+        await deleteDoc(doc(db, 'rekod', x.rKey))
+        setMsg({ type: 'ok', text: `Key dikemas: ${x.rKey} → ${x.rKeyBaru}` })
+      }
+      load()
+    } catch (e) {
+      setMsg({ type: 'err', text: 'Gagal: ' + e.message })
+    }
+  }
+
   // ── Derived ─────────────────────────────────────────────────────────────────
 
   const filteredRekod = rekodList.filter(r => r.peringkat === selPeringkat)
@@ -1175,6 +1257,93 @@ export default function Rekod() {
     const bu = katMap[b]?.urutan ?? 999
     return au !== bu ? au - bu : a.localeCompare(b)
   })
+
+  // ── Semak Sambungan — audit rekod vs acara ───────────────────────────────────
+
+  // Unique acara combos dari acaraList (saringan/final disatukan — guna namaAcaraPendek || namaAcara)
+  const semakData = useMemo(() => {
+    const seen = new Set()
+    const combos = []
+    acaraList.forEach(a => {
+      const namaKey = a.namaAcaraPendek || a.namaAcara
+      const uid = `${namaKey}__${a.jantina}__${a.kategoriKod}`
+      if (seen.has(uid)) return
+      seen.add(uid)
+      combos.push({
+        namaKey,
+        namaAcara: a.namaAcara,
+        jantina: a.jantina,
+        kategoriKod: a.kategoriKod,
+        jenisAcara: a.jenisAcara,
+      })
+    })
+    return combos.map(c => {
+      // ── Sambungan Kuat: key primary (format baru — kategoriKod A/B/C) ─────────
+      const rKeyPrimary = rekodKey(c.namaKey, c.jantina, c.kategoriKod, semakPeringkat)
+      const rekodPrimary = rekodList.find(r => (r.id || r.rekodId) === rKeyPrimary)
+      if (rekodPrimary) {
+        return { ...c, rKey: rKeyPrimary, hasRekod: true, rekodItem: rekodPrimary, connectionType: 'kuat' }
+      }
+
+      // ── Sambungan Lemah: key fallback (format lama — kelasDariNama L12/P12) ───
+      const namaPenuh  = (c.namaAcara || '').trim()
+      const namaPendek = c.namaKey.trim()
+      const kelasDariNama = (namaPenuh && namaPendek && namaPenuh !== namaPendek)
+        ? namaPenuh.slice(namaPendek.length).trim() : ''
+      if (kelasDariNama && kelasDariNama !== c.kategoriKod) {
+        const rKeyFallback = rekodKey(c.namaKey, c.jantina, kelasDariNama, semakPeringkat)
+        const rekodFallback = rekodList.find(r => (r.id || r.rekodId) === rKeyFallback)
+        if (rekodFallback) {
+          return {
+            ...c,
+            rKey:    rKeyFallback,  // key lama dalam Firestore
+            rKeyBaru: rKeyPrimary,  // key baru yang patut
+            hasRekod: true,
+            rekodItem: rekodFallback,
+            connectionType: 'lemah',
+          }
+        }
+      }
+
+      // ── Tiada Sambungan ──────────────────────────────────────────────────────
+      return { ...c, rKey: rKeyPrimary, hasRekod: false, rekodItem: null, connectionType: 'tiada' }
+    })
+  }, [acaraList, rekodList, semakPeringkat])
+
+  // Rekod orphan — ada dalam rekodList tapi tiada padanan dalam acaraList
+  const semakOrphan = useMemo(() => {
+    const validKeys = new Set(semakData.map(x => x.rKey))
+    return rekodList.filter(r => {
+      const rKey = r.id || r.rekodId || ''
+      // Hanya semak rekod peringkat yang sama dengan semakPeringkat
+      return rKey.endsWith(`_${semakPeringkat}`) && !validKeys.has(rKey)
+    })
+  }, [semakData, rekodList, semakPeringkat])
+
+  const semakTiadaCount = useMemo(() => semakData.filter(x => x.connectionType === 'tiada').length, [semakData])
+  const semakLemahCount = useMemo(() => semakData.filter(x => x.connectionType === 'lemah').length, [semakData])
+
+  const semakDisplayData = useMemo(() => {
+    if (semakFilter === 'tiada') return semakData.filter(x => x.connectionType === 'tiada')
+    if (semakFilter === 'lemah') return semakData.filter(x => x.connectionType === 'lemah')
+    return semakData
+  }, [semakData, semakFilter])
+
+  const semakGrouped = useMemo(() => {
+    return semakDisplayData.reduce((acc, x) => {
+      const k = x.kategoriKod || 'Lain-lain'
+      if (!acc[k]) acc[k] = []
+      acc[k].push(x)
+      return acc
+    }, {})
+  }, [semakDisplayData])
+
+  const semakGroupKeys = useMemo(() =>
+    Object.keys(semakGrouped).sort((a, b) => {
+      const au = katMap[a]?.urutan ?? 999
+      const bu = katMap[b]?.urutan ?? 999
+      return au !== bu ? au - bu : a.localeCompare(b)
+    }), [semakGrouped, katMap])
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -1310,6 +1479,7 @@ export default function Rekod() {
         {[
           { key: 'semasa',   label: 'Rekod Semasa' },
           { key: 'tuntutan', label: `Tuntutan${tuntutanList.length ? ` (${tuntutanList.length})` : ''}` },
+          { key: 'semak',    label: `Semak Sambungan${semakLemahCount > 0 ? ` · ${semakLemahCount} lemah` : ''}${semakTiadaCount > 0 ? ` · ${semakTiadaCount} tiada` : ''}${semakOrphan.length > 0 ? ` · ${semakOrphan.length} orphan` : ''}` },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
@@ -1588,6 +1758,460 @@ export default function Rekod() {
                 )
               })}
             </>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Semak Sambungan ── */}
+      {activeTab === 'semak' && (
+        <div className="space-y-4">
+
+          {/* Controls row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Peringkat pills */}
+            <div className="flex gap-1">
+              {['D','N','K'].map(p => (
+                <button key={p} onClick={() => setSemakPeringkat(p)}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${
+                    semakPeringkat === p
+                      ? PERINGKAT_META[p].cls + ' shadow-sm'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  {PERINGKAT_META[p].label}
+                </button>
+              ))}
+            </div>
+            {/* Filter toggle */}
+            <div className="ml-auto flex gap-1 bg-gray-100 p-1 rounded-lg">
+              {[
+                ['semua',  'Semua',          null],
+                ['lemah',  'Lemah',          semakLemahCount],
+                ['tiada',  'Tiada',          semakTiadaCount],
+                ['orphan', 'Orphan',         semakOrphan.length],
+              ].map(([k, l, count]) => (
+                <button key={k} onClick={() => setSemakFilter(k)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    semakFilter === k ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                  }`}>
+                  {l}
+                  {count > 0 && (
+                    <span className={`ml-1 ${
+                      k === 'tiada' ? 'text-red-500' :
+                      k === 'lemah' ? 'text-amber-500' : 'text-amber-500'
+                    }`}>({count})</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-4 gap-3">
+            <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-3 text-center">
+              <p className="text-2xl font-black text-gray-700">{semakData.length}</p>
+              <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mt-0.5">Jumlah Acara</p>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-3 text-center">
+              <p className="text-2xl font-black text-green-700">{semakData.filter(x => x.connectionType === 'kuat').length}</p>
+              <p className="text-[10px] text-green-600 font-semibold uppercase tracking-wide mt-0.5">Sambungan Kuat</p>
+            </div>
+            <div className={`border rounded-xl px-3 py-3 text-center ${semakLemahCount > 0 ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+              <p className={`text-2xl font-black ${semakLemahCount > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{semakLemahCount}</p>
+              <p className={`text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${semakLemahCount > 0 ? 'text-amber-500' : 'text-gray-400'}`}>Sambungan Lemah</p>
+            </div>
+            <div className={`border rounded-xl px-3 py-3 text-center ${semakTiadaCount > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+              <p className={`text-2xl font-black ${semakTiadaCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>{semakTiadaCount}</p>
+              <p className={`text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${semakTiadaCount > 0 ? 'text-red-500' : 'text-gray-400'}`}>Tiada Rekod</p>
+            </div>
+          </div>
+
+          {/* Orphan rekod alert */}
+          {semakOrphan.length > 0 && semakFilter !== 'orphan' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="text-amber-500 text-base mt-0.5">⚠</span>
+              <div className="flex-1">
+                <p className="text-xs font-bold text-amber-800">
+                  {semakOrphan.length} rekod orphan — ada dalam library tapi tiada padanan acara
+                </p>
+                <p className="text-[10px] text-amber-600 mt-0.5">
+                  Mungkin namaAcara berbeza (typo/kes huruf) atau acara sudah dihapus.
+                  Semak dan delete jika perlu.
+                </p>
+              </div>
+              <button onClick={() => setSemakFilter('orphan')}
+                className="shrink-0 px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold rounded-lg transition-colors">
+                Semak Orphan
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="py-12 text-center text-sm text-gray-400">Memuatkan…</div>
+
+          ) : semakFilter === 'orphan' ? (
+            /* ── View: Rekod Orphan ── */
+            semakOrphan.length === 0 ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl py-12 text-center">
+                <p className="text-3xl mb-2">✅</p>
+                <p className="text-sm font-bold text-green-700">Tiada rekod orphan — semua rekod ada padanan acara.</p>
+              </div>
+            ) : (
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border-b border-amber-200">
+                  <span className="text-amber-500">⚠</span>
+                  <p className="text-sm font-bold text-amber-800">Rekod Orphan — tiada padanan acara dalam sistem</p>
+                  <span className="ml-auto text-[10px] text-amber-600">{semakOrphan.length} rekod</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-400 text-[10px] uppercase tracking-wide border-b border-gray-100">
+                        <th className="px-4 py-2 text-left">Nama Acara (dalam rekod)</th>
+                        <th className="px-3 py-2 text-center w-16">Jan.</th>
+                        <th className="px-3 py-2 text-center">Kat.</th>
+                        <th className="px-4 py-2 text-right">Prestasi</th>
+                        <th className="px-4 py-2 text-left">Rekod Key</th>
+                        {canEdit && <th className="px-3 py-2 text-center">Aksi</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {semakOrphan.map(r => {
+                        const kat = katMap[r.kategoriKod]
+                        const isExpanded = baikiOrphanId === r.id
+                        // Dropdown: acara dalam sistem yang sama jantina + kategoriKod
+                        const acaraOptions = [...new Set(
+                          acaraList
+                            .filter(a => a.jantina === r.jantina && a.kategoriKod === r.kategoriKod)
+                            .map(a => a.namaAcaraPendek || a.namaAcara)
+                        )].sort()
+                        const previewNewKey = baikiTargetAcara && isExpanded
+                          ? rekodKey(baikiTargetAcara, r.jantina, r.kategoriKod, r.peringkat || semakPeringkat)
+                          : null
+
+                        return (
+                          <>
+                            <tr key={r.id} className={`border-b border-gray-50 ${isExpanded ? 'bg-amber-100/40' : 'bg-amber-50/30'}`}>
+                              <td className="px-4 py-2.5 font-semibold text-gray-800">{r.namaAcara}</td>
+                              <td className="px-3 py-2.5 text-center">
+                                <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  r.jantina === 'L' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                                }`}>{r.jantina}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-center">
+                                <span className="text-[10px] font-bold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">
+                                  {kat?.label || kat?.nama || r.kategoriKod}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-black text-[#003399]">
+                                {formatPrestasi(r.prestasi, r.unit)}
+                              </td>
+                              <td className="px-4 py-2.5 font-mono text-[9px] text-red-400 break-all">{r.id}</td>
+                              {canEdit && (
+                                <td className="px-3 py-2.5 text-center">
+                                  <div className="flex items-center gap-1 justify-center">
+                                    <button
+                                      onClick={() => {
+                                        if (isExpanded) {
+                                          setBaikiOrphanId(null)
+                                          setBaikiTargetAcara('')
+                                        } else {
+                                          setBaikiOrphanId(r.id)
+                                          setBaikiTargetAcara('')
+                                        }
+                                      }}
+                                      className={`text-[10px] px-2 py-1 rounded font-semibold transition-colors ${
+                                        isExpanded
+                                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                          : 'bg-amber-500 hover:bg-amber-600 text-white'
+                                      }`}
+                                    >
+                                      {isExpanded ? 'Tutup' : 'Baiki'}
+                                    </button>
+                                    <button
+                                      onClick={() => handleDelete(r)}
+                                      className="text-[10px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded font-semibold transition-colors"
+                                    >
+                                      Padam
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+
+                            {/* ── Inline Baiki Panel ── */}
+                            {isExpanded && (
+                              <tr key={`${r.id}_baiki`} className="border-b border-amber-200">
+                                <td colSpan={canEdit ? 6 : 5} className="px-4 py-0">
+                                  <div className="my-3 bg-white border border-amber-300 rounded-xl overflow-hidden shadow-sm">
+                                    {/* Panel header */}
+                                    <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center gap-2">
+                                      <span className="text-amber-500 text-sm">🔧</span>
+                                      <p className="text-xs font-bold text-amber-800">Baiki Rekod Orphan</p>
+                                      <p className="text-[10px] text-amber-600 ml-1">— padankan ke acara yang betul</p>
+                                    </div>
+
+                                    <div className="p-4 space-y-3">
+                                      {/* Key semasa */}
+                                      <div className="flex items-start gap-3">
+                                        <div className="flex-1">
+                                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Key Semasa (orphan)</p>
+                                          <p className="font-mono text-[10px] bg-red-50 border border-red-200 rounded px-2 py-1.5 text-red-700 break-all">{r.id}</p>
+                                        </div>
+                                      </div>
+
+                                      {/* Pilih acara betul */}
+                                      <div>
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">
+                                          Padankan ke acara{acaraOptions.length === 0 ? ' — tiada acara sepadan (jantina+kategori)' : ':'}
+                                        </p>
+                                        {acaraOptions.length > 0 ? (
+                                          <select
+                                            value={baikiTargetAcara}
+                                            onChange={e => setBaikiTargetAcara(e.target.value)}
+                                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 bg-white"
+                                          >
+                                            <option value="">— Pilih acara yang betul —</option>
+                                            {acaraOptions.map(n => (
+                                              <option key={n} value={n}>{n}</option>
+                                            ))}
+                                          </select>
+                                        ) : (
+                                          <p className="text-[10px] text-gray-400 italic">
+                                            Tiada acara dengan jantina={r.jantina} + kategori={r.kategoriKod} dalam sistem.
+                                            Gunakan Padam untuk buang rekod ini.
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      {/* Preview key baru */}
+                                      {previewNewKey && (
+                                        <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+                                          <span className="font-mono text-[9px] text-red-400 line-through break-all">{r.id}</span>
+                                          <span className="text-gray-400 shrink-0">→</span>
+                                          <span className={`font-mono text-[9px] break-all font-bold ${
+                                            previewNewKey === r.id ? 'text-amber-600' : 'text-green-600'
+                                          }`}>{previewNewKey}</span>
+                                          {previewNewKey === r.id && (
+                                            <span className="ml-1 text-[9px] text-amber-600 shrink-0">(tiada beza)</span>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Action buttons */}
+                                      <div className="flex items-center gap-2 pt-1">
+                                        <button
+                                          onClick={() => handleBaikiOrphan(r, baikiTargetAcara)}
+                                          disabled={!baikiTargetAcara || baikiSaving || previewNewKey === r.id}
+                                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-bold rounded-lg transition-colors"
+                                        >
+                                          {baikiSaving ? '⏳ Memproses…' : 'Baiki Sekarang'}
+                                        </button>
+                                        <button
+                                          onClick={() => handleDelete(r)}
+                                          disabled={baikiSaving}
+                                          className="px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+                                        >
+                                          Padam Terus
+                                        </button>
+                                        <button
+                                          onClick={() => { setBaikiOrphanId(null); setBaikiTargetAcara('') }}
+                                          className="px-3 py-2 text-xs text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
+                                        >
+                                          Batal
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+
+          ) : acaraList.length === 0 ? (
+            <div className="bg-white border border-gray-200 rounded-xl py-14 text-center">
+              <p className="text-2xl mb-2">📋</p>
+              <p className="text-sm font-semibold text-gray-500">Tiada acara — pastikan kejohanan aktif wujud.</p>
+            </div>
+
+          ) : semakGroupKeys.length === 0 ? (
+            <div className="bg-green-50 border border-green-200 rounded-xl py-12 text-center">
+              <p className="text-3xl mb-2">✅</p>
+              <p className="text-sm font-bold text-green-700">
+                Semua acara ada rekod peringkat {PERINGKAT_META[semakPeringkat]?.label}!
+              </p>
+            </div>
+
+          ) : (
+            /* ── View: Semua / Tiada ── */
+            <div className="space-y-4">
+              {semakGroupKeys.map(katKod => {
+                const rows = (semakGrouped[katKod] || [])
+                  .sort((a, b) => a.namaKey.localeCompare(b.namaKey) || a.jantina.localeCompare(b.jantina))
+                const kat = katMap[katKod]
+                const tiadaInGroup = rows.filter(x => !x.hasRekod).length
+                return (
+                  <div key={katKod} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                    {/* Group header */}
+                    <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b border-gray-100">
+                      <div className="w-1.5 h-6 rounded-sm" style={{ backgroundColor: kat?.warna || '#94a3b8' }} />
+                      <div>
+                        <span className="text-sm font-bold text-gray-800">{kat?.nama || katKod}</span>
+                        <span className="ml-2 text-[10px] text-gray-400 font-mono">({kat?.label || kat?.kod || katKod})</span>
+                      </div>
+                      <div className="ml-auto flex items-center gap-2">
+                        {tiadaInGroup > 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">
+                            {tiadaInGroup} tiada rekod
+                          </span>
+                        )}
+                        {rows.filter(x => x.connectionType === 'lemah').length > 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            {rows.filter(x => x.connectionType === 'lemah').length} sambungan lemah
+                          </span>
+                        )}
+                        {tiadaInGroup === 0 && rows.filter(x => x.connectionType === 'lemah').length === 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            Lengkap ✓
+                          </span>
+                        )}
+                        <span className="text-[10px] text-gray-400">{rows.length} acara</span>
+                      </div>
+                    </div>
+
+                    {/* Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-gray-400 text-[10px] uppercase tracking-wide border-b border-gray-100">
+                            <th className="px-4 py-2 text-left">Acara</th>
+                            <th className="px-3 py-2 text-center w-16">Jan.</th>
+                            <th className="px-3 py-2 text-center">Kategori</th>
+                            <th className="px-4 py-2 text-left">Status Rekod</th>
+                            <th className="px-4 py-2 text-right">Prestasi</th>
+                            {canEdit && <th className="px-3 py-2 text-center">Aksi</th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map(x => {
+                            const xKat = katMap[x.kategoriKod]
+                            return (
+                              <tr key={x.rKey} className={`border-b border-gray-50 ${
+                                x.connectionType === 'tiada' ? 'bg-red-50/40' :
+                                x.connectionType === 'lemah' ? 'bg-amber-50/40' :
+                                'hover:bg-gray-50'
+                              }`}>
+                                <td className="px-4 py-2.5 font-semibold text-gray-800">{x.namaKey}</td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                    x.jantina === 'L' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                                  }`}>{x.jantina}</span>
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <span className="text-[10px] font-bold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">
+                                    {xKat?.label || xKat?.nama || x.kategoriKod}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {x.connectionType === 'kuat' && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                                      <span className="text-green-700 font-semibold">Sambungan Kuat</span>
+                                      {x.rekodItem?.namaAtlet && (
+                                        <span className="text-gray-400 truncate max-w-[120px]">— {x.rekodItem.namaAtlet}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {x.connectionType === 'lemah' && (
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                                        <span className="text-amber-700 font-semibold">Sambungan Lemah</span>
+                                      </div>
+                                      <p className="text-[9px] font-mono text-amber-500 pl-3.5">
+                                        key lama: {x.rKey}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {x.connectionType === 'tiada' && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+                                      <span className="text-red-600 font-semibold">Tiada Rekod</span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-right">
+                                  {x.hasRekod ? (
+                                    <span className={`font-black text-sm ${x.connectionType === 'lemah' ? 'text-amber-600' : 'text-[#003399]'}`}>
+                                      {formatPrestasi(x.rekodItem.prestasi, x.rekodItem.unit)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-300">—</span>
+                                  )}
+                                </td>
+                                {canEdit && (
+                                  <td className="px-3 py-2.5 text-center">
+                                    {x.connectionType === 'tiada' && (
+                                      <button
+                                        onClick={() => {
+                                          const matchAcara = acaraList.find(a =>
+                                            (a.namaAcaraPendek || a.namaAcara) === x.namaKey &&
+                                            a.jantina === x.jantina && a.kategoriKod === x.kategoriKod
+                                          )
+                                          const unitAuto = matchAcara?.jenisAcara?.startsWith('padang') ? 'm' : 's'
+                                          setModal({ mode: 'add', initial: {
+                                            ...EMPTY_FORM,
+                                            namaAcara:   x.namaKey,
+                                            jantina:     x.jantina,
+                                            kategoriKod: x.kategoriKod,
+                                            peringkat:   semakPeringkat,
+                                            unit:        unitAuto,
+                                          }})
+                                        }}
+                                        className="text-[10px] px-2.5 py-1 bg-[#003399] hover:bg-[#002277] text-white rounded font-semibold transition-colors"
+                                      >
+                                        + Tambah
+                                      </button>
+                                    )}
+                                    {x.connectionType === 'lemah' && (
+                                      <button
+                                        onClick={() => handleBaikiKey(x)}
+                                        className="text-[10px] px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded font-semibold transition-colors"
+                                        title={`Tukar key: ${x.rKey} → ${x.rKeyBaru}`}
+                                      >
+                                        Baiki Key
+                                      </button>
+                                    )}
+                                    {x.connectionType === 'kuat' && (
+                                      <button
+                                        onClick={() => setModal({ mode: 'edit', initial: {
+                                          ...x.rekodItem,
+                                          prestasi:  String(x.rekodItem.prestasi),
+                                          windSpeed: x.rekodItem.windSpeed != null ? String(x.rekodItem.windSpeed) : '',
+                                        }})}
+                                        className="text-[10px] px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded font-semibold transition-colors"
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
+                                  </td>
+                                )}
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )}
