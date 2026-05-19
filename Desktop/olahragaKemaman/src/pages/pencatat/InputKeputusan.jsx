@@ -1568,6 +1568,7 @@ export default function InputKeputusan() {
       const mataPingat        = {
         1: Number(mp[1] ?? mp['1'] ?? 5), 2: Number(mp[2] ?? mp['2'] ?? 3),
         3: Number(mp[3] ?? mp['3'] ?? 2), 4: Number(mp[4] ?? mp['4'] ?? 1),
+        5: Number(mp[5] ?? mp['5'] ?? 0),
       }
       const bilanganKedudukan = kej.bilanganKedudukan ?? 8
       const isRelayAcara      = selectedAcara.isRelay || selectedAcara.jenisAcara === 'relay'

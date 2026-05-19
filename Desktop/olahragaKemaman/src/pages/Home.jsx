@@ -2196,19 +2196,22 @@ export default function Home() {
         const extraCols = kdMax >= 5
           ? [{ key: 'tempat4', label: '4' }, { key: 'tempat5', label: '5' }]
           : kdMax >= 4 ? [{ key: 'tempat4', label: '4' }] : []
+        const showJumlahCol = kejohanan?.showJumlahMedalTally ?? false
 
-        // Olympic sort per kumpulan
+        // Olympic sort per kumpulan — E→P→G→T4→T5→nama abjad
         function sortAndRank(rows) {
           const s = [...rows].sort((a, b) => {
-            if ((b.emas||0) !== (a.emas||0)) return (b.emas||0) - (a.emas||0)
-            if ((b.perak||0) !== (a.perak||0)) return (b.perak||0) - (a.perak||0)
-            if ((b.gangsa||0) !== (a.gangsa||0)) return (b.gangsa||0) - (a.gangsa||0)
+            if ((b.emas||0)    !== (a.emas||0))    return (b.emas||0)    - (a.emas||0)
+            if ((b.perak||0)   !== (a.perak||0))   return (b.perak||0)   - (a.perak||0)
+            if ((b.gangsa||0)  !== (a.gangsa||0))  return (b.gangsa||0)  - (a.gangsa||0)
+            if ((b.tempat4||0) !== (a.tempat4||0)) return (b.tempat4||0) - (a.tempat4||0)
+            if ((b.tempat5||0) !== (a.tempat5||0)) return (b.tempat5||0) - (a.tempat5||0)
             return (a.namaSekolah||'').localeCompare(b.namaSekolah||'', 'ms')
           })
           return s.map((item, i, arr) => {
             if (i === 0) return { ...item, rank: 1 }
             const prev = arr[i - 1]
-            const tie = ['emas','perak','gangsa'].every(k => (item[k]||0) === (prev[k]||0))
+            const tie = ['emas','perak','gangsa','tempat4','tempat5'].every(k => (item[k]||0) === (prev[k]||0))
             return { ...item, rank: tie ? arr[i-1].rank : i + 1 }
           })
         }
@@ -2322,7 +2325,7 @@ export default function Home() {
                                 {extraCols.map(c => (
                                   <th key={c.key} className="px-2 py-2.5 text-center w-8 text-gray-300 font-bold">{c.label}</th>
                                 ))}
-                                <th className="px-3 py-2.5 text-center w-12">Jum</th>
+                                {showJumlahCol && <th className="px-3 py-2.5 text-center w-12">Jum</th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -2332,7 +2335,7 @@ export default function Home() {
                                 const jumlah   = (t.emas||0) + (t.perak||0) + (t.gangsa||0)
                                 const isKatExp = expandedKatRows.has(t.kodSekolah)
                                 const detail   = isKatExp ? { rows: buildKatDetailFromTally(t.kodSekolah) } : null
-                                const totalCols = 5 + extraCols.length + 1 // No+Nama+E+P+G+extra+Jum
+                                const totalCols = 5 + extraCols.length + (showJumlahCol ? 1 : 0) // No+Nama+E+P+G+extra+Jum
 
                                 // Kategori × jantina — ikut jenisSekolah sekolah ini sahaja
                                 // Deduplicate: pelbagai kod dengan umurHad sama → satu row sahaja
@@ -2407,9 +2410,11 @@ export default function Home() {
                                         {t[c.key] || 0}
                                       </td>
                                     ))}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className={`text-xs font-black ${jumlah > 0 ? 'text-gray-700' : 'text-gray-200'}`}>{jumlah}</span>
-                                    </td>
+                                    {showJumlahCol && (
+                                      <td className="px-3 py-3 text-center">
+                                        <span className={`text-xs font-black ${jumlah > 0 ? 'text-gray-700' : 'text-gray-200'}`}>{jumlah}</span>
+                                      </td>
+                                    )}
                                   </tr>
                                   {/* ── Expand: breakdown by kategori ── */}
                                   {isKatExp && (
@@ -2433,7 +2438,7 @@ export default function Home() {
                                                   {extraCols.map(c => (
                                                     <th key={c.key} className="py-1.5 px-2 text-center text-gray-300">{c.label}</th>
                                                   ))}
-                                                  <th className="py-1.5 pl-2 text-center text-gray-400">Jum</th>
+                                                  {showJumlahCol && <th className="py-1.5 pl-2 text-center text-gray-400">Jum</th>}
                                                 </tr>
                                               </thead>
                                               <tbody>
@@ -2474,9 +2479,11 @@ export default function Home() {
                                                           </td>
                                                         )
                                                       })}
-                                                      <td className="py-1 pl-2 text-center">
-                                                        <span className={`font-black ${jum > 0 ? 'text-gray-600' : 'text-gray-200'}`}>{jum}</span>
-                                                      </td>
+                                                      {showJumlahCol && (
+                                                        <td className="py-1 pl-2 text-center">
+                                                          <span className={`font-black ${jum > 0 ? 'text-gray-600' : 'text-gray-200'}`}>{jum}</span>
+                                                        </td>
+                                                      )}
                                                     </tr>
                                                   )
                                                 })}
@@ -2511,9 +2518,11 @@ export default function Home() {
                                                           </td>
                                                         )
                                                       })}
-                                                      <td className="py-1 pl-2 text-center">
-                                                        <span className={`font-black ${jum > 0 ? 'text-[#003399]' : 'text-gray-200'}`}>{jum}</span>
-                                                      </td>
+                                                      {showJumlahCol && (
+                                                        <td className="py-1 pl-2 text-center">
+                                                          <span className={`font-black ${jum > 0 ? 'text-[#003399]' : 'text-gray-200'}`}>{jum}</span>
+                                                        </td>
+                                                      )}
                                                     </tr>
                                                   )
                                                 })}

@@ -64,6 +64,8 @@ const EMPTY_FORM = {
   mataPingat2: 3,             // mata untuk tempat 2
   mataPingat3: 2,             // mata untuk tempat 3
   mataPingat4: 1,             // mata untuk tempat 4
+  mataPingat5: 0,             // mata untuk tempat 5 (dipapar jika bilanganKedudukan >= 5)
+  showJumlahMedalTally: false, // tunjuk kolum Jumlah (E+P+G) dalam Medal Tally
   catatanAdmin: '',
 }
 
@@ -183,11 +185,13 @@ function KejohananModal({ mode, initial, onClose, onSaved }) {
         : null
 
       // Bina objek mataPingat untuk simpan dalam Firestore
+      const bilKed = Math.min(5, Math.max(1, Number(form.bilanganKedudukan) || 3))
       const mataPingatObj = {
         1: Math.max(0, Number(form.mataPingat1) || 0),
         2: Math.max(0, Number(form.mataPingat2) || 0),
         3: Math.max(0, Number(form.mataPingat3) || 0),
         4: Math.max(0, Number(form.mataPingat4) || 0),
+        ...(bilKed >= 5 ? { 5: Math.max(0, Number(form.mataPingat5) || 0) } : {}),
       }
 
       if (isEdit) {
@@ -203,9 +207,10 @@ function KejohananModal({ mode, initial, onClose, onSaved }) {
           daerah:             form.daerah.trim(),
           tempoBantahan:      Number(form.tempoBantahan),
           timerAutoRasmi:     Number(form.timerAutoRasmi) || 15,
-          bilanganKedudukan:  Math.min(5, Math.max(1, Number(form.bilanganKedudukan) || 3)),
-          mataPingat:         mataPingatObj,
-          catatanAdmin:       form.catatanAdmin.trim(),
+          bilanganKedudukan:      bilKed,
+          mataPingat:             mataPingatObj,
+          showJumlahMedalTally:   !!form.showJumlahMedalTally,
+          catatanAdmin:           form.catatanAdmin.trim(),
           updatedAt:          serverTimestamp(),
         })
       } else {
@@ -223,9 +228,10 @@ function KejohananModal({ mode, initial, onClose, onSaved }) {
           daerah:             form.daerah.trim(),
           tempoBantahan:      Number(form.tempoBantahan),
           timerAutoRasmi:     Number(form.timerAutoRasmi) || 15,
-          bilanganKedudukan:  Math.min(5, Math.max(1, Number(form.bilanganKedudukan) || 3)),
-          mataPingat:         mataPingatObj,
-          catatanAdmin:       form.catatanAdmin.trim(),
+          bilanganKedudukan:      bilKed,
+          mataPingat:             mataPingatObj,
+          showJumlahMedalTally:   !!form.showJumlahMedalTally,
+          catatanAdmin:           form.catatanAdmin.trim(),
           statusKejohanan: 'persediaan',
           isAktif:        false,
           createdAt:      serverTimestamp(),
@@ -410,25 +416,38 @@ function KejohananModal({ mode, initial, onClose, onSaved }) {
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Mata Pingat (Tempat 1–4)
+                  Mata Pingat (Tempat 1–{form.bilanganKedudukan})
                   <span className="font-normal text-gray-400 ml-1">— mata individu (bukan relay) masuk Olahragawan Terbaik</span>
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[1,2,3,4].map(t => (
+                <div className="grid grid-cols-5 gap-2">
+                  {Array.from({ length: form.bilanganKedudukan }, (_, i) => i + 1).map(t => (
                     <div key={t}>
-                      <label className="block text-[10px] text-gray-400 mb-1 text-center">Tempat {t}</label>
+                      <label className="block text-[10px] text-gray-400 mb-1 text-center">T{t}</label>
                       <input
                         className={inputCls + ' text-center'}
                         type="number"
                         min={0}
                         max={99}
-                        value={form[`mataPingat${t}`]}
+                        value={form[`mataPingat${t}`] ?? 0}
                         onChange={e => set(`mataPingat${t}`, e.target.value)}
                       />
                     </div>
                   ))}
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">Standard MSSD: 5 – 3 – 2 – 1</p>
+                <p className="text-[10px] text-gray-400 mt-1">Standard MSSD: 5 – 3 – 2 – 1 · T4/T5 = 0 jika tidak dikira</p>
+              </div>
+
+              <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700">Tunjuk Kolum Jumlah dalam Medal Tally</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Jumlah = E + P + G sahaja (T4/T5 adalah tiebreaker, tidak dikira)</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => set('showJumlahMedalTally', !form.showJumlahMedalTally)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${form.showJumlahMedalTally ? 'bg-[#003399]' : 'bg-gray-200'}`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${form.showJumlahMedalTally ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
               </div>
 
               <FormField label="Catatan Admin">
@@ -699,6 +718,8 @@ export default function KejohananSetup() {
         mataPingat2:    mp[2] ?? mp['2'] ?? 3,
         mataPingat3:    mp[3] ?? mp['3'] ?? 2,
         mataPingat4:    mp[4] ?? mp['4'] ?? 1,
+        mataPingat5:          mp[5] ?? mp['5'] ?? 0,
+        showJumlahMedalTally: k.showJumlahMedalTally ?? false,
         catatanAdmin:   k.catatanAdmin || '',
       },
     })

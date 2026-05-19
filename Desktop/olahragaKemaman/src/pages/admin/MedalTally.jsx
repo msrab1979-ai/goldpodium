@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  collection, getDocs, query, where, onSnapshot,
+  collection, getDocs, query, where, onSnapshot, doc, getDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 
@@ -21,6 +21,11 @@ function sortTally(a, b) {
   if (bp !== ap) return bp - ap
   const ag = a.gangsa || 0, bg = b.gangsa || 0
   if (bg !== ag) return bg - ag
+  // T4/T5 sebagai tiebreaker — bukan pingat, tidak masuk jumlah
+  const a4 = a.tempat4 || 0, b4 = b.tempat4 || 0
+  if (b4 !== a4) return b4 - a4
+  const a5 = a.tempat5 || 0, b5 = b.tempat5 || 0
+  if (b5 !== a5) return b5 - a5
   return (a.namaSekolah || a.kodSekolah || '').localeCompare(
     b.namaSekolah || b.kodSekolah || '', 'ms'
   )
@@ -31,10 +36,13 @@ function rankWithTies(sorted) {
   return sorted.map((item, i) => {
     if (i === 0) return { ...item, rank: 1 }
     const prev = sorted[i - 1]
+    // Seri hanya jika E, P, G, T4, T5 semua sama
     const sama =
-      (item.emas   || 0) === (prev.emas   || 0) &&
-      (item.perak  || 0) === (prev.perak  || 0) &&
-      (item.gangsa || 0) === (prev.gangsa || 0)
+      (item.emas    || 0) === (prev.emas    || 0) &&
+      (item.perak   || 0) === (prev.perak   || 0) &&
+      (item.gangsa  || 0) === (prev.gangsa  || 0) &&
+      (item.tempat4 || 0) === (prev.tempat4 || 0) &&
+      (item.tempat5 || 0) === (prev.tempat5 || 0)
     if (!sama) rank = i + 1
     return { ...item, rank }
   })
@@ -72,7 +80,15 @@ function MedalCoin({ count, type }) {
 
 // ─── Tally Table (within accordion) ──────────────────────────────────────────
 
-function TallyTable({ rows }) {
+const EXTRA_COL = {
+  tempat4: { label: 'T4', text: 'text-slate-600',  bg: 'bg-slate-100', border: 'border-slate-300' },
+  tempat5: { label: 'T5', text: 'text-zinc-500',   bg: 'bg-zinc-100',  border: 'border-zinc-300'  },
+}
+
+function TallyTable({ rows, bilanganKedudukan = 3, showJumlah = false }) {
+  const showT4 = bilanganKedudukan >= 4
+  const showT5 = bilanganKedudukan >= 5
+
   if (rows.length === 0) {
     return (
       <div className="py-8 text-center">
@@ -97,13 +113,16 @@ function TallyTable({ rows }) {
             <th className="px-4 py-3 text-center w-14">
               <span className="inline-block w-4 h-4 rounded-full bg-orange-300 border-2 border-orange-400" title="Gangsa" />
             </th>
-            <th className="px-4 py-3 text-center w-16">Jum</th>
+            {showT4 && <th className="px-3 py-3 text-center w-12 text-slate-500">T4</th>}
+            {showT5 && <th className="px-3 py-3 text-center w-12 text-zinc-400">T5</th>}
+            {showJumlah && <th className="px-4 py-3 text-center w-16">Jum</th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((t) => {
             const style = MEDAL_STYLE[t.rank] || {}
             const isTop3 = t.rank <= 3
+            const jumlah = (t.emas||0)+(t.perak||0)+(t.gangsa||0)
             return (
               <tr
                 key={t.id}
@@ -135,11 +154,27 @@ function TallyTable({ rows }) {
                 <td className="px-4 py-3 text-center"><MedalCoin count={t.emas}   type="emas"   /></td>
                 <td className="px-4 py-3 text-center"><MedalCoin count={t.perak}  type="perak"  /></td>
                 <td className="px-4 py-3 text-center"><MedalCoin count={t.gangsa} type="gangsa" /></td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`text-sm font-black ${isTop3 ? style.text : 'text-gray-600'}`}>
-                    {(t.emas || 0) + (t.perak || 0) + (t.gangsa || 0)}
-                  </span>
-                </td>
+                {showT4 && (
+                  <td className="px-3 py-3 text-center">
+                    <span className={`text-xs font-bold ${(t.tempat4||0)>0 ? EXTRA_COL.tempat4.text : 'text-gray-300'}`}>
+                      {t.tempat4 || 0}
+                    </span>
+                  </td>
+                )}
+                {showT5 && (
+                  <td className="px-3 py-3 text-center">
+                    <span className={`text-xs font-bold ${(t.tempat5||0)>0 ? EXTRA_COL.tempat5.text : 'text-gray-300'}`}>
+                      {t.tempat5 || 0}
+                    </span>
+                  </td>
+                )}
+                {showJumlah && (
+                  <td className="px-4 py-3 text-center">
+                    <span className={`text-sm font-black ${isTop3 ? style.text : 'text-gray-600'}`}>
+                      {jumlah}
+                    </span>
+                  </td>
+                )}
               </tr>
             )
           })}
@@ -159,11 +194,23 @@ function TallyTable({ rows }) {
             <td className="px-4 py-2.5 text-center">
               <span className="text-sm font-black text-orange-700">{rows.reduce((s,t)=>s+(t.gangsa||0),0)}</span>
             </td>
-            <td className="px-4 py-2.5 text-center">
-              <span className="text-sm font-black text-gray-700">
-                {rows.reduce((s,t)=>s+(t.emas||0)+(t.perak||0)+(t.gangsa||0),0)}
-              </span>
-            </td>
+            {showT4 && (
+              <td className="px-3 py-2.5 text-center">
+                <span className="text-sm font-black text-slate-500">{rows.reduce((s,t)=>s+(t.tempat4||0),0)}</span>
+              </td>
+            )}
+            {showT5 && (
+              <td className="px-3 py-2.5 text-center">
+                <span className="text-sm font-black text-zinc-400">{rows.reduce((s,t)=>s+(t.tempat5||0),0)}</span>
+              </td>
+            )}
+            {showJumlah && (
+              <td className="px-4 py-2.5 text-center">
+                <span className="text-sm font-black text-gray-700">
+                  {rows.reduce((s,t)=>s+(t.emas||0)+(t.perak||0)+(t.gangsa||0),0)}
+                </span>
+              </td>
+            )}
           </tr>
         </tfoot>
       </table>
@@ -176,6 +223,8 @@ function TallyTable({ rows }) {
 export default function MedalTally() {
   const [selKej, setSelKej]               = useState('')
   const [namaKej, setNamaKej]             = useState('')
+  const [bilanganKedudukan, setBilKed]    = useState(3)
+  const [showJumlah, setShowJumlah]       = useState(false) // dari Firestore kejohanan.showJumlahMedalTally
   const [tallyList, setTallyList]         = useState([])
   const [sekolahMap, setSekolahMap]       = useState({}) // { kodSekolah: jenisSekolah }
   const [loading, setLoading]             = useState(false)
@@ -205,6 +254,8 @@ export default function MedalTally() {
           const d = snap.docs[0]
           setSelKej(d.data().kejohananId || d.id)
           setNamaKej(d.data().namaKejohanan || '')
+          setBilKed(d.data().bilanganKedudukan ?? 3)
+          setShowJumlah(d.data().showJumlahMedalTally ?? false)
         }
       })
       .catch(() => {})
@@ -382,7 +433,7 @@ export default function MedalTally() {
 
                 {isOpen && (
                   <div className="border-t border-gray-100">
-                    <TallyTable rows={rows} />
+                    <TallyTable rows={rows} bilanganKedudukan={bilanganKedudukan} showJumlah={showJumlah} />
                   </div>
                 )}
               </div>
@@ -396,7 +447,8 @@ export default function MedalTally() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-[10px] text-blue-700 space-y-0.5">
           <p className="font-bold">Nota Sistem:</p>
           <p>· Pingat dikira secara automatik selepas keputusan RASMI direkodkan.</p>
-          <p>· Ranking per kumpulan: Emas → Perak → Gangsa → nama sekolah (abjad).</p>
+          <p>· Ranking per kumpulan: Emas → Perak → Gangsa → T4 → T5 → nama sekolah (abjad).</p>
+          <p>· T4/T5 adalah tiebreaker sahaja — tidak dikira dalam jumlah pingat.</p>
           <p>· Dikemaskini masa nyata (real-time) tanpa perlu refresh halaman.</p>
         </div>
       )}
