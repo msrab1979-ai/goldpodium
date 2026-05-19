@@ -19,6 +19,16 @@ export const WA_LORONG_KUMPULAN_DEFAULT = {
   lurus:     [[3,4,5,6],[2,7],[1,8]],
   dua_ratus: [[5,6,7],[3,4,8],[1,2]],
   selekoh:   [[4,5,6,7],[3,8],[1,2]],
+  // selekoh_800 guna kumpulan selekoh yang sama untuk final
+}
+
+// ─── Rules lorong untuk HEAT (saringan) ──────────────────────────────────────
+// Urutan lorong yang dikosongkan apabila atlet < bilanganLorong
+export const WA_LORONG_HEAT_REMOVE = {
+  lurus:       [1, 8, 2, 7, 3, 6, 4, 5],   // 100m, berpagar
+  dua_ratus:   [1, 2, 8, 4, 3, 5, 6, 7],   // 200m
+  selekoh:     [1, 2, 8, 3, 4, 5, 6, 7],   // 400m, relay
+  selekoh_800: [1, 2, 8, 7, 3, 4, 5, 6],   // 800m
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -46,9 +56,10 @@ export function deserializeKumpulan(data) {
 export function detectJenisLorong(acara) {
   if (acara.jenisLorong) return acara.jenisLorong
   const n = (acara.namaAcaraPendek || acara.namaAcara || '').toLowerCase()
-  if (/\d\s*x\s*\d|relay/.test(n)) return 'selekoh'
-  if (/\b200\s*m/.test(n))         return 'dua_ratus'
-  if (/\b400|\b800|\b1500|\b3000|\b5000/.test(n)) return 'selekoh'
+  if (/\d\s*x\s*\d|relay/.test(n))          return 'selekoh'
+  if (/\b200\s*m/.test(n))                   return 'dua_ratus'
+  if (/\b800\b/.test(n))                     return 'selekoh_800'
+  if (/\b400|\b1500|\b3000|\b5000/.test(n)) return 'selekoh'
   return 'lurus'
 }
 
@@ -60,8 +71,10 @@ export function detectJenisLorong(acara) {
  * kumpulanOverride: override terus (satu jenis sahaja).
  */
 export function assignLorongFinal(pesertaSorted, jenisLorong, lorongKumpulan, kumpulanOverride) {
-  const pool     = lorongKumpulan || WA_LORONG_KUMPULAN_DEFAULT
-  const kumpulan = kumpulanOverride || pool[jenisLorong] || pool.lurus
+  const pool = lorongKumpulan || WA_LORONG_KUMPULAN_DEFAULT
+  // selekoh_800 guna kumpulan selekoh untuk final (800m final biasanya mass start)
+  const jenisEff = jenisLorong === 'selekoh_800' ? 'selekoh' : jenisLorong
+  const kumpulan = kumpulanOverride || pool[jenisEff] || pool.lurus
   const result   = pesertaSorted.map(p => ({ ...p }))
   let rankIdx    = 0
 
@@ -76,6 +89,30 @@ export function assignLorongFinal(pesertaSorted, jenisLorong, lorongKumpulan, ku
   })
 
   return result.sort((a, b) => (a.lorong ?? 99) - (b.lorong ?? 99))
+}
+
+/**
+ * Assign lorong HEAT — undian rawak dalam lorong tersedia.
+ * Lorong dikosongkan ikut urutan WA mengikut jenisLorong + bilangan atlet.
+ * lorongHeatRemove: override dari Firestore wa_config.lorongHeatRemove (optional)
+ */
+export function assignLorongHeat(peserta, jenisLorong, bilanganLorong = 8, lorongHeatRemove = null) {
+  const n = peserta.length
+  if (n === 0) return []
+
+  const removeMap   = lorongHeatRemove || WA_LORONG_HEAT_REMOVE
+  const removeOrder = removeMap[jenisLorong] || removeMap.lurus
+
+  const allLanes  = Array.from({ length: bilanganLorong }, (_, i) => i + 1)
+  const toRemove  = Math.max(0, bilanganLorong - n)
+  const removedSet = new Set(removeOrder.slice(0, toRemove))
+  const available  = allLanes.filter(l => !removedSet.has(l))
+
+  // Undian rawak dalam lorong tersedia
+  const shuffled = [...available].sort(() => Math.random() - 0.5)
+
+  return peserta.map((p, i) => ({ ...p, lorong: shuffled[i] ?? null }))
+    .sort((a, b) => (a.lorong ?? 99) - (b.lorong ?? 99))
 }
 
 /**

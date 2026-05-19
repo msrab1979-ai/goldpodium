@@ -32,7 +32,10 @@ import { cariRekodUntukAcara, formatPrestasiRekod, tahunRekod, lokasiRekod } fro
 import { selectFinalists, getFinalistSetup, getJenisTab } from '../../utils/finalistUtils'
 import {
   WA_LORONG_KUMPULAN_DEFAULT,
+  WA_LORONG_HEAT_REMOVE,
   assignLorongFinal,
+  assignLorongHeat,
+  detectJenisLorong,
   katLabel,
   buatStartListPDFUnified,
 } from '../../utils/startListPdfUtils'
@@ -41,11 +44,9 @@ import {
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
 
-// Dimuat semula dari wa_config Firestore apabila kejohanan dipilih
-let ASSIGN_LORONG_WA = [4, 5, 3, 6, 2, 7, 1, 8] // rank 1→8, WA standard (heat/saringan)
-
-// Kumpulan lorong WA untuk FINAL — modul-level, dikemas kini apabila wa_config dimuatkan
-let LORONG_KUMPULAN = { ...WA_LORONG_KUMPULAN_DEFAULT }
+// Dikemas kini dari wa_config Firestore apabila kejohanan dipilih
+let LORONG_KUMPULAN    = { ...WA_LORONG_KUMPULAN_DEFAULT }   // final — kumpulan undian
+let LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }        // heat  — lorong dikosongkan
 
 const FASA_LABEL = {
   heat:     'Heat / Saringan',
@@ -91,14 +92,6 @@ function bahagikanKeHeat(peserta, bilanganLorong) {
     if (heatIdx < 0)             { heatIdx = 0; arah = 1 }
   }
   return heats
-}
-
-/** Assign lorong WA standard (rank 1 → lorong 4, dst.) */
-function assignLorong(pesertaHeat) {
-  return pesertaHeat.map((p, idx) => ({
-    ...p,
-    lorong: ASSIGN_LORONG_WA[idx] ?? (idx + 1),
-  })).sort((a, b) => a.lorong - b.lorong)
 }
 
 /** Assign giliran untuk padang/mass_start */
@@ -262,13 +255,15 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {} }
           [pasukan[i], pasukan[j]] = [pasukan[j], pasukan[i]]
         }
       }
-      const fasa = tentukanFasa(pasukan.length, Number(bilanganLorong))
-      let heats = []
+      const jenis = detectJenisLorong(acara)
+      const bilL  = Number(bilanganLorong)
+      const fasa  = tentukanFasa(pasukan.length, bilL)
+      let heats   = []
       if (fasa === 'terus_final') {
-        heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorong(pasukan) }]
+        heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorongFinal(pasukan, jenis, LORONG_KUMPULAN) }]
       } else {
-        const bahagi = bahagikanKeHeat(pasukan, Number(bilanganLorong))
-        heats = bahagi.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorong(hp) }))
+        const bahagi = bahagikanKeHeat(pasukan, bilL)
+        heats = bahagi.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorongHeat(hp, jenis, bilL, LORONG_HEAT_REMOVE) }))
       }
       setPreview({ fasa, heats })
       return
@@ -282,17 +277,19 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {} }
         [p[i], p[j]] = [p[j], p[i]]
       }
     }
-    const fasa = isPadang || isMass
-      ? 'terus_final'
-      : tentukanFasa(p.length, Number(bilanganLorong))
+    const jenis = detectJenisLorong(acara)
+    const bilL  = Number(bilanganLorong)
+    const fasa  = isPadang || isMass ? 'terus_final' : tentukanFasa(p.length, bilL)
 
     let heats = []
     if (fasa === 'terus_final' || isPadang || isMass) {
-      const pesertaAssigned = isPadang || isMass ? assignGiliran(p) : assignLorong(p)
-      heats = [{ fasa: isPadang || isMass ? 'final' : 'final', noHeat: 1, peserta: pesertaAssigned }]
+      const pesertaAssigned = isPadang || isMass
+        ? assignGiliran(p)
+        : assignLorongFinal(p, jenis, LORONG_KUMPULAN)
+      heats = [{ fasa: 'final', noHeat: 1, peserta: pesertaAssigned }]
     } else {
-      const bahagiHeat = bahagikanKeHeat(p, Number(bilanganLorong))
-      heats = bahagiHeat.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorong(hp) }))
+      const bahagiHeat = bahagikanKeHeat(p, bilL)
+      heats = bahagiHeat.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorongHeat(hp, jenis, bilL, LORONG_HEAT_REMOVE) }))
     }
     setPreview({ fasa, heats })
   }
@@ -615,13 +612,14 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, caraDraw,
       }
     }
 
+    const jenisLorong = detectJenisLorong(acara)
     const fasa = tentukanFasa(pasukanList.length, bilLorong)
     let heats = []
     if (fasa === 'terus_final') {
-      heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorong(pasukanList) }]
+      heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorongFinal(pasukanList, jenisLorong, LORONG_KUMPULAN) }]
     } else {
       const bahagi = bahagikanKeHeat(pasukanList, bilLorong)
-      heats = bahagi.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorong(hp) }))
+      heats = bahagi.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorongHeat(hp, jenisLorong, bilLorong, LORONG_HEAT_REMOVE) }))
     }
 
     const batch = writeBatch(db)
@@ -665,12 +663,15 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, caraDraw,
   const fasa = isPadang || isMass ? 'terus_final' : tentukanFasa(p.length, bilLorong)
   let heats = []
 
+  const jenisLorongNonRelay = detectJenisLorong(acara)
   if (fasa === 'terus_final' || isPadang || isMass) {
-    const assigned = isPadang || isMass ? assignGiliran(p) : assignLorong(p)
+    const assigned = isPadang || isMass
+      ? assignGiliran(p)
+      : assignLorongFinal(p, jenisLorongNonRelay, LORONG_KUMPULAN)
     heats = [{ fasa: 'final', noHeat: 1, peserta: assigned }]
   } else {
     const bahagiHeat = bahagikanKeHeat(p, bilLorong)
-    heats = bahagiHeat.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorong(hp) }))
+    heats = bahagiHeat.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorongHeat(hp, jenisLorongNonRelay, bilLorong, LORONG_HEAT_REMOVE) }))
   }
 
   const batch = writeBatch(db)
@@ -989,16 +990,6 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   const [msg,            setMsg]            = useState('')
   const [lorongKumpulan, setLorongKumpulan] = useState(WA_LORONG_KUMPULAN_DEFAULT)
 
-  // Auto-detect jenisLorong dari nama acara (fallback jika field tiada)
-  function detectJenisLorong(ac) {
-    if (ac.jenisLorong) return ac.jenisLorong
-    const n = (ac.namaAcaraPendek || ac.namaAcara || '').toLowerCase()
-    if (/\d\s*x\s*\d|relay/.test(n)) return 'selekoh'
-    if (/\b200\s*m/.test(n))         return 'dua_ratus'
-    if (/\b400|\b800|\b1500|\b3000|\b5000/.test(n)) return 'selekoh'
-    return 'lurus'
-  }
-
   // Load tetapan/finalSetup + wa_config serentak
   useEffect(() => {
     Promise.all([
@@ -1293,14 +1284,18 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone }) {
         [p[i], p[j]] = [p[j], p[i]]
       }
     }
-    const fasa = isPadang || isMass ? 'terus_final' : tentukanFasa(p.length, Number(bilanganLorong))
+    const jenis2 = detectJenisLorong(acara)
+    const bilL2  = Number(bilanganLorong)
+    const fasa   = isPadang || isMass ? 'terus_final' : tentukanFasa(p.length, bilL2)
     let heats = []
     if (fasa === 'terus_final' || isPadang || isMass) {
-      const assigned = isPadang || isMass ? assignGiliran(p) : assignLorong(p)
+      const assigned = isPadang || isMass
+        ? assignGiliran(p)
+        : assignLorongFinal(p, jenis2, LORONG_KUMPULAN)
       heats = [{ fasa: 'final', noHeat: 1, peserta: assigned }]
     } else {
-      heats = bahagikanKeHeat(p, Number(bilanganLorong))
-        .map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorong(hp) }))
+      heats = bahagikanKeHeat(p, bilL2)
+        .map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorongHeat(hp, jenis2, bilL2, LORONG_HEAT_REMOVE) }))
     }
     setPreview({ fasa, heats })
   }
@@ -1549,14 +1544,12 @@ export default function StartList() {
   // Fetch acara + jadual bila kejohanan berubah
   useEffect(() => {
     if (!selectedKej) { setAcaraList([]); setSelectedAcara(null); setPesertaCountMap({}); setJadualMap({}); return }
-    // Muat wa_config — lorongWA (heat) + lorongKumpulan (final)
+    // Muat wa_config — lorongKumpulan (final) + lorongHeatRemove (heat)
     getDoc(doc(db, 'wa_config', selectedKej))
       .then(d => {
         if (d.exists()) {
           const data = d.data()
-          ASSIGN_LORONG_WA = Array.isArray(data.lorongWA) ? data.lorongWA : [4,5,3,6,2,7,1,8]
           if (data.lorongKumpulan) {
-            // Deserialize: {"lurus":["3,4,5,6","2,7","1,8"],...} → {lurus:[[3,4,5,6],[2,7],[1,8]],...}
             const parsed = {}
             Object.entries(data.lorongKumpulan).forEach(([jenis, grps]) => {
               parsed[jenis] = grps.map(s =>
@@ -1567,14 +1560,23 @@ export default function StartList() {
           } else {
             LORONG_KUMPULAN = { ...WA_LORONG_KUMPULAN_DEFAULT }
           }
+          if (data.lorongHeatRemove) {
+            const parsed = {}
+            Object.entries(data.lorongHeatRemove).forEach(([jenis, arr]) => {
+              parsed[jenis] = String(arr).split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+            })
+            LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE, ...parsed }
+          } else {
+            LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }
+          }
         } else {
-          ASSIGN_LORONG_WA = [4,5,3,6,2,7,1,8]
-          LORONG_KUMPULAN  = { ...WA_LORONG_KUMPULAN_DEFAULT }
+          LORONG_KUMPULAN    = { ...WA_LORONG_KUMPULAN_DEFAULT }
+          LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }
         }
       })
       .catch(() => {
-        ASSIGN_LORONG_WA = [4,5,3,6,2,7,1,8]
-        LORONG_KUMPULAN  = { ...WA_LORONG_KUMPULAN_DEFAULT }
+        LORONG_KUMPULAN    = { ...WA_LORONG_KUMPULAN_DEFAULT }
+        LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }
       })
     getDocs(query(collection(db, 'kejohanan', selectedKej, 'acara'), orderBy('kategoriKod')))
       .then(snap => {
