@@ -105,6 +105,14 @@ const WA_LORONG_KUMPULAN_DEFAULT = {
   selekoh:   { label: 'Selekoh (400m+, Berpagar 400m, Semua Relay)',   kumpulan: [[4,5,6,7],[3,8],[1,2]] },
 }
 
+// Urutan lorong dikosongkan apabila atlet < bilanganLorong (untuk heat/saringan)
+const WA_LORONG_HEAT_REMOVE_DEFAULT = {
+  lurus:       { label: 'Lurus (100m, Berpagar)',   remove: [1,8,2,7,3,6,4,5] },
+  dua_ratus:   { label: '200m',                     remove: [1,2,8,4,3,5,6,7] },
+  selekoh:     { label: 'Selekoh (400m, Relay)',    remove: [1,2,8,3,4,5,6,7] },
+  selekoh_800: { label: '800m',                     remove: [1,2,8,7,3,4,5,6] },
+}
+
 const WA_CONFIG_DEFAULT = {
   windLimit: 2.0,
   falseStartRule: 'one',
@@ -117,6 +125,12 @@ const WA_CONFIG_DEFAULT = {
     lurus:     [[3,4,5,6],[2,7],[1,8]],
     dua_ratus: [[5,6,7],[3,4,8],[1,2]],
     selekoh:   [[4,5,6,7],[3,8],[1,2]],
+  },
+  lorongHeatRemove: {
+    lurus:       [1,8,2,7,3,6,4,5],
+    dua_ratus:   [1,2,8,4,3,5,6,7],
+    selekoh:     [1,2,8,3,4,5,6,7],
+    selekoh_800: [1,2,8,7,3,4,5,6],
   },
   caraPilihFinal: 'hybrid',
   wildcardSlot: 2,
@@ -1108,20 +1122,42 @@ function deserializeKumpulan(data) {
   return out
 }
 
+// Helper: compute lorong tersedia per bilangan atlet dari removal order
+function previewHeatLorong(removeOrder, bilanganLorong = 8) {
+  const rows = []
+  for (let n = bilanganLorong; n >= Math.max(1, bilanganLorong - removeOrder.length); n--) {
+    const toRemove  = bilanganLorong - n
+    const removed   = new Set(removeOrder.slice(0, toRemove))
+    const available = Array.from({ length: bilanganLorong }, (_, i) => i + 1).filter(l => !removed.has(l))
+    rows.push({ n, removed: removeOrder.slice(0, toRemove), available })
+  }
+  return rows
+}
+
 function WaConfigPanel({ kejohananId }) {
-  const [open, setOpen] = useState(false)
-  const [cfg, setCfg] = useState(WA_CONFIG_DEFAULT)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [open, setOpen]         = useState(false)
+  const [tabLorong, setTabL]    = useState('final')  // 'final' | 'heat'
+  const [cfg, setCfg]           = useState(WA_CONFIG_DEFAULT)
+  const [saving, setSaving]     = useState(false)
+  const [saved, setSaved]       = useState(false)
 
   useEffect(() => {
     if (!open || !kejohananId) return
     getDoc(doc(db, 'wa_config', kejohananId)).then(d => {
       if (d.exists()) {
         const data = d.data()
-        // Deserialize lorongKumpulan dari strings balik ke arrays
         if (data.lorongKumpulan) {
           data.lorongKumpulan = deserializeKumpulan(data.lorongKumpulan)
+        }
+        if (data.lorongHeatRemove) {
+          // Deserialize: setiap nilai boleh jadi string "1,8,2,7" atau array
+          const hr = {}
+          Object.entries(data.lorongHeatRemove).forEach(([jenis, val]) => {
+            hr[jenis] = Array.isArray(val)
+              ? val
+              : String(val).split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+          })
+          data.lorongHeatRemove = hr
         }
         setCfg({ ...WA_CONFIG_DEFAULT, ...data })
       }
@@ -1135,9 +1171,16 @@ function WaConfigPanel({ kejohananId }) {
     setSaving(true)
     try {
       const payload = { ...cfg, updatedAt: serverTimestamp() }
-      // Serialize lorongKumpulan — Firestore tak sokong nested arrays
       if (payload.lorongKumpulan) {
         payload.lorongKumpulan = serializeKumpulan(payload.lorongKumpulan)
+      }
+      // Serialize lorongHeatRemove — simpan sebagai string "1,8,2,7" per jenis
+      if (payload.lorongHeatRemove) {
+        const hr = {}
+        Object.entries(payload.lorongHeatRemove).forEach(([jenis, arr]) => {
+          hr[jenis] = Array.isArray(arr) ? arr.join(',') : String(arr)
+        })
+        payload.lorongHeatRemove = hr
       }
       await setDoc(doc(db, 'wa_config', kejohananId), payload, { merge: true })
       setSaved(true)
@@ -1205,50 +1248,133 @@ function WaConfigPanel({ kejohananId }) {
 
           </div>
 
-          {/* Kumpulan Lorong WA — untuk FINAL sahaja */}
-          <div className="border border-gray-100 rounded-lg p-3 bg-gray-50 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">Penetapan Lorong Final (WA)</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Untuk final sahaja. Heat guna random draw. Rank 1 = terpantas/terbaik.</p>
-              </div>
-              <button
-                onClick={() => set('lorongKumpulan', WA_CONFIG_DEFAULT.lorongKumpulan)}
-                className="text-[10px] text-[#003399] font-semibold hover:underline shrink-0"
-              >
-                Reset WA
-              </button>
+          {/* Tab Lorong — Final & Heat */}
+          <div className="border border-gray-100 rounded-lg overflow-hidden bg-gray-50">
+            {/* Tab header */}
+            <div className="flex border-b border-gray-200">
+              {[
+                { id: 'final', label: 'Lorong Final' },
+                { id: 'heat',  label: 'Lorong Heat' },
+              ].map(t => (
+                <button key={t.id} onClick={() => setTabL(t.id)}
+                  className={`flex-1 px-4 py-2.5 text-[10px] font-bold transition-colors ${
+                    tabLorong === t.id
+                      ? 'bg-[#003399] text-white'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
             </div>
-            {Object.entries(WA_LORONG_KUMPULAN_DEFAULT).map(([jenisKey, meta]) => {
-              const kumpulan = (cfg.lorongKumpulan?.[jenisKey]) || meta.kumpulan
-              const rankStart = [0, kumpulan[0].length, kumpulan[0].length + kumpulan[1].length]
-              return (
-                <div key={jenisKey} className="space-y-1.5">
-                  <p className="text-[10px] font-bold text-gray-700">{meta.label}</p>
-                  {kumpulan.map((grp, gi) => (
-                    <div key={gi} className="flex items-center gap-2">
-                      <span className="text-[9px] text-gray-400 w-20 shrink-0">
-                        Rank {rankStart[gi]+1}–{rankStart[gi]+grp.length}
-                      </span>
-                      <input
-                        type="text"
-                        value={grp.join(',')}
-                        onChange={e => {
-                          const vals = e.target.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
-                          const cur = JSON.parse(JSON.stringify(cfg.lorongKumpulan || WA_CONFIG_DEFAULT.lorongKumpulan))
-                          cur[jenisKey][gi] = vals
-                          set('lorongKumpulan', cur)
-                        }}
-                        placeholder={meta.kumpulan[gi].join(',')}
-                        className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#003399]/30"
-                      />
-                      <span className="text-[9px] text-gray-300 shrink-0">lorong</span>
-                    </div>
-                  ))}
+
+            {/* Tab: Lorong Final */}
+            {tabLorong === 'final' && (
+              <div className="p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">Penetapan Lorong Final (WA)</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Rank 1 = terpantas/terbaik. Undian rawak dalam kumpulan.</p>
+                  </div>
+                  <button onClick={() => set('lorongKumpulan', WA_CONFIG_DEFAULT.lorongKumpulan)}
+                    className="text-[10px] text-[#003399] font-semibold hover:underline shrink-0">Reset WA</button>
                 </div>
-              )
-            })}
-            <p className="text-[9px] text-gray-400">* Nombor lorong dipisahkan dengan koma. Rank dalam kumpulan akan diundi secara rawak.</p>
+                {Object.entries(WA_LORONG_KUMPULAN_DEFAULT).map(([jenisKey, meta]) => {
+                  const kumpulan  = (cfg.lorongKumpulan?.[jenisKey]) || meta.kumpulan
+                  const rankStart = [0, kumpulan[0].length, kumpulan[0].length + kumpulan[1].length]
+                  return (
+                    <div key={jenisKey} className="space-y-1.5">
+                      <p className="text-[10px] font-bold text-gray-700">{meta.label}</p>
+                      {kumpulan.map((grp, gi) => (
+                        <div key={gi} className="flex items-center gap-2">
+                          <span className="text-[9px] text-gray-400 w-20 shrink-0">
+                            Rank {rankStart[gi]+1}–{rankStart[gi]+grp.length}
+                          </span>
+                          <input type="text" value={grp.join(',')}
+                            onChange={e => {
+                              const vals = e.target.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+                              const cur  = JSON.parse(JSON.stringify(cfg.lorongKumpulan || WA_CONFIG_DEFAULT.lorongKumpulan))
+                              cur[jenisKey][gi] = vals
+                              set('lorongKumpulan', cur)
+                            }}
+                            placeholder={meta.kumpulan[gi].join(',')}
+                            className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#003399]/30"
+                          />
+                          <span className="text-[9px] text-gray-300 shrink-0">lorong</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+                <p className="text-[9px] text-gray-400">* Dipisahkan koma. Undian rawak dalam kumpulan.</p>
+              </div>
+            )}
+
+            {/* Tab: Lorong Heat */}
+            {tabLorong === 'heat' && (
+              <div className="p-3 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">Lorong Heat / Saringan (WA)</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Urutan lorong dikosongkan apabila atlet kurang dari 8. Undian rawak dalam lorong tersedia.</p>
+                  </div>
+                  <button onClick={() => set('lorongHeatRemove', WA_CONFIG_DEFAULT.lorongHeatRemove)}
+                    className="text-[10px] text-[#003399] font-semibold hover:underline shrink-0">Reset WA</button>
+                </div>
+
+                {Object.entries(WA_LORONG_HEAT_REMOVE_DEFAULT).map(([jenisKey, meta]) => {
+                  const removeOrder = cfg.lorongHeatRemove?.[jenisKey] || meta.remove
+                  const bilLorong   = cfg.lorongStandard || 8
+                  const preview     = previewHeatLorong(removeOrder, bilLorong)
+                  return (
+                    <div key={jenisKey} className="space-y-2">
+                      <p className="text-[10px] font-bold text-gray-700">{meta.label}</p>
+
+                      {/* Input urutan buang */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] text-gray-400 w-24 shrink-0">Urutan buang:</span>
+                        <input type="text" value={removeOrder.join(',')}
+                          onChange={e => {
+                            const vals = e.target.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+                            const cur  = { ...(cfg.lorongHeatRemove || WA_CONFIG_DEFAULT.lorongHeatRemove) }
+                            cur[jenisKey] = vals
+                            set('lorongHeatRemove', cur)
+                          }}
+                          placeholder={meta.remove.join(',')}
+                          className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-[#003399]/30"
+                        />
+                      </div>
+
+                      {/* Preview table */}
+                      <div className="overflow-x-auto rounded border border-gray-200">
+                        <table className="w-full text-[9px]">
+                          <thead>
+                            <tr className="bg-gray-100 text-gray-500">
+                              <th className="px-2 py-1.5 text-center font-bold w-12">Atlet</th>
+                              <th className="px-2 py-1.5 text-center font-bold">Dikosongkan</th>
+                              <th className="px-2 py-1.5 text-center font-bold">Tersedia (undian rawak)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {preview.map(({ n, removed, available }) => (
+                              <tr key={n} className={n % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                <td className="px-2 py-1 text-center font-black text-gray-700">{n}</td>
+                                <td className="px-2 py-1 text-center font-mono text-red-500">
+                                  {removed.length ? removed.join(', ') : '—'}
+                                </td>
+                                <td className="px-2 py-1 text-center font-mono text-[#003399] font-bold">
+                                  {'{' + available.join(', ') + '}'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })}
+                <p className="text-[9px] text-gray-400">* Urutan dipisahkan koma. Preview dikira semula apabila urutan diubah.</p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
