@@ -388,11 +388,12 @@ export default function CetakanHadiah() {
 
     getDocs(query(
       collection(db, 'kejohanan', selKejId, 'acara'),
-      where('statusAcara', '==', 'ada_keputusan'),
-      orderBy('noAcara', 'asc')
+      where('statusAcara', '==', 'ada_keputusan')
     ))
       .then(snap => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        const list = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.noAcara ?? 0) - (b.noAcara ?? 0))
         setAcaraList(list)
         // Auto-pilih hari pertama ada keputusan
         if (list.length > 0) {

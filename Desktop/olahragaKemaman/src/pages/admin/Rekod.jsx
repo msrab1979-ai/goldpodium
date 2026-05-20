@@ -1439,8 +1439,8 @@ export default function Rekod() {
         </div>
       )}
 
-      {/* Tuntutan baru — alert banner */}
-      {tuntutanList.length > 0 && (
+      {/* Tuntutan baru — alert banner (superadmin + pengurus_teknik sahaja) */}
+      {canSahkan && tuntutanList.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
           <div className="w-8 h-8 bg-amber-400 rounded-lg flex items-center justify-center shrink-0">
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -1492,10 +1492,10 @@ export default function Rekod() {
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         {[
-          { key: 'semasa',   label: 'Rekod Semasa' },
-          { key: 'tuntutan', label: `Tuntutan${tuntutanList.length ? ` (${tuntutanList.length})` : ''}` },
-          { key: 'semak',    label: `Semak Sambungan${semakLemahCount > 0 ? ` · ${semakLemahCount} lemah` : ''}${semakTiadaCount > 0 ? ` · ${semakTiadaCount} tiada` : ''}${semakOrphan.length > 0 ? ` · ${semakOrphan.length} orphan` : ''}` },
-        ].map(t => (
+          { key: 'semasa',   label: 'Rekod Semasa', show: true },
+          { key: 'tuntutan', label: `Tuntutan${tuntutanList.length ? ` (${tuntutanList.length})` : ''}`, show: canSahkan },
+          { key: 'semak',    label: `Semak Sambungan${semakLemahCount > 0 ? ` · ${semakLemahCount} lemah` : ''}${semakTiadaCount > 0 ? ` · ${semakTiadaCount} tiada` : ''}${semakOrphan.length > 0 ? ` · ${semakOrphan.length} orphan` : ''}`, show: canSahkan },
+        ].filter(t => t.show).map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
               activeTab === t.key
