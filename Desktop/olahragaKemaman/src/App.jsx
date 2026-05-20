@@ -19,6 +19,7 @@ import CetakAcara from './pages/admin/CetakAcara'
 import BukuKejohanan from './pages/admin/BukuKejohanan'
 import CetakKeputusan from './pages/admin/CetakKeputusan'
 import ResetSistem from './pages/admin/ResetSistem'
+import Backup from './pages/admin/Backup'
 import ManualPendaftaran from './pages/admin/ManualPendaftaran'
 import AnalisisPendaftaran from './pages/admin/AnalisisPendaftaran'
 
@@ -127,6 +128,11 @@ function AppRoutes() {
       <Route path="/dashboard/reset" element={
         <ProtectedRoute>
           <DashboardLayout><ResetSistem /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/backup" element={
+        <ProtectedRoute>
+          <DashboardLayout><Backup /></DashboardLayout>
         </ProtectedRoute>
       } />
       <Route path="/dashboard/manual" element={
