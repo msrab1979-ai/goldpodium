@@ -274,9 +274,10 @@ export default function ResetSistem() {
       // ── Pendaftaran ──
       if (selected.has('pendaftaran')) {
         log('Memuatkan data atlet…')
-        const [atletSnap, pendSnap] = await Promise.all([
+        const [atletSnap, pendSnap, counterSnap] = await Promise.all([
           getDocs(query(collection(db, 'atlet'), where('noBib', '!=', ''))),
           getDocs(collection(db, 'kejohanan', kejId, 'pendaftaran')),
+          getDocs(query(collection(db, 'pendaftaran_counter'), where('kejohananId', '==', kejId))),
         ])
         // Clear noBib field — batch update
         const SIZE = 400
@@ -288,9 +289,12 @@ export default function ResetSistem() {
           })
           await b.commit()
         }
-        // Delete pendaftaran docs
-        await batchDelete(pendSnap.docs.map(d => d.ref))
-        log(`✓ Pendaftaran — ${atletDocs.length} BIB dikosongkan, ${pendSnap.size} rekod dipadam`, true)
+        // Delete pendaftaran docs + counter (supaya noBib mula semula dari 1)
+        await Promise.all([
+          batchDelete(pendSnap.docs.map(d => d.ref)),
+          batchDelete(counterSnap.docs.map(d => d.ref)),
+        ])
+        log(`✓ Pendaftaran — ${atletDocs.length} BIB dikosongkan, ${pendSnap.size} rekod dipadam, ${counterSnap.size} counter diset semula`, true)
       }
 
       // ── Jadual ──

@@ -42,6 +42,9 @@ Sistem pengurusan kejohanan olahraga sekolah (MSSD) berasaskan web, dibina denga
 | Buku Kejohanan | `/dashboard/buku` | Jana buku program PDF |
 | Cetak Acara | `/dashboard/cetak-acara` | Cetak keputusan ikut acara |
 | Tetapan Home | `/dashboard/tetapan` | Urus dokumen & pautan |
+| Cetakan Hadiah | `/dashboard/cetakan-hadiah` | Cetak PDF hadiah & sijil by acara |
+| Backup Sistem | `/dashboard/backup` | Muat turun & pulihkan data (.koam) |
+| Reset Sistem | `/dashboard/reset` | Reset data kejohanan secara selektif |
 | User Management | `/dashboard/users` | Urus akaun pengguna |
 
 ---
@@ -61,6 +64,7 @@ atlet/{noKP}                 — rekod atlet (nama, sekolah, kategoriKod)
 rekod/{id}                   — rekod aktif (diluluskan admin) — acara, masa/jarak, pemegang, tahun
 rekod/{id}_tuntutan          — rekod pending (belum lulus) — auto-cipta apabila prestasi baru pecah rekod
 rekod_sejarah/{id}           — audit trail edit/padam rekod
+pendaftaran_counter/{kejId_kodSekolah} — counter noBib per sekolah per kejohanan (dipadam semasa Reset Pendaftaran)
 wa_config/{kejId}            — konfigurasi lorong WA per kejohanan (lorongKumpulan per jenisLorong)
 tetapan/home                 — tetapan papan pemuka awam (logo, tajuk)
 tetapan/finalSetup           — tetapan pilih finalis (bestHeat, bestTime per kategori)
@@ -105,6 +109,26 @@ Prestasi rasmi → postRasmiUtils → rekod/{id}_tuntutan  (pending)
 ```
 
 Rekod tidak pernah ditulis secara automatik tanpa kelulusan admin.
+
+---
+
+## Reset Sistem (`/dashboard/reset`)
+
+Reset data kejohanan secara selektif. Setiap toggle bebas dan boleh digabung:
+
+| Toggle | Koleksi | Level |
+|---|---|---|
+| Pendaftaran Atlet | `atlet.noBib`, `kejohanan/.../pendaftaran`, `pendaftaran_counter` | Sederhana |
+| Jadual Acara | `jadual_acara` | Sederhana |
+| Keputusan & Heat | `kejohanan/.../acara/.../heat`, `bantahan` | Bahaya |
+| Rekod Pecah Kejohanan | `rekod (filter kejohananId)` | Sederhana |
+| Medal Tally | `medal_tally`, `medal_tally_kat` | Sederhana |
+| Mata & Pilihan Olahragawan | `mata_olahragawan`, `pilihan_olahragawan` | Sederhana |
+| Setup Acara | `kejohanan/.../acara` (cascade) | Bahaya |
+| Kategori | `kategori` | Bahaya |
+| Sekolah | `sekolah` | Bahaya |
+
+Reset Pendaftaran juga memadam `pendaftaran_counter` supaya noBib mula semula dari 1 selepas reset.
 
 ---
 
