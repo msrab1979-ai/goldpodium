@@ -1035,6 +1035,54 @@ function downloadTemplateAtlet(bibPrefix = '', bibFormat = 3) {
   XLSX.writeFile(wb, 'template_atlet_koam.xlsx')
 }
 
+function downloadTemplateDaftar(bibPrefix = '', bibFormat = 3, acaraList = []) {
+  const wb  = XLSX.utils.book_new()
+  const p   = bibPrefix || 'XXX'
+  const fmt = n => p + String(n).padStart(bibFormat, '0')
+
+  const headers = ['noBib', 'noKP', 'noAcara']
+  const examples = [
+    [fmt(1), '120115-12-0001', '101'],
+    [fmt(2), '130220-14-0002', '102'],
+    [fmt(3), '140305-16-0003', '101'],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...examples])
+  ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 10 }]
+  XLSX.utils.book_append_sheet(wb, ws, 'DAFTAR')
+
+  // Sheet 2: Senarai Acara aktif (saringan sahaja)
+  if (acaraList.length > 0) {
+    const aHdrs = ['noAcara', 'namaAcara', 'kategori', 'jantina']
+    const aRows = acaraList
+      .filter(a => a.isAktif !== false && !a.parentAcaraId)
+      .sort((a, b) => (Number(a.noAcara) || 0) - (Number(b.noAcara) || 0))
+      .map(a => [a.noAcara, a.namaAcara, a.kategoriKod, a.jantina === 'L' ? 'Lelaki' : a.jantina === 'P' ? 'Perempuan' : a.jantina])
+    const ws2 = XLSX.utils.aoa_to_sheet([aHdrs, ...aRows])
+    ws2['!cols'] = [{ wch: 10 }, { wch: 40 }, { wch: 10 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, ws2, 'SENARAI ACARA')
+  }
+
+  // Sheet 3: Panduan
+  const panduan = [
+    ['PANDUAN IMPORT DAFTAR ACARA — KOAM'],
+    [''],
+    ['Kolum', 'Wajib', 'Penerangan'],
+    ['noBib',   'Ya', `No. Badan — mesti bermula dengan prefix "${p}" (cth: ${fmt(1)}, ${fmt(2)})`],
+    ['noKP',    'Ya', 'No. Kad Pengenalan — 12 digit (boleh ada sempang atau tidak)'],
+    ['noAcara', 'Ya', 'No. Acara — rujuk sheet "SENARAI ACARA" (cth: 101, 102, 201)'],
+    [''],
+    ['NOTA:', 'Baris 1 adalah HEADER — jangan padam atau ubah nama kolum.', ''],
+    ['', 'Satu atlet boleh didaftar ke pelbagai acara — satu baris per acara.', ''],
+    ['', 'noBib perlu unik — tiada dua atlet boleh berkongsi noBib yang sama.', ''],
+    ['', 'Atlet mesti sudah ada dalam tab "Atlet Saya" sebelum import daftar.', ''],
+  ]
+  const ws3 = XLSX.utils.aoa_to_sheet(panduan)
+  ws3['!cols'] = [{ wch: 12 }, { wch: 5 }, { wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, ws3, 'PANDUAN')
+
+  XLSX.writeFile(wb, 'template_daftar_acara_koam.xlsx')
+}
+
 // ─── TukarAtletModal ─────────────────────────────────────────────────────────
 
 function TukarAtletModal({ pRec, aceraId, acaraObj, atletSekolah, pendaftaranList, myPendaftaran, acaraList, kategoriList, kategoriHadMap, tahunKej, onClose, onConfirm }) {
@@ -3358,6 +3406,468 @@ function PPDeleteAtletModal({ atlet, myPendaftaran, kejohananId, onClose, onSave
 
 // ─── PP Pendaftaran View ──────────────────────────────────────────────────────
 
+// ─── PPImportDaftarModal ──────────────────────────────────────────────────────
+
+function PPImportDaftarModal({
+  sekolahData, acaraList, atletSekolah, pendaftaranList,
+  kejohanan, kategoriList, tahunKej, kodSekolah,
+  onClose, onSaved,
+}) {
+  const [rows, setRows]         = useState([])
+  const [processing, setProcessing] = useState(false)
+  const [fileErr, setFileErr]   = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importDone, setImportDone] = useState(false)
+  const [importCount, setImportCount] = useState(0)
+
+  const bibPrefix = (sekolahData?.bibPrefix || '').toUpperCase()
+  const bibFormat = Number(sekolahData?.bibFormat) || 3
+
+  // Set noBib sedia ada dari pendaftaran
+  const existingNoBibs = useMemo(
+    () => new Set(pendaftaranList.map(p => (p.noBib || '').toUpperCase()).filter(Boolean)),
+    [pendaftaranList]
+  )
+
+  function handleFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setFileErr('')
+    setRows([])
+    setImportDone(false)
+    setProcessing(true)
+
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        const wb   = XLSX.read(ev.target.result, { type: 'binary' })
+        const ws   = wb.Sheets[wb.SheetNames[0]]
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+        if (data.length < 2) {
+          setFileErr('Fail kosong atau tiada baris data.')
+          setProcessing(false)
+          return
+        }
+
+        // ── Semak header — mesti tepat ──────────────────────────────────────
+        const hdrs    = data[0].map(h => String(h).trim().toLowerCase().replace(/[\s._-]/g, ''))
+        const colBib  = hdrs.indexOf('nobib')
+        const colKP   = hdrs.indexOf('nokp')
+        const colAcar = hdrs.indexOf('noacara')
+
+        if (colBib === -1 || colKP === -1 || colAcar === -1) {
+          const missing = []
+          if (colBib  === -1) missing.push('"noBib"')
+          if (colKP   === -1) missing.push('"noKP"')
+          if (colAcar === -1) missing.push('"noAcara"')
+          setFileErr(`Format tidak sah — header ${missing.join(', ')} tidak dijumpai. Sila guna template yang disediakan.`)
+          setProcessing(false)
+          return
+        }
+        // ───────────────────────────────────────────────────────────────────
+
+        const dataRows = data.slice(1).filter(r => r.some(c => String(c).trim() !== ''))
+        if (dataRows.length === 0) {
+          setFileErr('Tiada data. Isi sekurang-kurangnya satu baris selepas header.')
+          setProcessing(false)
+          return
+        }
+
+        const seenBib    = new Set()
+        const seenKpAcar = new Set()
+
+        const validated = await Promise.all(dataRows.map(async (r, i) => {
+          const noBib   = String(r[colBib]  || '').trim().toUpperCase()
+          const noKPRaw = String(r[colKP]   || '').trim()
+          const noKP    = noKPRaw.replace(/-/g, '')
+          const noAcara = String(r[colAcar] || '').trim()
+
+          const errs = []
+
+          // noBib checks
+          if (!noBib) {
+            errs.push('noBib wajib diisi')
+          } else {
+            if (bibPrefix && !noBib.startsWith(bibPrefix))
+              errs.push(`noBib "${noBib}" — prefix salah (mestilah bermula "${bibPrefix}")`)
+            else if (existingNoBibs.has(noBib))
+              errs.push(`noBib "${noBib}" sudah digunakan oleh atlet lain`)
+            else if (seenBib.has(noBib))
+              errs.push(`noBib "${noBib}" berganda dalam fail ini`)
+          }
+          if (noBib && !existingNoBibs.has(noBib)) seenBib.add(noBib)
+
+          // noKP checks
+          if (!noKP) errs.push('noKP wajib diisi')
+
+          // noAcara checks
+          if (!noAcara) errs.push('noAcara wajib diisi')
+
+          // Atlet mesti ada dalam senarai sekolah
+          const atlet = atletSekolah.find(a => a.noKP === noKP)
+          if (noKP && !atlet) errs.push(`noKP "${noKPRaw}" tidak dijumpai dalam atlet sekolah ini`)
+
+          // Map noAcara → aceraId
+          const acaraObj = acaraList.find(a => String(a.noAcara) === String(noAcara))
+          if (noAcara && !acaraObj) errs.push(`Acara #${noAcara} tidak dijumpai`)
+
+          // noKP+noAcara duplicate within batch
+          const kpAcarKey = `${noKP}::${noAcara}`
+          if (noKP && noAcara) {
+            if (seenKpAcar.has(kpAcarKey)) errs.push(`Berganda dalam fail: noKP "${noKPRaw}" + acara #${noAcara}`)
+            else seenKpAcar.add(kpAcarKey)
+          }
+
+          if (errs.length > 0) {
+            return { row: i + 2, noBib, noKP, noAcara, status: 'error', mesej: errs.join(' | '), aceraId: null, acaraObj: null, atlet: null }
+          }
+
+          // ── Gate validation (8 gates, live Firestore) ───────────────────
+          const aceraId = acaraObj.aceraId || acaraObj.id
+          try {
+            const hasil = await validasiPendaftaran({
+              noKP,
+              tarikhLahir:    atlet.tarikhLahir,
+              kodSekolah,
+              kejohananId:    kejohanan.id,
+              aceraId,
+              kategoriId:     acaraObj.kategoriKod,
+              jenisAcara:     acaraObj.jenisAcara,
+              tahunKejohanan: tahunKej,
+            })
+            if (!hasil.valid) {
+              return { row: i + 2, noBib, noKP, noAcara, status: 'error', mesej: `${hasil.gate}: ${hasil.mesej}`, aceraId, acaraObj, atlet }
+            }
+            return { row: i + 2, noBib, noKP, noAcara, status: 'sah', mesej: hasil.warning || '', aceraId, acaraObj, atlet }
+          } catch (ex) {
+            return { row: i + 2, noBib, noKP, noAcara, status: 'error', mesej: 'Ralat validasi: ' + ex.message, aceraId, acaraObj, atlet }
+          }
+        }))
+
+        setRows(validated)
+        setProcessing(false)
+      } catch (ex) {
+        setFileErr('Gagal baca fail: ' + ex.message)
+        setProcessing(false)
+      }
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  const sahRows = rows.filter(r => r.status === 'sah')
+  const errRows = rows.filter(r => r.status === 'error')
+
+  async function handleImport() {
+    if (sahRows.length === 0 || !kejohanan) return
+    setImporting(true)
+    try {
+      const kejohananId = kejohanan.id
+      const bibPfx = sekolahData?.bibPrefix || kodSekolah || 'BIB'
+      const bibFmt = Number(sekolahData?.bibFormat) || 3
+
+      // Baca pendaftaran terkini dari Firestore
+      const pendSnap = await getDocs(collection(db, 'kejohanan', kejohananId, 'pendaftaran'))
+      const pendByKP = {}
+      pendSnap.docs.forEach(d => {
+        const p = d.data()
+        if (p.noKP) pendByKP[p.noKP] = { ...p, id: d.id }
+      })
+
+      // Kumpul SAH rows ikut noKP
+      const byKP = {}
+      for (const r of sahRows) {
+        if (!byKP[r.noKP]) byKP[r.noKP] = { atlet: r.atlet, noBib: r.noBib, aceraIds: [] }
+        if (!byKP[r.noKP].aceraIds.includes(r.aceraId)) byKP[r.noKP].aceraIds.push(r.aceraId)
+      }
+
+      let saved = 0
+      const toCreate = []
+
+      // Pass 1: kemaskini pendaftaran sedia ada
+      for (const [noKP, data] of Object.entries(byKP)) {
+        const pRec = pendByKP[noKP]
+        if (pRec) {
+          const acaraIds = [...new Set([...(pRec.acaraIds || []), ...data.aceraIds])]
+          await updateDoc(doc(db, 'kejohanan', kejohananId, 'pendaftaran', pRec.id), {
+            acaraIds, updatedAt: serverTimestamp(),
+          })
+          saved++
+        } else {
+          toCreate.push({ noKP, ...data })
+        }
+      }
+
+      // Pass 2: cipta pendaftaran baru via transaction (selamat dari race condition noBib)
+      if (toCreate.length > 0) {
+        const counterRef = doc(db, 'pendaftaran_counter', `${kejohananId}_${kodSekolah}`)
+        await runTransaction(db, async (transaction) => {
+          const counterSnap = await transaction.get(counterRef)
+          let lastNum = counterSnap.exists() ? (counterSnap.data().lastBibNum || 0) : 0
+          pendSnap.docs.forEach(d => {
+            const nb = d.data().noBib || ''
+            if (nb.startsWith(bibPfx)) {
+              const n = parseInt(nb.slice(bibPfx.length), 10)
+              if (!isNaN(n) && n > lastNum) lastNum = n
+            }
+          })
+
+          for (const item of toCreate) {
+            // Guna noBib dari Excel jika prefix betul, else auto-assign
+            let noBib = item.noBib
+            if (bibPfx && noBib.startsWith(bibPfx)) {
+              const n = parseInt(noBib.slice(bibPfx.length), 10)
+              if (!isNaN(n) && n > lastNum) lastNum = n
+            } else {
+              lastNum++
+              noBib = bibPfx + String(lastNum).padStart(bibFmt, '0')
+            }
+
+            transaction.set(doc(db, 'kejohanan', kejohananId, 'pendaftaran', item.noKP), {
+              noBib,
+              noKP:        item.noKP,
+              namaAtlet:   item.atlet.nama,
+              jantina:     item.atlet.jantina,
+              tarikhLahir: item.atlet.tarikhLahir,
+              kodSekolah:  item.atlet.kodSekolah,
+              kategoriKod: kiraKategori(item.atlet.tarikhLahir, item.atlet.jantina, tahunKej, kategoriList),
+              acaraIds:    item.aceraIds,
+              isAktif:     true,
+              isRelay:     false,
+              createdAt:   serverTimestamp(),
+              updatedAt:   serverTimestamp(),
+            })
+            saved++
+          }
+          transaction.set(counterRef, { lastBibNum: lastNum, updatedAt: serverTimestamp() }, { merge: true })
+        })
+      }
+
+      setImportCount(saved)
+      setImportDone(true)
+      onSaved()
+    } catch (ex) {
+      alert('Ralat semasa import: ' + ex.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function handleDownloadLaporan() {
+    const wb  = XLSX.utils.book_new()
+    const hdr = ['Baris', 'noBib', 'noKP', 'noAcara', 'Status', 'Sebab Gagal']
+    const body = rows.map(r => [
+      r.row, r.noBib, r.noKP, r.noAcara,
+      r.status === 'sah' ? 'SAH' : 'ERROR',
+      r.mesej || '',
+    ])
+    const ws = XLSX.utils.aoa_to_sheet([hdr, ...body])
+    ws['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 8 }, { wch: 65 }]
+    XLSX.utils.book_append_sheet(wb, ws, 'LAPORAN')
+    XLSX.writeFile(wb, 'laporan_import_daftar.xlsx')
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Import Excel — Daftar Acara</h2>
+            <p className="text-[10px] text-gray-400 mt-0.5">Daftar atlet ke acara secara pukal dari fail Excel</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+
+          {/* Template download info */}
+          <div className="flex items-start gap-3 px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
+            <svg className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-blue-800">Guna template yang disediakan</p>
+              <p className="text-[10px] text-blue-600 mt-0.5">
+                3 kolum wajib: <strong>noBib</strong>, <strong>noKP</strong>, <strong>noAcara</strong>.
+                {bibPrefix ? ` Prefix noBib sekolah ini: "${bibPrefix}".` : ''}
+                {' '}Template juga mengandungi senarai acara untuk rujukan.
+              </p>
+            </div>
+            <button
+              onClick={() => downloadTemplateDaftar(bibPrefix, bibFormat, acaraList)}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-[10px] font-bold rounded-lg hover:bg-blue-700 transition-colors">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Muat Turun Template
+            </button>
+          </div>
+
+          {/* Upload */}
+          {!importDone && (
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide">
+                Muat Naik Fail Excel
+              </label>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFile}
+                disabled={processing}
+                className="block w-full text-xs text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#003399] file:text-white hover:file:bg-[#002288] transition-colors disabled:opacity-50"
+              />
+            </div>
+          )}
+
+          {/* Header error — STOP */}
+          {fileErr && (
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+              <svg className="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="text-xs text-red-700 font-medium">{fileErr}</p>
+            </div>
+          )}
+
+          {/* Processing spinner */}
+          {processing && (
+            <div className="flex items-center gap-2 justify-center py-6 text-xs text-gray-500">
+              <svg className="w-4 h-4 animate-spin text-[#003399]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              Mengesahkan data…
+            </div>
+          )}
+
+          {/* Import done */}
+          {importDone && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+              <svg className="w-5 h-5 text-green-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs font-semibold text-green-800">
+                Import berjaya — {importCount} rekod atlet dikemaskini / ditambah.
+              </p>
+            </div>
+          )}
+
+          {/* Results table */}
+          {rows.length > 0 && !processing && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Keputusan Semakan</span>
+                <span className="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
+                  {sahRows.length} SAH
+                </span>
+                {errRows.length > 0 && (
+                  <span className="inline-block px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">
+                    {errRows.length} ERROR
+                  </span>
+                )}
+              </div>
+
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto max-h-72">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0">
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide w-8">#</th>
+                        <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">noBib</th>
+                        <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Nama Atlet</th>
+                        <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Acara</th>
+                        <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-400 uppercase tracking-wide w-14">Status</th>
+                        <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Mesej</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, i) => (
+                        <tr key={i} className={`border-b border-gray-100 last:border-0 ${r.status === 'sah' ? 'bg-green-50/40' : 'bg-red-50/40'}`}>
+                          <td className="px-3 py-1.5 text-[10px] text-gray-400">{r.row}</td>
+                          <td className="px-3 py-1.5 font-mono font-bold text-[10px] text-gray-700">{r.noBib || '—'}</td>
+                          <td className="px-3 py-1.5 text-[10px] text-gray-700">{r.atlet?.nama || (r.noKP ? `(${r.noKP})` : '—')}</td>
+                          <td className="px-3 py-1.5 text-[10px] text-gray-600">
+                            {r.acaraObj
+                              ? `#${r.noAcara} ${r.acaraObj.namaAcara || ''}`
+                              : r.noAcara ? `#${r.noAcara} (?)` : '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            {r.status === 'sah'
+                              ? <span className="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-[9px] font-bold rounded-full">SAH</span>
+                              : <span className="inline-block px-2 py-0.5 bg-red-100 text-red-700 text-[9px] font-bold rounded-full">ERROR</span>
+                            }
+                          </td>
+                          <td className="px-3 py-1.5 text-[10px] text-gray-500 max-w-[200px]">
+                            {r.mesej
+                              ? <span title={r.mesej} className="line-clamp-2">{r.mesej}</span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 shrink-0">
+          <div>
+            {errRows.length > 0 && (
+              <button
+                onClick={handleDownloadLaporan}
+                className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 text-amber-700 text-xs font-bold rounded-xl hover:bg-amber-50 transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Muat Turun Laporan Error
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {importDone ? (
+              <button onClick={onClose} className="px-5 py-2 bg-[#003399] text-white text-xs font-bold rounded-xl hover:bg-[#002288] transition-colors">
+                Tutup
+              </button>
+            ) : (
+              <>
+                <button onClick={onClose} disabled={importing} className="px-4 py-2 border border-gray-200 text-gray-600 text-xs font-bold rounded-xl hover:bg-gray-50 disabled:opacity-40 transition-colors">
+                  Batal
+                </button>
+                {sahRows.length > 0 && (
+                  <button
+                    onClick={handleImport}
+                    disabled={importing}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#003399] text-white text-xs font-bold rounded-xl hover:bg-[#002288] disabled:opacity-50 transition-colors shadow-sm">
+                    {importing && (
+                      <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                    )}
+                    Import {sahRows.length} Baris SAH
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── PPPendaftaranView ────────────────────────────────────────────────────────
+
 function PPPendaftaranView({ sekolahList }) {
   const { userData } = useAuth()
   const kodSekolah = userData?.kodSekolah || null
@@ -3386,6 +3896,7 @@ function PPPendaftaranView({ sekolahList }) {
   // PP Atlet CRUD
   const [atletModal, setAtletModal]     = useState(null) // null | {type:'add'} | {type:'edit',atlet} | {type:'delete',atlet}
   const [showImportPP, setShowImportPP] = useState(false)
+  const [showImportDaftar, setShowImportDaftar] = useState(false)
 
   // PP Daftar — dropdown approach
   const [selKat, setSelKat]             = useState('')   // selected kategori
@@ -3541,6 +4052,33 @@ function PPPendaftaranView({ sekolahList }) {
       return setDaftarErr(`Had ${hadAcara} atlet per sekolah penuh. Slot baki: ${hadAcara - pesertaSek.length}.`)
     }
 
+    // ── GATE G0 — noBib prefix mesti sepadan dengan sekolah ────────────────────
+    const bibPfxSemak = (sekolahData?.bibPrefix || '').toUpperCase()
+    if (bibPfxSemak) {
+      for (const noKP of daftarChecked) {
+        const atlet = atletSekolah.find(a => a.noKP === noKP)
+        if (!atlet) continue
+        const noBibAtlet = (atlet.noBib || '').toUpperCase()
+        if (!noBibAtlet) {
+          setDaftarErr(`${atlet.nama || noKP} — tiada No. BIB. Sila tetapkan BIB dalam tab "Atlet Saya" dahulu.`)
+          return
+        }
+        if (!noBibAtlet.startsWith(bibPfxSemak)) {
+          setDaftarErr(`${atlet.nama || noKP} — No. BIB "${atlet.noBib}" tidak sepadan dengan prefix sekolah "${bibPfxSemak}". Hubungi admin untuk betulkan BIB.`)
+          return
+        }
+        // Semak noBib unik — bandingkan dengan semua pendaftaran yang ada
+        const bibDuplikat = pendaftaranList.find(
+          p => p.noKP !== noKP && (p.noBib || '').toUpperCase() === noBibAtlet
+        )
+        if (bibDuplikat) {
+          setDaftarErr(`${atlet.nama || noKP} — No. BIB "${atlet.noBib}" sudah digunakan oleh atlet lain (${bibDuplikat.namaAtlet || bibDuplikat.noKP}). Hubungi admin.`)
+          return
+        }
+      }
+    }
+    // ───────────────────────────────────────────────────────────────────────────
+
     setDaftarSaving(true)
     let jadualWarning = ''
     try {
@@ -3667,7 +4205,7 @@ function PPPendaftaranView({ sekolahList }) {
 
   // Tukar atlet dalam acara — buang lama, masuk baru dalam satu operasi
   async function handleTukarSimpan(noKPBaru) {
-    const { pRec, aceraId } = tukarModal
+    const { pRec, aceraId, acaraObj } = tukarModal
     if (!kejohanan?.id || !noKPBaru) return
     const atletBaru = atletSekolah.find(a => a.noKP === noKPBaru)
     if (!atletBaru) return
@@ -3698,6 +4236,43 @@ function PPPendaftaranView({ sekolahList }) {
           updatedAt:  serverTimestamp(),
         })
       }
+
+      // 3. Auto-replace dalam heat doc — lorong kekal, peserta lain tidak terjejas
+      //    Skip relay (struktur berbeza) dan heat yang sudah selesai
+      const isRelayAcara = acaraObj?.jenisAcara === 'relay'
+      if (!isRelayAcara && heatDijanaMap[aceraId]) {
+        const heatSnap = await getDocs(
+          collection(db, 'kejohanan', kejohanan.id, 'acara', aceraId, 'heat')
+        )
+        const kategoriKodBaru = kiraKategori(
+          atletBaru.tarikhLahir, atletBaru.jantina, tahunKej, kategoriList
+        ) || atletBaru.kategoriKod || ''
+
+        for (const hDoc of heatSnap.docs) {
+          const hData = hDoc.data()
+          if (hData.status === 'selesai') continue
+          const pesertaLama = hData.peserta || []
+          const idx = pesertaLama.findIndex(p => p.noKP === pRec.noKP)
+          if (idx === -1) continue
+
+          const pesertaBaru = pesertaLama.map((p, i) =>
+            i !== idx ? p : {
+              ...p,
+              noBib:         atletBaru.noBib || '',
+              noKP:          noKPBaru,
+              namaAtlet:     atletBaru.nama || '',
+              kategoriKod:   kategoriKodBaru,
+              keputusan:     null,
+              status:        'belum',
+              cubaan:        [],
+              rankDalamHeat: null,
+            }
+          )
+          await updateDoc(hDoc.ref, { peserta: pesertaBaru, updatedAt: serverTimestamp() })
+          break // atlet individu hanya ada dalam 1 heat
+        }
+      }
+
       setTukarModal(null)
       await refreshData()
     } catch (e) { alert('Gagal tukar atlet: ' + e.message) }
@@ -4256,11 +4831,23 @@ function PPPendaftaranView({ sekolahList }) {
 
         {/* ── Bahagian 1: Daftar Acara ── */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 bg-[#003399] flex items-center gap-2">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            <p className="text-xs font-bold text-white uppercase tracking-wide">Daftar Acara</p>
+          <div className="px-4 py-3 bg-[#003399] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              <p className="text-xs font-bold text-white uppercase tracking-wide">Daftar Acara</p>
+            </div>
+            {!pendaftaranTutup && (
+              <button
+                onClick={() => setShowImportDaftar(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold rounded-lg transition-colors">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import Excel
+              </button>
+            )}
           </div>
           <div className="px-4 py-4 space-y-3">
 
@@ -4472,7 +5059,8 @@ function PPPendaftaranView({ sekolahList }) {
                 const heatAda    = heatDijanaMap[aceraId] === true
                 const acaraLock  = isAcaraLocked(aceraId)
                 const bypassed   = isBypassAktif(aceraId)
-                const canEdit    = bypassed || (!acaraLock && !isDikunci)
+                const bypassSahkanAktif = sekolahData?.bypassPengesahan === true
+                const canEdit    = bypassSahkanAktif || bypassed || (!acaraLock && !isDikunci)
                 return (
                   <div key={aceraId} className="px-4 py-3">
                     <div className="flex items-center gap-2 mb-2">
@@ -5388,13 +5976,29 @@ function PPPendaftaranView({ sekolahList }) {
       {ppTab === 'cetak'     && renderTabCetak()}
       {ppTab === 'startlist' && renderTabStartList()}
 
-      {/* Import Excel Modal */}
+      {/* Import Excel Modal — Tab Atlet */}
       {showImportPP && (
         <ImportAtletModal
           sekolahData={sekolahData}
           existingBibs={atletSekolah.map(a => a.noBib).filter(Boolean)}
           onClose={() => setShowImportPP(false)}
           onSaved={() => { refreshData() }} />
+      )}
+
+      {/* Import Excel Modal — Tab Daftar Acara */}
+      {showImportDaftar && kejohanan && (
+        <PPImportDaftarModal
+          sekolahData={sekolahData}
+          acaraList={acaraList}
+          atletSekolah={atletSekolah}
+          pendaftaranList={pendaftaranList}
+          kejohanan={kejohanan}
+          kategoriList={kategoriList}
+          tahunKej={tahunKej}
+          kodSekolah={kodSekolah}
+          onClose={() => setShowImportDaftar(false)}
+          onSaved={() => { refreshData(); setShowImportDaftar(false) }}
+        />
       )}
 
     </div>
