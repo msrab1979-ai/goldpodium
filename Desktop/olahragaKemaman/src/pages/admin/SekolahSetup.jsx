@@ -502,17 +502,21 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
         }
       }
 
-      // Semak bibPrefix unik seluruh sistem — elak noBib clash antara mana-mana sekolah
+      // Semak bibPrefix unik dalam kategori yang sama sahaja — prefix sama OK jika kategori berbeza
       const prefixBaru   = form.bibPrefix.trim().toUpperCase()
+      const kategoriSemasa = form.kategori?.trim() || ''
       const prefixBerubah = isEdit ? prefixBaru !== (initial?.bibPrefix || '').toUpperCase() : true
       if (prefixBerubah) {
         const prefixSnap = await getDocs(query(
           collection(db, 'sekolah'),
           where('bibPrefix', '==', prefixBaru)
         ))
-        const clash = prefixSnap.docs.find(d => d.id !== kodBaru && d.id !== kodLama)
+        const clash = prefixSnap.docs.find(d =>
+          d.id !== kodBaru && d.id !== kodLama &&
+          (d.data().kategori || '').trim() === kategoriSemasa
+        )
         if (clash) {
-          setErr(`BIB Prefix "${prefixBaru}" sudah digunakan oleh ${clash.data().namaSekolah} (${clash.id}) [${clash.data().kategori}]. Prefix mesti unik antara semua sekolah.`)
+          setErr(`BIB Prefix "${prefixBaru}" sudah digunakan oleh ${clash.data().namaSekolah} (${clash.id}) dalam kategori ${kategoriSemasa}. Prefix mesti unik dalam kategori yang sama.`)
           setBusy(false)
           return
         }

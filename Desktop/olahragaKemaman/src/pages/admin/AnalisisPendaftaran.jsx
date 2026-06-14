@@ -246,11 +246,15 @@ function TabPendaftaranByAcara({ sekolahList, acaraList, pendaftaranDocs, katego
   const [cari, setCari] = useState('')
 
   const sekolahTapis = cari.trim()
-    ? sekolahAda.filter(s => s.nama.toLowerCase().includes(cari.toLowerCase()))
+    ? sekolahAda.filter(s => (s.nama || s.kod).toLowerCase().includes(cari.toLowerCase()))
     : sekolahAda
 
-  const sekolahDipilih = sekolahAda.find(s => s.kod === selectedSekolah)
-  const data = buildByAcara(acaraList, pendaftaranDocs, sekolahList, selectedSekolah)
+  // Auto-pilih sekolah pertama dalam senarai tapis bila carian berubah
+  const selectedDalamTapis = sekolahTapis.find(s => s.kod === selectedSekolah)
+  const kodPapar = selectedDalamTapis ? selectedSekolah : (sekolahTapis[0]?.kod || '')
+
+  const sekolahDipilih = sekolahAda.find(s => s.kod === kodPapar)
+  const data = buildByAcara(acaraList, pendaftaranDocs, sekolahList, kodPapar)
   const totalPendaftaran = data.reduce((n, a) => n + a.atlet.length, 0)
 
   function cetakPDF() {
@@ -327,8 +331,8 @@ function TabPendaftaranByAcara({ sekolahList, acaraList, pendaftaranDocs, katego
             />
             {sekolahTapis.length > 0 ? (
               <select
-                value={selectedSekolah}
-                onChange={e => setSelectedSekolah(e.target.value)}
+                value={kodPapar}
+                onChange={e => { setSelectedSekolah(e.target.value); setCari('') }}
                 size={Math.min(sekolahTapis.length, 6)}
                 className="block border border-gray-200 rounded-lg px-3 py-1 text-xs font-semibold text-gray-700 bg-white focus:outline-none focus:border-[#003399] w-64"
               >
@@ -624,23 +628,20 @@ function TabAnalisisSekolah({ sekolahList, acaraList, pendaftaranDocs, kategoriL
         body: visibleRows.map((r, i) => [
           i + 1,
           r.namaSekolah,
-          r.filledEvents === 0 ? '—' : `${r.filledEvents}/${r.totalEvents}`,
-          r.filledEvents === 0 ? 'Belum Daftar' : r.isLengkap ? 'Lengkap' : 'Sebahagian',
+          r.filledEvents === 0 ? '0 / ' + r.totalEvents : `${r.filledEvents} / ${r.totalEvents}`,
+          r.filledEvents >= 1 ? 'Daftar' : 'Belum Daftar',
         ]),
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
           0: { cellWidth: 12, halign: 'center' },
-          2: { cellWidth: 24, halign: 'center' },
-          3: { cellWidth: 30, halign: 'center' },
+          2: { cellWidth: 28, halign: 'center' },
+          3: { cellWidth: 28, halign: 'center' },
         },
         alternateRowStyles: { fillColor: [248, 249, 252] },
         didParseCell: d => {
           if (d.column.index === 3 && d.cell.section === 'body') {
-            const v = d.cell.raw
-            d.cell.styles.textColor = v === 'Lengkap' ? [0, 120, 0]
-              : v === 'Belum Daftar' ? [180, 0, 0]
-              : [160, 80, 0]
+            d.cell.styles.textColor = d.cell.raw === 'Daftar' ? [0, 130, 0] : [180, 0, 0]
             d.cell.styles.fontStyle = 'bold'
           }
         },

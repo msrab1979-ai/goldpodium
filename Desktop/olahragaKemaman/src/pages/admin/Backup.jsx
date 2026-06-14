@@ -9,9 +9,10 @@
 
 import { useState, useRef } from 'react'
 import {
-  collection, getDocs, doc, writeBatch, setDoc,
+  collection, getDocs, doc, writeBatch, setDoc, query, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import * as XLSX from 'xlsx'
 
 // ─── Konfigurasi ──────────────────────────────────────────────────────────────
 
@@ -35,6 +36,250 @@ const FLAT_COLS = [
   { id: 'anugerah_custom',     label: 'Anugerah Custom' },
   { id: 'bantahan',            label: 'Bantahan' },
 ]
+
+// ─── Jana Sheet Excel ─────────────────────────────────────────────────────────
+
+function setCellWidth(ws, cols) {
+  ws['!cols'] = cols.map(w => ({ wch: w }))
+}
+
+async function janaSheetExcel(addLog) {
+  // 1. Kejohanan aktif
+  addLog('Mencari kejohanan aktif...')
+  const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+  if (kejSnap.empty) throw new Error('Tiada kejohanan aktif.')
+  const kej = { id: kejSnap.docs[0].id, ...kejSnap.docs[0].data() }
+  const namaKej = kej.namaKejohanan || kej.id
+  const tahunKej = kej.tahun || new Date().getFullYear()
+  addLog(`  ✓ Kejohanan: ${namaKej}`)
+
+  // 2. Fetch semua data
+  addLog('Mengambil data Firestore...')
+  const [sekolahSnap, acaraSnap, pendSnap, katSnap] = await Promise.all([
+    getDocs(collection(db, 'sekolah')),
+    getDocs(collection(db, 'kejohanan', kej.id, 'acara')),
+    getDocs(collection(db, 'kejohanan', kej.id, 'pendaftaran')),
+    getDocs(collection(db, 'kategori')),
+  ])
+
+  const sekolahAll = sekolahSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(s => s.isAktif !== false)
+    .sort((a, b) => (a.namaSekolah || a.id).localeCompare(b.namaSekolah || b.id))
+
+  const acaraAll = acaraSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(a => !a.parentAcaraId && a.isAktif !== false)
+    .sort((a, b) => (Number(a.noAcara) || 0) - (Number(b.noAcara) || 0))
+
+  const pendAll = pendSnap.docs
+    .map(d => ({ docId: d.id, ...d.data() }))
+    .filter(p => p.kodSekolah !== 'ABC123')
+    .sort((a, b) => (a.namaAtlet || '').localeCompare(b.namaAtlet || ''))
+
+  const katMap = {}
+  katSnap.docs.forEach(d => {
+    const data = d.data()
+    katMap[data.kod || d.id] = data.label || data.nama || data.kod || d.id
+  })
+
+  addLog(`  ✓ ${sekolahAll.length} sekolah | ${acaraAll.length} acara | ${pendAll.length} pendaftaran`)
+
+  const wb = XLSX.utils.book_new()
+  const tarikh = new Date().toLocaleDateString('ms-MY', { day:'2-digit', month:'2-digit', year:'numeric' })
+
+  // ── TAB 1: SEKOLAH ──────────────────────────────────────────────────────────
+  addLog('Jana Tab 1: SEKOLAH...')
+  const sklHeader = ['Kod Sekolah', 'Nama Sekolah', 'Kategori', 'Daerah', 'Negeri', 'BIB Prefix', 'Email']
+  const sklRows = sekolahAll.map(s => [
+    s.id, s.namaSekolah || '', s.kategori || '', s.daerah || '',
+    s.negeri || '', s.bibPrefix || '', s.email || '',
+  ])
+  const ws1 = XLSX.utils.aoa_to_sheet([sklHeader, ...sklRows])
+  setCellWidth(ws1, [12, 35, 8, 15, 12, 10, 28])
+  XLSX.utils.book_append_sheet(wb, ws1, 'SEKOLAH')
+
+  // ── TAB 2: ATLET ────────────────────────────────────────────────────────────
+  addLog('Jana Tab 2: ATLET...')
+  const atlHeader = ['No KP', 'Nama Atlet', 'Jantina', 'Tarikh Lahir', 'Kategori Kod', 'Label Kategori', 'Kod Sekolah', 'Nama Sekolah', 'No BIB']
+  const sekolahNamaMap = Object.fromEntries(sekolahAll.map(s => [s.id, s.namaSekolah || s.id]))
+  const atlRows = pendAll.map(p => [
+    p.docId,
+    p.namaAtlet || '',
+    p.jantina || '',
+    p.tarikhLahir || '',
+    p.kategoriKod || '',
+    katMap[p.kategoriKod] || p.kategoriKod || '',
+    p.kodSekolah || '',
+    sekolahNamaMap[p.kodSekolah] || p.kodSekolah || '',
+    p.noBib || '',
+  ])
+  const ws2 = XLSX.utils.aoa_to_sheet([atlHeader, ...atlRows])
+  setCellWidth(ws2, [16, 35, 8, 12, 12, 12, 12, 30, 10])
+  XLSX.utils.book_append_sheet(wb, ws2, 'ATLET')
+
+  // ── TAB 3: ACARA ────────────────────────────────────────────────────────────
+  addLog('Jana Tab 3: ACARA...')
+  const acaraHeader = ['No Acara', 'Nama Acara', 'Kategori Kod', 'Label Kategori', 'Jantina', 'Jenis Acara', 'Hari', 'Masa', 'Had Atlet/Sekolah']
+  const acaraRows = acaraAll.map(a => [
+    a.noAcara || '', a.namaAcara || '',
+    a.kategoriKod || '', katMap[a.kategoriKod] || a.kategoriKod || '',
+    a.jantina || '', a.jenisAcara || '',
+    a.hari || '', a.masa || '',
+    a.hadAtletPerSekolah || 2,
+  ])
+  const ws3 = XLSX.utils.aoa_to_sheet([acaraHeader, ...acaraRows])
+  setCellWidth(ws3, [10, 30, 12, 14, 8, 14, 6, 10, 14])
+  XLSX.utils.book_append_sheet(wb, ws3, 'ACARA')
+
+  // ── TAB 4: PENDAFTARAN ──────────────────────────────────────────────────────
+  addLog('Jana Tab 4: PENDAFTARAN...')
+  const pendHeader = ['No KP', 'Nama Atlet', 'No BIB', 'Kod Sekolah', 'Nama Sekolah', 'Kategori', 'Jantina', 'Bilangan Acara', 'Senarai Acara (noAcara)']
+  // Bina map aceraId → noAcara
+  const acaraNoMap = Object.fromEntries(acaraSnap.docs.map(d => [d.id, d.data().noAcara || d.id]))
+  const pendRows = pendAll.map(p => {
+    const acaraIds = p.acaraIds || []
+    const noAcaraList = acaraIds.map(id => acaraNoMap[id] || id).join(', ')
+    return [
+      p.docId, p.namaAtlet || '', p.noBib || '',
+      p.kodSekolah || '', sekolahNamaMap[p.kodSekolah] || '',
+      katMap[p.kategoriKod] || p.kategoriKod || '',
+      p.jantina || '', acaraIds.length, noAcaraList,
+    ]
+  })
+  const ws4 = XLSX.utils.aoa_to_sheet([pendHeader, ...pendRows])
+  setCellWidth(ws4, [16, 35, 10, 12, 30, 12, 8, 12, 40])
+  XLSX.utils.book_append_sheet(wb, ws4, 'PENDAFTARAN')
+
+  // ── TAB 5: KEPUTUSAN (No BIB → VLOOKUP nama & sekolah auto) ────────────────
+  // PENDAFTARAN tab: C=No BIB, B=Nama Atlet, D=Kod Sekolah, E=Nama Sekolah
+  addLog('Jana Tab 5: KEPUTUSAN (template + VLOOKUP)...')
+  const kepHeader = [
+    'No Acara', 'Nama Acara', 'Kategori', 'Jantina',
+    '🥇 No BIB',  '🥇 Nama Atlet (auto)', '🥇 Kod Sekolah (auto)',
+    '🥈 No BIB',  '🥈 Nama Atlet (auto)', '🥈 Kod Sekolah (auto)',
+    '🥉 No BIB',  '🥉 Nama Atlet (auto)', '🥉 Kod Sekolah (auto)',
+    'T4 No BIB',  'T4 Nama Atlet (auto)', 'T4 Kod Sekolah (auto)',
+    'T5 No BIB',  'T5 Nama Atlet (auto)', 'T5 Kod Sekolah (auto)',
+    'Catatan',
+  ]
+  // PENDAFTARAN tab kolum: A=No KP, B=Nama Atlet, C=No BIB, D=Kod Sekolah, E=Nama Sekolah
+  // VLOOKUP(noBib, PENDAFTARAN!$C:$E, 2, 0) → Nama Atlet (offset 2 dari C)
+  // VLOOKUP(noBib, PENDAFTARAN!$C:$E, 3, 0) → Kod Sekolah (offset 3 dari C)
+  const kepRows = acaraAll.map((a, i) => {
+    const r = i + 2
+    const namaAcara = a.namaAcara || ''
+    const kat = katMap[a.kategoriKod] || a.kategoriKod || ''
+    const jantina = a.jantina === 'L' ? 'Lelaki' : a.jantina === 'P' ? 'Perempuan' : ''
+    // Helper: bina formula VLOOKUP untuk kolum bibCol
+    const vlNama = bibCol => ({ f: `IFERROR(VLOOKUP(${bibCol}${r},PENDAFTARAN!$C:$E,2,0),"")` })
+    const vlSkl  = bibCol => ({ f: `IFERROR(VLOOKUP(${bibCol}${r},PENDAFTARAN!$C:$E,3,0),"")` })
+    return [
+      a.noAcara || '', namaAcara, kat, jantina,
+      '', vlNama('E'), vlSkl('E'),   // 🥇 — admin isi E, F+G auto
+      '', vlNama('H'), vlSkl('H'),   // 🥈 — admin isi H, I+J auto
+      '', vlNama('K'), vlSkl('K'),   // 🥉 — admin isi K, L+M auto
+      '', vlNama('N'), vlSkl('N'),   // T4 — admin isi N, O+P auto
+      '', vlNama('Q'), vlSkl('Q'),   // T5 — admin isi Q, R+S auto
+      '',                            // Catatan
+    ]
+  })
+  const ws5 = XLSX.utils.aoa_to_sheet([kepHeader, ...kepRows])
+  setCellWidth(ws5, [10, 28, 12, 10, 10,28,14, 10,28,14, 10,28,14, 10,28,14, 10,28,14, 18])
+  ws5['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' }
+  XLSX.utils.book_append_sheet(wb, ws5, 'KEPUTUSAN')
+
+  // ── TAB 6: MEDAL TALLY (formula auto) ──────────────────────────────────────
+  addLog('Jana Tab 6: MEDAL TALLY (formula)...')
+  const medalHeader = [
+    'Kedudukan', 'Kod Sekolah', 'Nama Sekolah', 'Kategori Sekolah',
+    '🥇 Emas', '🥈 Perak', '🥉 Gangsa', 'Jumlah Medal',
+  ]
+  // KEPUTUSAN: G=🥇 Kod Sekolah, J=🥈 Kod Sekolah, M=🥉 Kod Sekolah (auto VLOOKUP)
+  const medalRows = sekolahAll.map((s, i) => {
+    const r = i + 2
+    const kodSkl = s.id
+    return [
+      { f: `RANK(E${r},$E$2:$E${sekolahAll.length + 1},0)` },
+      kodSkl,
+      s.namaSekolah || kodSkl,
+      s.kategori || '',
+      { f: `COUNTIF(KEPUTUSAN!$G:$G,B${r})` },   // Emas: kolum G
+      { f: `COUNTIF(KEPUTUSAN!$J:$J,B${r})` },   // Perak: kolum J
+      { f: `COUNTIF(KEPUTUSAN!$M:$M,B${r})` },   // Gangsa: kolum M
+      { f: `SUM(E${r}:G${r})` },
+    ]
+  })
+  const ws6 = XLSX.utils.aoa_to_sheet([medalHeader, ...medalRows])
+  setCellWidth(ws6, [10, 12, 32, 14, 8, 8, 8, 12])
+  ws6['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' }
+  XLSX.utils.book_append_sheet(wb, ws6, 'MEDAL_TALLY')
+
+  // ── TAB 7: OLAHRAGAWAN (formula auto guna nama atlet) ──────────────────────
+  addLog('Jana Tab 7: OLAHRAGAWAN (formula)...')
+  const olaHeader = [
+    'No KP', 'Nama Atlet', 'Kod Sekolah', 'Nama Sekolah',
+    'Kategori', 'Jantina',
+    '🥇 Emas', '🥈 Perak', '🥉 Gangsa', 'T4',
+    'Mata', 'Kedudukan',
+  ]
+  const olaRows = pendAll.map((p, i) => {
+    const r = i + 2
+    return [
+      p.docId,
+      p.namaAtlet || '',
+      p.kodSekolah || '',
+      sekolahNamaMap[p.kodSekolah] || '',
+      katMap[p.kategoriKod] || p.kategoriKod || '',
+      p.jantina || '',
+      // KEPUTUSAN: F=🥇 Nama Atlet, I=🥈, L=🥉, O=T4 (auto VLOOKUP)
+      { f: `COUNTIF(KEPUTUSAN!$F:$F,B${r})` },   // Emas
+      { f: `COUNTIF(KEPUTUSAN!$I:$I,B${r})` },   // Perak
+      { f: `COUNTIF(KEPUTUSAN!$L:$L,B${r})` },   // Gangsa
+      { f: `COUNTIF(KEPUTUSAN!$O:$O,B${r})` },   // T4
+      // Mata = E*5 + P*3 + G*2 + T4*1
+      { f: `(G${r}*5)+(H${r}*3)+(I${r}*2)+(J${r}*1)` },
+      // Kedudukan ikut mata
+      { f: `RANK(K${r},$K$2:$K${pendAll.length + 1},0)` },
+    ]
+  })
+  const ws7 = XLSX.utils.aoa_to_sheet([olaHeader, ...olaRows])
+  setCellWidth(ws7, [16, 35, 12, 30, 12, 8, 6, 6, 6, 6, 8, 10])
+  ws7['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' }
+  XLSX.utils.book_append_sheet(wb, ws7, 'OLAHRAGAWAN')
+
+  // ── TAB 8: ATLET TERBAIK BY KATEGORI ──────────────────────────────────────
+  addLog('Jana Tab 8: ATLET TERBAIK BY KATEGORI (formula)...')
+  // Kumpul kategori unik (L dan P berasingan)
+  const katUnik = [...new Set(pendAll.map(p => p.kategoriKod).filter(Boolean))].sort()
+  const terbaikHeader = [
+    'Kategori', 'Label',
+    'Nama Atlet Terbaik', 'Sekolah', 'Mata',
+  ]
+  const terbaikRows = katUnik.map((kat, i) => {
+    const r = i + 2
+    const label = katMap[kat] || kat
+    // Cari atlet dengan mata tertinggi dalam kategori ini dari Tab OLAHRAGAWAN
+    // OLAHRAGAWAN: E=Kategori, K=Mata, B=Nama
+    return [
+      kat, label,
+      { f: `IFERROR(INDEX(OLAHRAGAWAN!$B:$B,MATCH(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),OLAHRAGAWAN!$K:$K,0)),"—")` },
+      { f: `IFERROR(INDEX(OLAHRAGAWAN!$D:$D,MATCH(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),OLAHRAGAWAN!$K:$K,0)),"—")` },
+      { f: `IFERROR(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),0)` },
+    ]
+  })
+  const ws8 = XLSX.utils.aoa_to_sheet([terbaikHeader, ...terbaikRows])
+  setCellWidth(ws8, [12, 14, 35, 30, 8])
+  XLSX.utils.book_append_sheet(wb, ws8, 'ATLET_TERBAIK')
+
+  // ── Download ─────────────────────────────────────────────────────────────────
+  addLog('Menjana fail Excel...')
+  const namaFail = `KOAM_Sheet_${tahunKej}_${tarikh.replace(/\//g, '')}.xlsx`
+  XLSX.writeFile(wb, namaFail)
+  addLog(`✅ Selesai! Fail: ${namaFail}`)
+  addLog(`   8 tab: SEKOLAH | ATLET | ACARA | PENDAFTARAN | KEPUTUSAN | MEDAL_TALLY | OLAHRAGAWAN | ATLET_TERBAIK`)
+  addLog(`   Upload ke Google Sheets untuk formula berfungsi sepenuhnya.`)
+}
 
 // ─── Export helpers ───────────────────────────────────────────────────────────
 
@@ -123,6 +368,10 @@ export default function Backup() {
   const [eksportLoading, setEksportLoading] = useState(false)
   const [eksportLog,     setEksportLog]     = useState([])
 
+  // Jana Sheet state
+  const [sheetLoading, setSheetLoading] = useState(false)
+  const [sheetLog,     setSheetLog]     = useState([])
+
   // Import state
   const [backupData,   setBackupData]   = useState(null)
   const [failNama,     setFailNama]     = useState('')
@@ -193,6 +442,21 @@ export default function Backup() {
       addLog(`❌ Ralat: ${err.message}`)
     } finally {
       setEksportLoading(false)
+    }
+  }
+
+  // ── Jana Sheet ──────────────────────────────────────────────────────────────
+
+  async function handleJanaSheet() {
+    setSheetLoading(true)
+    const log = []
+    const addLog = msg => { log.push(msg); setSheetLog([...log]) }
+    try {
+      await janaSheetExcel(addLog)
+    } catch (e) {
+      addLog(`❌ Ralat: ${e.message}`)
+    } finally {
+      setSheetLoading(false)
     }
   }
 
@@ -339,8 +603,9 @@ export default function Backup() {
       {/* Tab switcher */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6">
         {[
-          { id: 'muat_turun', label: 'Muat Turun Backup' },
-          { id: 'pulihkan',   label: 'Pulihkan Backup'   },
+          { id: 'muat_turun',  label: 'Muat Turun Backup' },
+          { id: 'pulihkan',    label: 'Pulihkan Backup'   },
+          { id: 'jana_sheet',  label: 'Jana Sheet Excel'  },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
@@ -553,6 +818,65 @@ export default function Backup() {
                   l.startsWith('❌') ? 'text-red-400' :
                   l.startsWith('  ✓') || l.startsWith('    ✓') ? 'text-green-300' :
                   l.startsWith('Skip') ? 'text-gray-500' : ''
+                }>{l}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════ TAB: Jana Sheet ═══════════════ */}
+      {tab === 'jana_sheet' && (
+        <div className="space-y-4">
+
+          {/* Info */}
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <p className="text-sm font-semibold text-blue-700 mb-2">8 Tab dalam fail Excel</p>
+            <div className="grid grid-cols-2 gap-1">
+              {[
+                { tab: '1', label: 'SEKOLAH', desc: 'Senarai semua sekolah aktif' },
+                { tab: '2', label: 'ATLET', desc: 'Semua atlet + kategori' },
+                { tab: '3', label: 'ACARA', desc: 'Senarai 152 acara' },
+                { tab: '4', label: 'PENDAFTARAN', desc: 'Atlet × acara yang didaftar' },
+                { tab: '5', label: 'KEPUTUSAN', desc: 'Template — admin isi manual' },
+                { tab: '6', label: 'MEDAL TALLY', desc: 'Formula auto dari KEPUTUSAN' },
+                { tab: '7', label: 'OLAHRAGAWAN', desc: 'Mata auto (E=5 P=3 G=2 T4=1)' },
+                { tab: '8', label: 'ATLET TERBAIK', desc: 'Terbaik by kategori — formula' },
+              ].map(t => (
+                <div key={t.tab} className="flex items-start gap-2 text-xs">
+                  <span className="w-5 h-5 rounded bg-[#003399] text-white text-[9px] font-black flex items-center justify-center shrink-0 mt-0.5">{t.tab}</span>
+                  <div>
+                    <span className="font-bold text-blue-800">{t.label}</span>
+                    <span className="text-blue-500 ml-1">— {t.desc}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 pt-3 border-t border-blue-100">
+              <p className="text-[10px] text-blue-500">⚠️ Upload ke <strong>Google Sheets</strong> (bukan Excel desktop) untuk formula MEDAL TALLY, OLAHRAGAWAN dan ATLET TERBAIK berfungsi sepenuhnya.</p>
+              <p className="text-[10px] text-blue-500 mt-1">📝 Isi tab <strong>KEPUTUSAN</strong> semasa kejohanan — tab lain auto-update.</p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleJanaSheet}
+            disabled={sheetLoading}
+            className="w-full py-3 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {sheetLoading
+              ? <><Spinner /> Sedang menjana sheet...</>
+              : '📊 Jana & Muat Turun Sheet Excel'
+            }
+          </button>
+
+          {/* Log output */}
+          {sheetLog.length > 0 && (
+            <div className="bg-gray-900 rounded-xl p-4 font-mono text-xs text-gray-300 max-h-72 overflow-y-auto space-y-0.5">
+              {sheetLog.map((l, i) => (
+                <p key={i} className={
+                  l.startsWith('✅') ? 'text-green-400 font-bold' :
+                  l.startsWith('❌') ? 'text-red-400' :
+                  l.startsWith('  ✓') ? 'text-green-300' : ''
                 }>{l}</p>
               ))}
             </div>
