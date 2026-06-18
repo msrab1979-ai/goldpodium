@@ -29,7 +29,11 @@ import Backup from './pages/admin/Backup'
 import ManualPendaftaran from './pages/admin/ManualPendaftaran'
 import AnalisisPendaftaran from './pages/admin/AnalisisPendaftaran'
 import ESijil from './pages/admin/ESijil'
+import ESijilPencapaian from './pages/admin/ESijilPencapaian'
+import BukuKongsiSetup from './pages/admin/BukuKongsiSetup'
 import SijilPengurus from './pages/admin/SijilPengurus'
+import SijilPencapaianPP from './pages/pengurus/SijilPencapaianPP'
+import BukuKongsiPP from './pages/pengurus/BukuKongsiPP'
 import MuatTurunSijil from './pages/admin/MuatTurunSijil'
 import HealthCheck from './pages/admin/HealthCheck'
 
@@ -200,9 +204,29 @@ function AppRoutes() {
           <DashboardLayout><ESijil /></DashboardLayout>
         </ProtectedRoute>
       } />
+      <Route path="/dashboard/esijil-pencapaian" element={
+        <ProtectedRoute>
+          <DashboardLayout><ESijilPencapaian /></DashboardLayout>
+        </ProtectedRoute>
+      } />
       <Route path="/dashboard/sijilsaya" element={
         <ProtectedRoute>
           <DashboardLayout><SijilPengurus /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/sijil-pencapaian" element={
+        <ProtectedRoute>
+          <DashboardLayout><SijilPencapaianPP /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/buku-kongsi-setup" element={
+        <ProtectedRoute>
+          <DashboardLayout><BukuKongsiSetup /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/buku-kongsi" element={
+        <ProtectedRoute>
+          <DashboardLayout><BukuKongsiPP /></DashboardLayout>
         </ProtectedRoute>
       } />
       <Route path="/dashboard/muaturunsijil" element={

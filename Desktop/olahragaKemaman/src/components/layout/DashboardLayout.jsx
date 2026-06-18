@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -56,9 +58,13 @@ const NAV_ITEMS = [
   {
     section: 'SIJIL',
     items: [
-      { label: 'E-Sijil',           path: '/dashboard/sijilsaya',     icon: 'sijil',     roles: ['pengurus_pasukan'] },
-      { label: 'Setup E-Sijil',     path: '/dashboard/esijil',        icon: 'sijil',     roles: ['superadmin', 'admin'] },
-      { label: 'Muat Turun Sijil',  path: '/dashboard/muaturunsijil', icon: 'download',  roles: ['superadmin', 'admin'] },
+      { label: 'Sijil Penyertaan',         path: '/dashboard/sijilsaya',         icon: 'sijil',     roles: ['pengurus_pasukan'] },
+      { label: 'Sijil Pencapaian',         path: '/dashboard/sijil-pencapaian',  icon: 'medal',     roles: ['pengurus_pasukan'] },
+      { label: 'Buku Kejohanan',           path: '/dashboard/buku-kongsi',       icon: 'book',      roles: ['pengurus_pasukan'] },
+      { label: 'Sijil Penyertaan',         path: '/dashboard/esijil',            icon: 'sijil',     roles: ['superadmin', 'admin'] },
+      { label: 'Setup Sijil Pencapaian',   path: '/dashboard/esijil-pencapaian', icon: 'medal',     roles: ['superadmin', 'admin'] },
+      { label: 'Kongsi Buku',              path: '/dashboard/buku-kongsi-setup', icon: 'book',      roles: ['superadmin', 'admin'] },
+      { label: 'Muat Turun Sijil',        path: '/dashboard/muaturunsijil',     icon: 'download',  roles: ['superadmin', 'admin'] },
     ],
   },
   {
@@ -204,14 +210,45 @@ export default function DashboardLayout({ children }) {
     navigate('/login')
   }
 
+  // ── Subscribe toggle Sijil Pencapaian + Buku Kongsi (real-time) ──────────
+  const [sijilPencapaianAktif, setSijilPencapaianAktif] = useState(true)
+  const [bukuKongsiAktif, setBukuKongsiAktif]           = useState(true)
+  useEffect(() => {
+    const unsub1 = onSnapshot(
+      doc(db, 'tetapan', 'sijilPencapaian'),
+      snap => {
+        if (snap.exists()) {
+          const a = snap.data().aktif
+          setSijilPencapaianAktif(a === undefined ? true : !!a)
+        }
+      },
+      () => {}
+    )
+    const unsub2 = onSnapshot(
+      doc(db, 'tetapan', 'bukuKongsi'),
+      snap => {
+        if (snap.exists()) {
+          const a = snap.data().aktif
+          setBukuKongsiAktif(a === undefined ? true : !!a)
+        }
+      },
+      () => {}
+    )
+    return () => { unsub1(); unsub2() }
+  }, [])
+
   // Jika userRole null (dokumen Firestore tiada / role tidak ditetapkan),
   // masih render sidebar dengan visibleNav kosong supaya mesej ralat nampak.
   const visibleNav = NAV_ITEMS
     .map(section => ({
       ...section,
-      items: section.items.filter(item =>
-        userRole && item.roles.includes(userRole)
-      ),
+      items: section.items.filter(item => {
+        if (!userRole || !item.roles.includes(userRole)) return false
+        // Sembunyi menu PP bila admin toggle OFF
+        if (item.path === '/dashboard/sijil-pencapaian' && !sijilPencapaianAktif) return false
+        if (item.path === '/dashboard/buku-kongsi'      && !bukuKongsiAktif)      return false
+        return true
+      }),
     }))
     .filter(section => section.items.length > 0)
 
