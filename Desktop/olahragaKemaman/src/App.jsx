@@ -31,6 +31,9 @@ import AnalisisPendaftaran from './pages/admin/AnalisisPendaftaran'
 import ESijil from './pages/admin/ESijil'
 import ESijilPencapaian from './pages/admin/ESijilPencapaian'
 import BukuKongsiSetup from './pages/admin/BukuKongsiSetup'
+import GaleriSetup from './pages/admin/GaleriSetup'
+import BukuKejohananLinkSetup from './pages/admin/BukuKejohananLinkSetup'
+import BukuProgramSetup from './pages/admin/BukuProgramSetup'
 import SijilPengurus from './pages/admin/SijilPengurus'
 import SijilPencapaianPP from './pages/pengurus/SijilPencapaianPP'
 import BukuKongsiPP from './pages/pengurus/BukuKongsiPP'
@@ -227,6 +230,21 @@ function AppRoutes() {
       <Route path="/dashboard/buku-kongsi" element={
         <ProtectedRoute>
           <DashboardLayout><BukuKongsiPP /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/galeri-setup" element={
+        <ProtectedRoute>
+          <DashboardLayout><GaleriSetup /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/buku-kejohanan-link-setup" element={
+        <ProtectedRoute>
+          <DashboardLayout><BukuKejohananLinkSetup /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/buku-program-setup" element={
+        <ProtectedRoute>
+          <DashboardLayout><BukuProgramSetup /></DashboardLayout>
         </ProtectedRoute>
       } />
       <Route path="/dashboard/muaturunsijil" element={

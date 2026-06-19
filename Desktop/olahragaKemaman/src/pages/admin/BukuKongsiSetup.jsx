@@ -92,7 +92,7 @@ export default function BukuKongsiSetup() {
         aktif:     !!aktif,
         senarai:   bersih,
         updatedAt: serverTimestamp(),
-      })
+      }, { merge: true })
       setMsg('Tetapan berjaya disimpan.')
     } catch (e) {
       setMsg('Ralat: ' + e.message)

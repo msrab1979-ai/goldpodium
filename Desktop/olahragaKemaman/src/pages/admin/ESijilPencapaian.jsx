@@ -313,13 +313,15 @@ export default function ESijilPencapaian() {
   }
 
   async function handleSave() {
-    if (!template) { setMsg('Sila muat naik template dahulu.'); return }
+    // Toggle OFF? Boleh Simpan walaupun template belum upload.
+    // Toggle ON tapi tiada template? Tak boleh — kerana PP tak boleh jana sijil.
+    if (aktif && !template) { setMsg('Sila muat naik template dahulu untuk mengaktifkan.'); return }
     setSaving(true); setMsg('')
     try {
       const tempatBersih = tempatKejohanan.map(t => t.trim()).filter(Boolean)
       await setDoc(doc(db, 'tetapan', 'sijilPencapaian'), {
         aktif:           !!aktif,
-        templateImg:     template,
+        templateImg:     template || null,
         namaKejohanan,
         tarikhKejohanan,
         tempatKejohanan: tempatBersih,
@@ -327,7 +329,7 @@ export default function ESijilPencapaian() {
         posisi:          positions,
         style:           styles,
         updatedAt:       serverTimestamp(),
-      })
+      }, { merge: true })
       setMsg('Tetapan berjaya disimpan.')
     } catch (err) {
       setMsg('Ralat: ' + err.message)

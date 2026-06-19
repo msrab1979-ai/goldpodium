@@ -16,11 +16,32 @@
  * Roles: superadmin, admin, pengurus_teknik, urusetia
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  collection, getDocs, getDoc, doc, query, where, orderBy,
+  collection, getDocs, getDoc, setDoc, doc, query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+
+// ─── Helper: Kompres gambar cover supaya muat dalam Firestore (1MB limit) ────
+function kompresGambarCover(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 1400
+      let w = img.width, h = img.height
+      if (w > MAX) { h = Math.round(h * MAX / w); w = MAX }
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      const ctx = canvas.getContext('2d')
+      // Background putih (untuk PNG transparent → JPEG)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+      ctx.drawImage(img, 0, 0, w, h)
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+    }
+    img.src = dataUrl
+  })
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,6 +81,64 @@ export default function BukuKejohanan() {
   const [preview,  setPreview]  = useState(null)
   const [progress, setProgress] = useState('')
 
+  // ── Cover (muka depan) tetapan ──────────────────────────────────────────
+  const [jenisCover, setJenisCover] = useState('default')  // 'default' | 'custom'
+  const [coverImg, setCoverImg]     = useState(null)
+  const [uploading, setUploading]   = useState(false)
+  const [savingCover, setSavingCover] = useState(false)
+  const [coverMsg, setCoverMsg]     = useState('')
+
+  useEffect(() => {
+    async function loadCover() {
+      try {
+        const snap = await getDoc(doc(db, 'tetapan', 'bukuKejohanan'))
+        if (!snap.exists()) return
+        const d = snap.data()
+        if (d.jenisCover) setJenisCover(d.jenisCover)
+        if (d.coverImg)   setCoverImg(d.coverImg)
+      } catch {}
+    }
+    loadCover()
+  }, [])
+
+  async function handleUploadCover(e) {
+    const file = e.target.files?.[0]
+    if (!file || !file.type.startsWith('image/')) return
+    setUploading(true); setCoverMsg('')
+    const reader = new FileReader()
+    reader.onload = async ev => {
+      const compressed = await kompresGambarCover(ev.target.result)
+      setCoverImg(compressed)
+      setUploading(false)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function handleSaveCover() {
+    setSavingCover(true); setCoverMsg('')
+    try {
+      // Kalau pilih custom tapi tiada gambar → tolak
+      if (jenisCover === 'custom' && !coverImg) {
+        setCoverMsg('Sila muat naik template dahulu untuk pilihan Custom.')
+        setSavingCover(false); return
+      }
+      await setDoc(doc(db, 'tetapan', 'bukuKejohanan'), {
+        jenisCover,
+        coverImg:   jenisCover === 'custom' ? coverImg : null,
+        updatedAt:  serverTimestamp(),
+      }, { merge: true })
+      setCoverMsg('Tetapan cover berjaya disimpan.')
+    } catch (e) {
+      setCoverMsg('Ralat: ' + e.message)
+    }
+    setSavingCover(false)
+  }
+
+  function handlePadamCover() {
+    setCoverImg(null)
+    setCoverMsg('')
+  }
+
   // ── Load & Jana PDF ─────────────────────────────────────────────────────────
 
   async function handleJana() {
@@ -70,6 +149,11 @@ export default function BukuKejohanan() {
       // 1. Tetapan & config
       const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
+
+      // 1b. Tetapan Buku Kejohanan (cover)
+      const bukuCfgSnap = await getDoc(doc(db, 'tetapan', 'bukuKejohanan'))
+      const bukuCfg = bukuCfgSnap.exists() ? bukuCfgSnap.data() : {}
+      const useCustomCover = bukuCfg.jenisCover === 'custom' && !!bukuCfg.coverImg
 
       // 2. Kejohanan aktif
       setProgress('Memuatkan data kejohanan…')
@@ -392,12 +476,23 @@ export default function BukuKejohanan() {
     }
 
     // ════════════════════════════════════════════════════════════
-    // HALAMAN 1 — MUKA DEPAN (KOAM Official)
+    // HALAMAN 1 — MUKA DEPAN
     // ════════════════════════════════════════════════════════════
 
-    // ── Band gelap atas (55mm) ──
-    pdf.setFillColor(...DARK_BLUE)
-    pdf.rect(0, 0, W, 55, 'F')
+    let y = 0  // declared di luar untuk diguna semula dalam section seterusnya
+
+    if (useCustomCover) {
+      // ── Custom cover: gambar A4 penuh ──
+      try {
+        pdf.addImage(bukuCfg.coverImg, 'JPEG', 0, 0, W, 297)
+      } catch (e) {
+        console.warn('Gagal lukis custom cover:', e.message)
+      }
+    } else {
+      // ── Default KOAM Official cover ──
+      // ── Band gelap atas (55mm) ──
+      pdf.setFillColor(...DARK_BLUE)
+      pdf.rect(0, 0, W, 55, 'F')
 
     // Logo dalam band
     const logoSize = 32
@@ -443,7 +538,7 @@ export default function BukuKejohanan() {
     pdf.rect(0, 55, W, 4, 'F')
 
     // ── Dekorasi trek (titik-titik lorong) ──
-    let y = 65
+    y = 65
     pdf.setFillColor(200, 215, 245)
     for (let i = 0; i <= 8; i++) {
       const dotX = M + i * ((W - M * 2) / 8)
@@ -539,6 +634,7 @@ export default function BukuKejohanan() {
     pdf.setTextColor(180, 200, 255)
     pdf.text('Dijana oleh Sistem Pengurusan Kejohanan Olahraga MSSD Kemaman (KOAM)', W / 2, 286, { align: 'center' })
     pdf.text(new Date().toLocaleDateString('ms-MY'), W / 2, 292, { align: 'center' })
+    }
 
     // ════════════════════════════════════════════════════════════
     // HALAMAN — SENARAI SEKOLAH
@@ -1189,6 +1285,115 @@ export default function BukuKejohanan() {
         <p className="text-xs text-gray-400 mt-0.5">
           Jana PDF komprehensif — Muka Depan, Medal Tally, Pendaftaran, Jadual, Keputusan, Rekod, Olahragawan
         </p>
+      </div>
+
+      {/* ── Setup Muka Depan (Cover) ── */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-4">
+        <div>
+          <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Muka Depan (Cover)</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Pilih jenis cover untuk PDF Buku Kejohanan. Page-page lain ikut design KOAM sedia ada.
+          </p>
+        </div>
+
+        {/* Radio pilihan */}
+        <div className="space-y-2">
+          <label className={`flex items-start gap-2.5 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+            jenisCover === 'default'
+              ? 'border-[#003399] bg-blue-50'
+              : 'border-gray-200 hover:border-gray-300'
+          }`}>
+            <input
+              type="radio"
+              name="jenisCover"
+              value="default"
+              checked={jenisCover === 'default'}
+              onChange={() => setJenisCover('default')}
+              className="mt-0.5"
+            />
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-gray-800">Default KOAM Official</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">Cover biru gelap dengan logo, nama kejohanan, jalur emas dan dekorasi trek</p>
+            </div>
+          </label>
+
+          <label className={`flex items-start gap-2.5 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+            jenisCover === 'custom'
+              ? 'border-[#003399] bg-blue-50'
+              : 'border-gray-200 hover:border-gray-300'
+          }`}>
+            <input
+              type="radio"
+              name="jenisCover"
+              value="custom"
+              checked={jenisCover === 'custom'}
+              onChange={() => setJenisCover('custom')}
+              className="mt-0.5"
+            />
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-gray-800">Upload Template Sendiri</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">Design penuh dari Canva/Photoshop — PNG/JPG (disyorkan ratio A4 portrait 1240×1754px)</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Upload template (hanya tunjuk bila custom) */}
+        {jenisCover === 'custom' && (
+          <div className="space-y-3 border-t border-gray-100 pt-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="cursor-pointer">
+                <div className="flex items-center gap-2 px-4 py-2 bg-[#003399] text-white rounded-lg text-xs font-semibold hover:bg-[#002280] transition-colors">
+                  {uploading
+                    ? <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                  }
+                  {uploading ? 'Memproses...' : coverImg ? 'Tukar Template' : 'Muat Naik Template'}
+                </div>
+                <input type="file" accept="image/*" className="hidden" onChange={handleUploadCover} disabled={uploading} />
+              </label>
+              {coverImg && (
+                <button
+                  onClick={handlePadamCover}
+                  className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100"
+                >
+                  🗑 Padam
+                </button>
+              )}
+            </div>
+
+            {/* Preview */}
+            {coverImg ? (
+              <div className="inline-block">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Preview Cover</p>
+                <img
+                  src={coverImg}
+                  alt="Cover Preview"
+                  className="w-40 rounded-lg border-2 border-gray-200"
+                />
+              </div>
+            ) : (
+              <div className="w-40 aspect-[210/297] bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center">
+                <p className="text-[10px] text-gray-400 text-center px-2">Belum ada template</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Simpan + mesej */}
+        <div className="flex items-center gap-3 border-t border-gray-100 pt-3">
+          <button
+            onClick={handleSaveCover}
+            disabled={savingCover}
+            className="px-4 py-2 bg-[#003399] text-white rounded-lg text-xs font-semibold hover:bg-[#002280] disabled:opacity-50"
+          >
+            {savingCover ? 'Menyimpan...' : '💾 Simpan Tetapan Cover'}
+          </button>
+          {coverMsg && (
+            <span className={`text-xs font-medium ${coverMsg.startsWith('Ralat') || coverMsg.includes('Sila') ? 'text-red-500' : 'text-green-600'}`}>
+              {coverMsg}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Kandungan PDF */}
