@@ -90,7 +90,7 @@ function formatTarikh(mula, tamat) {
 
 function formatDayLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('ms-MY', { weekday: 'short', day: 'numeric', month: 'short' })
+  return d.toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'short' })
 }
 
 // ─── LupaPinModal ─────────────────────────────────────────────────────────────
@@ -1856,8 +1856,7 @@ export default function Home() {
             {/* Section header + Tab toggle */}
             <div className="flex items-center justify-between mb-4">
               <div className="border-l-4 border-[#003399] pl-3">
-                <p className="text-[9px] font-bold text-[#003399]/70 uppercase tracking-[0.2em]">Program Kejohanan</p>
-                <h2 className="text-base font-black text-gray-800 leading-tight mt-0.5">Jadual &amp; Keputusan</h2>
+                <h2 className="text-base font-black text-gray-800 leading-tight">Jadual &amp; Keputusan</h2>
               </div>
               <div className="flex items-center gap-2">
                 {/* Cetak PDF — Jadual */}
@@ -2411,8 +2410,7 @@ export default function Home() {
               {/* Header — sama gaya Jadual & Keputusan */}
               <div className="flex items-center justify-between mb-4">
                 <div className="border-l-4 border-[#003399] pl-3">
-                  <p className="text-[9px] font-bold text-[#003399]/70 uppercase tracking-[0.2em]">Penjuaian</p>
-                  <h2 className="text-base font-black text-gray-800 leading-tight mt-0.5">Kedudukan Pingat</h2>
+                  <h2 className="text-base font-black text-gray-800 leading-tight">Kedudukan Pingat</h2>
                 </div>
                 <button onClick={() => loadMedalTally(kejohananId)} disabled={medalLoading}
                   className="p-2 text-gray-400 hover:text-[#003399] hover:bg-white rounded-xl transition-all disabled:opacity-50"
