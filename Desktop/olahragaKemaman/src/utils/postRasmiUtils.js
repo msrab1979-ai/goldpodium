@@ -25,8 +25,17 @@ const NAMA_PINGAT = { 1: 'emas', 2: 'perak', 3: 'gangsa', 4: 'tempat4', 5: 'temp
 const DEFAULT_MATA_PINGAT = { 1: 5, 2: 3, 3: 2, 4: 1 }
 
 export function rekodKeyStr(namaAcara, jantina, kategoriKod, peringkat) {
-  return [namaAcara, jantina, kategoriKod, peringkat]
-    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+  // Normalize nama acara supaya format konsisten:
+  // "5000 METER" → "5000M", "5000 M" → "5000M", "5000METER" → "5000M"
+  // Elak duplicate rekod sebab format penulisan berbeza
+  const normalized = String(namaAcara || '')
+    .toUpperCase()
+    .replace(/(\d)\s*METER\b/g, '$1M')   // "5000 METER" / "5000METER" → "5000M"
+    .replace(/(\d)\s+M\b/g, '$1M')        // "5000 M" → "5000M"
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Z0-9_]/g, '_')
+  return [normalized, jantina, kategoriKod, peringkat]
+    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_')
 }
 
 /**
@@ -71,10 +80,20 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   // Relay guna kodSekolah sebagai key (noBib/noKP tiada)
   const pKey = p => isRelay ? (p.kodSekolah || p.lorong) : (p.noKP || p.noBib)
   const computedRankMap = new Map()
-  finishers.forEach((p, i) => {
-    const prev = i > 0 && p.keputusan === finishers[i - 1].keputusan
-    computedRankMap.set(pKey(p), prev ? computedRankMap.get(pKey(finishers[i - 1])) : i + 1)
-  })
+  // Lompat Tinggi: GUNA kedudukan manual pencatat (count-back rules MSSM)
+  // Lain: sequential auto (1,2,3,4,5)
+  const isLompatTinggi = /lompat tinggi/i.test(
+    acaraDoc.namaAcara || acaraDoc.namaAcaraPendek || ''
+  )
+  if (isLompatTinggi) {
+    finishers.forEach(p => {
+      if (p.kedudukan) computedRankMap.set(pKey(p), Number(p.kedudukan))
+    })
+  } else {
+    finishers.forEach((p, i) => {
+      computedRankMap.set(pKey(p), i + 1)
+    })
+  }
 
   // ── Loop peserta ─────────────────────────────────────────────────────────────
   for (const p of semua) {
@@ -148,14 +167,18 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           const prevKat      = prevContr.kategoriKod || katKey
           const prevJantina  = prevContr.jantina     || acaraDoc.jantina
           const prevKatField = `kat_${prevKat}_${prevJantina}_${prevPingat}`
-          if (pingat !== prevPingat || prevKat !== katKey || prevJantina !== acaraDoc.jantina) {
-            tPatch[prevPingat]    = increment(-1)
-            tPatch.jumlahPingat   = increment(-1)
-            tPatch[prevKatField]  = increment(-1)
-            tPatch[pingat]        = increment(1)
-            tPatch.jumlahPingat   = increment(1)
-            tPatch[katPingat]     = increment(1)
+          // BUG FIX: kalau pingat/kat/jantina berubah — net jumlahPingat = 0
+          // Tapi pingat field & kat field perlu shift (undo lama, apply baru)
+          // Field SAMA tidak boleh assign 2x dalam object (yg kedua overwrite yg pertama)
+          if (prevPingat !== pingat) {
+            tPatch[prevPingat] = increment(-1)
+            tPatch[pingat]     = increment(1)
           }
+          if (prevKatField !== katPingat) {
+            tPatch[prevKatField] = increment(-1)
+            tPatch[katPingat]    = increment(1)
+          }
+          // jumlahPingat tidak berubah — 1 contrib = 1 pingat (cuma tukar jenis)
         } else {
           tPatch[pingat]      = increment(1)
           tPatch.jumlahPingat = increment(1)
@@ -184,13 +207,23 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           ? namaPenuh.slice(namaPendek.length).trim() : ''
         const katsToTryI = [...new Set([acaraDoc.kategoriKod, kelasDariNamaI].filter(Boolean))]
 
-        // Cari key yang wujud dalam Firestore
+        // Cuba pelbagai nama acara — kalau ada variant (cth: namaAcara vs namaAcaraPendek)
+        const namaToTry = [...new Set([rekodNama, namaPenuh, namaPendek].filter(Boolean))]
+
+        // Cari key yang wujud dalam Firestore — cuba SEMUA kombinasi nama × kat × peringkat
+        // Peringkat: cuba peringkatKej dulu, kemudian D, N, K (yg lebih tinggi guna sbg baseline)
+        const peringkatToTry = [...new Set([peringkatKej, 'D', 'N', 'K'])]
         let rKey = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
         let rekodSnap = null, tuntutanSnap = null
-        for (const kat of katsToTryI) {
-          const k = rekodKeyStr(rekodNama, acaraDoc.jantina, kat, peringkatKej)
-          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
-          if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break }
+        outer:
+        for (const nama of namaToTry) {
+          for (const kat of katsToTryI) {
+            for (const pr of peringkatToTry) {
+              const k = rekodKeyStr(nama, acaraDoc.jantina, kat, pr)
+              const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
+              if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break outer }
+            }
+          }
         }
         // Jika tiada yang jumpa — fetch primary key (return not-exists snap)
         if (!rekodSnap) {
@@ -214,7 +247,17 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         let isBetter = false
         let isEqual  = false
         if (rekodSedia) {
-          const oldPrestasi = Number(rekodSedia.prestasi)
+          // Normalise format mm.ss → saat penuh (rekod lama manual < 10 = format mm.ss)
+          const normaliseSaat = v => {
+            const n = Number(v)
+            if (unit === 's' && n > 0 && n < 10) {
+              const m = Math.floor(n)
+              const s = Math.round((n - m) * 100)
+              return m * 60 + s
+            }
+            return n
+          }
+          const oldPrestasi = normaliseSaat(rekodSedia.prestasi)
           const newR = Number(newPrestasi.toFixed(2))
           const oldR = Number(oldPrestasi.toFixed(2))
           isBetter = unit === 's' ? newR < oldR : newR > oldR
@@ -306,13 +349,20 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         const kelasDariNamaR = (namaPenuhR && namaPendekR && namaPenuhR !== namaPendekR)
           ? namaPenuhR.slice(namaPendekR.length).trim() : ''
         const katsToTryR = [...new Set([acaraDoc.kategoriKod, kelasDariNamaR].filter(Boolean))]
+        const namaToTryR = [...new Set([rekodNama, namaPenuhR, namaPendekR].filter(Boolean))]
+        const peringkatToTryR = [...new Set([peringkatKej, 'D', 'N', 'K'])]
 
         let rKey = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
         let rekodSnap = null, tuntutanSnap = null
-        for (const kat of katsToTryR) {
-          const k = rekodKeyStr(rekodNama, acaraDoc.jantina, kat, peringkatKej)
-          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
-          if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break }
+        outer2:
+        for (const nama of namaToTryR) {
+          for (const kat of katsToTryR) {
+            for (const pr of peringkatToTryR) {
+              const k = rekodKeyStr(nama, acaraDoc.jantina, kat, pr)
+              const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
+              if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break outer2 }
+            }
+          }
         }
         if (!rekodSnap) {
           const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', rKey)), getDoc(doc(db, 'rekod', rKey + '_tuntutan'))])

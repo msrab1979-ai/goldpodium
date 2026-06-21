@@ -1602,6 +1602,10 @@ export default function StartList() {
     Object.fromEntries(sekolahList.map(s => [s.kodSekolah, s.namaSekolah || s.kodSekolah])),
     [sekolahList]
   )
+  const bibPrefixMap = useMemo(() =>
+    Object.fromEntries(sekolahList.map(s => [s.kodSekolah, s.bibPrefix || s.kodSekolah])),
+    [sekolahList]
+  )
 
   // Fetch sekolah + kategori once
   useEffect(() => {
@@ -1959,6 +1963,7 @@ export default function StartList() {
         kategoriList,
         logoKiri:  cfg.logoKiriBase64  || null,
         logoKanan: cfg.logoKananBase64 || null,
+        bibPrefixMap,
       })
       pdf.save(`StartList_${aid}_${heat.heatId}_${Date.now()}.pdf`)
       const bil = (heat.bilanganCetak || 0) + 1
@@ -1977,7 +1982,7 @@ export default function StartList() {
   }
 
   async function resetKiraanHariHeat(a, heat) {
-    if (userRole !== 'superadmin') return
+    if (!['superadmin', 'admin'].includes(userRole)) return
     if (!window.confirm(`Reset kiraan cetak ${FASA_LABEL[heat.fasa]||heat.fasa} ${heat.noHeat}?`)) return
     const aid = a.aceraId || a.id
     try {
@@ -2255,6 +2260,7 @@ export default function StartList() {
         kategoriList,
         logoKiri:  cfg.logoKiriBase64  || null,
         logoKanan: cfg.logoKananBase64 || null,
+        bibPrefixMap,
       })
       pdf.save(`StartList_${selectedAcara.aceraId}_${h.heatId}_${Date.now()}.pdf`)
       // Rekod dalam Firestore
@@ -2289,6 +2295,7 @@ export default function StartList() {
         kategoriList,
         logoKiri:  cfg.logoKiriBase64  || null,
         logoKanan: cfg.logoKananBase64 || null,
+        bibPrefixMap,
       })
       pdf.save(`StartList_${selectedAcara.aceraId}_${Date.now()}.pdf`)
       // Rekod semua heat dalam Firestore
@@ -2310,7 +2317,7 @@ export default function StartList() {
 
   // ── Reset Kiraan Cetak — satu heat (superadmin sahaja) ────────────────────────
   async function resetKiraanHeat(heat) {
-    if (userRole !== 'superadmin') return
+    if (!['superadmin', 'admin'].includes(userRole)) return
     if (!window.confirm(
       `Reset kiraan cetak untuk ${FASA_LABEL[heat.fasa] || heat.fasa} ${heat.noHeat}?\n\nIni akan set semula kiraan kepada 0.`
     )) return
@@ -3296,13 +3303,14 @@ export default function StartList() {
           ? selectedHari
           : tarikhList[0] || null
 
-        // Acara untuk hari yang dipilih, sort by masaMula
+        // Acara untuk hari yang dipilih, sort by masaMula → noAcara
         const acaraHari = acaraList
           .filter(a => a.isAktif !== false && (jadualMap[a.aceraId || a.id]?.tarikhAcara || '') === hariAktif)
           .sort((a, b) => {
             const mA = jadualMap[a.aceraId || a.id]?.masaMula || '99:99'
             const mB = jadualMap[b.aceraId || b.id]?.masaMula || '99:99'
-            return mA.localeCompare(mB)
+            if (mA !== mB) return mA.localeCompare(mB)
+            return (a.noAcara || 0) - (b.noAcara || 0)
           })
 
         return (
@@ -3475,7 +3483,7 @@ export default function StartList() {
                                                 ) : (
                                                   <span className="text-[9px] text-gray-400">○ Belum dicetak</span>
                                                 )}
-                                                {userRole === 'superadmin' && (heat.bilanganCetak || 0) > 0 && (
+                                                {['superadmin', 'admin'].includes(userRole) && (heat.bilanganCetak || 0) > 0 && (
                                                   <button
                                                     onClick={() => resetKiraanHariHeat(a, heat)}
                                                     title="Reset kiraan cetak"
@@ -3826,8 +3834,8 @@ export default function StartList() {
                           ) : (
                             <span className="text-[9px] text-gray-400">○ Belum dicetak</span>
                           )}
-                          {/* Reset kiraan — superadmin sahaja */}
-                          {userRole === 'superadmin' && (heat.bilanganCetak || 0) > 0 && (
+                          {/* Reset kiraan — superadmin & admin */}
+                          {['superadmin', 'admin'].includes(userRole) && (heat.bilanganCetak || 0) > 0 && (
                             <button
                               onClick={() => resetKiraanHeat(heat)}
                               title="Reset kiraan cetak"

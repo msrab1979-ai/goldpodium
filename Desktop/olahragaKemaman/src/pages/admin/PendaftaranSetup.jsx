@@ -19,7 +19,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  collection, getDocs, doc, setDoc, updateDoc, deleteDoc,
+  collection, getDocs, getDocsFromServer, doc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, query, orderBy, where, getDoc, writeBatch, getCountFromServer,
   runTransaction,
 } from 'firebase/firestore'
@@ -439,6 +439,25 @@ function AtletModal({ mode, initial, sekolahList, isAdmin, kodSekolahAdmin, seko
       }
       if (!isEdit) payload.createdAt = serverTimestamp()
       await setDoc(doc(db, 'atlet', finalNoKP), payload, { merge: isEdit })
+
+      // Sync namaAtlet dalam semua pendaftaran docs untuk atlet ini
+      if (isEdit && form.nama?.trim()) {
+        const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+        if (!kejSnap.empty) {
+          const kejId = kejSnap.docs[0].id
+          const pendSnap = await getDocs(collection(db, 'kejohanan', kejId, 'pendaftaran'))
+          const batch = writeBatch(db)
+          let updated = 0
+          pendSnap.docs.forEach(d => {
+            if (d.data().noKP === finalNoKP) {
+              batch.update(d.ref, { namaAtlet: form.nama.trim(), updatedAt: serverTimestamp() })
+              updated++
+            }
+          })
+          if (updated > 0) await batch.commit()
+        }
+      }
+
       onSaved(); onClose()
     } catch (e) {
       setErr(e.message)
@@ -667,6 +686,7 @@ function DaftarModal({ acara, kejohanan, atletSekolah, pendaftaranList, jadualLi
           kategoriId:      acara.kategoriKod,
           jenisAcara:      acara.jenisAcara,
           tahunKejohanan:  tahunKej,
+          bypassHeat:      bypassDeadline,
         })
 
         if (!hasil.valid) {
@@ -920,12 +940,13 @@ function BuangDaftarModal({ atlet, acara, pRec, kejohananId, onClose, onSaved })
   async function handleBuang() {
     setSaving(true)
     try {
+      const docId = pRec.id || pRec.noKP
       const acaraBaru = (pRec.acaraIds || []).filter(id => id !== acara.aceraId)
       if (acaraBaru.length === 0) {
         // Tiada lagi acara — padam rekod pendaftaran
-        await deleteDoc(doc(db, 'kejohanan', kejohananId, 'pendaftaran', pRec.noKP))
+        await deleteDoc(doc(db, 'kejohanan', kejohananId, 'pendaftaran', docId))
       } else {
-        await updateDoc(doc(db, 'kejohanan', kejohananId, 'pendaftaran', pRec.noKP), {
+        await updateDoc(doc(db, 'kejohanan', kejohananId, 'pendaftaran', docId), {
           acaraIds: acaraBaru,
           updatedAt: serverTimestamp(),
         })
@@ -1116,26 +1137,27 @@ function TukarAtletModal({ pRec, aceraId, acaraObj, atletSekolah, pendaftaranLis
 
   const calonGanti = atletSekolah.filter(a => {
     if (a.noKP === pRec.noKP) return false
-    if (a.isAktif === false) return false
-    if (a.jantina !== acaraObj.jantina) return false
-    if (sudahDaftar.includes(a.noKP)) return false
-    // Semak had kuota acara
+    if (a.isAktif === false) { console.log('[CALON] tolak (tidak aktif):', a.nama); return false }
+    if (a.jantina !== acaraObj.jantina) { console.log('[CALON] tolak (jantina):', a.nama, a.jantina, '!=', acaraObj.jantina); return false }
+    if (sudahDaftar.includes(a.noKP)) { console.log('[CALON] tolak (sudah daftar acara ini):', a.nama); return false }
     if (isRelay) {
-      if (bilanganDalamKat(a.noKP, true) >= hadBeregu) return false
+      const bil = bilanganDalamKat(a.noKP, true)
+      if (bil >= hadBeregu) { console.log('[CALON] tolak (hadBeregu penuh):', a.nama, bil, '>=', hadBeregu); return false }
     } else {
-      if (bilanganDalamKat(a.noKP, false) >= hadIndividu) return false
+      const bil = bilanganDalamKat(a.noKP, false)
+      if (bil >= hadIndividu) { console.log('[CALON] tolak (hadIndividu penuh):', a.nama, bil, '>=', hadIndividu); return false }
     }
-    // Semak kelayakan kategori
     if (katObj?.isTerbuka) {
       const tLahir = a.tarikhLahir ? parseInt(a.tarikhLahir.substring(0, 4)) : 0
       if (!tLahir) return false
       const umur = tahunKej - tLahir
       return umur >= (katObj.umurMin ? Number(katObj.umurMin) : 0) && umur <= (katObj.umurHad ? Number(katObj.umurHad) : 99)
     }
-    // Utamakan kiraKategori (format baru) — atlet lama tersimpan kod lama (D→L15)
     const katKira = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
     const kat = katKira || a.kategoriKod
-    return kat === acaraObj.kategoriKod
+    if (kat !== acaraObj.kategoriKod) { console.log('[CALON] tolak (kategori):', a.nama, 'kat=', kat, 'vs acara=', acaraObj.kategoriKod); return false }
+    console.log('[CALON] LAYAK:', a.nama, 'kat=', kat)
+    return true
   })
 
   async function doTukar() {
@@ -2960,7 +2982,7 @@ function TabPendaftaran({ userRole: userRoleProp, userData: userDataProp, sekola
                 })()
                 const slotBaki     = hadAcara - pesertaSek.length
                 const isSelected   = selectedAcara?.aceraId === acara.aceraId
-                const heatSudahAda = heatDijanaMap[acara.aceraId] === true
+                const heatSudahAda = heatDijanaMap[acara.aceraId] === true && !bypassDeadline
 
                 const jenisBg = {
                   lorong:'border-blue-200 bg-blue-50/50',
@@ -3215,6 +3237,21 @@ function PPAtletModal({ mode, initial, sekolahData, existingBibs, myPendaftaran,
       }
       if (!isEdit) payload.createdAt = serverTimestamp()
       await setDoc(doc(db, 'atlet', finalNoKP), payload, { merge: isEdit })
+
+      // Sync namaAtlet dalam pendaftaran doc
+      if (isEdit && form.nama?.trim() && kejohananId) {
+        const pendSnap = await getDocs(collection(db, 'kejohanan', kejohananId, 'pendaftaran'))
+        const batch2 = writeBatch(db)
+        let n = 0
+        pendSnap.docs.forEach(d => {
+          if (d.data().noKP === finalNoKP) {
+            batch2.update(d.ref, { namaAtlet: form.nama.trim(), updatedAt: serverTimestamp() })
+            n++
+          }
+        })
+        if (n > 0) await batch2.commit()
+      }
+
       onSaved(); onClose()
     } catch (e) { setErr(e.message) }
     finally { setSaving(false) }
@@ -3540,6 +3577,7 @@ function PPImportDaftarModal({
               kategoriId:     acaraObj.kategoriKod,
               jenisAcara:     acaraObj.jenisAcara,
               tahunKejohanan: tahunKej,
+              bypassHeat:     bypassDeadline,
             })
             if (!hasil.valid) {
               return { row: i + 2, noBib, noKP, noAcara, status: 'error', mesej: `${hasil.gate}: ${hasil.mesej}`, aceraId, acaraObj, atlet }
@@ -4016,8 +4054,8 @@ function PPPendaftaranView({ sekolahList }) {
     setRefreshing(true)
     try {
       const [pendSnap, atletSnap, katSnap, acaraSnap, sekolahSnap] = await Promise.all([
-        getDocs(query(collection(db, 'kejohanan', kejohanan.id, 'pendaftaran'))),
-        getDocs(query(collection(db, 'atlet'), where('kodSekolah', '==', kodSekolah))),
+        getDocsFromServer(query(collection(db, 'kejohanan', kejohanan.id, 'pendaftaran'))),
+        getDocsFromServer(query(collection(db, 'atlet'), where('kodSekolah', '==', kodSekolah))),
         getDocs(collection(db, 'kategori')),
         getDocs(query(collection(db, 'kejohanan', kejohanan.id, 'acara'), orderBy('kategoriKod'))),
         getDoc(doc(db, 'sekolah', kodSekolah)),
@@ -4163,6 +4201,7 @@ function PPPendaftaranView({ sekolahList }) {
             kategoriId:     acara.kategoriKod,
             jenisAcara:     acara.jenisAcara,
             tahunKejohanan: tahunKej,
+            bypassHeat:     bypassDeadline,
           })
           return { atlet, hasil }
         })
@@ -4261,17 +4300,21 @@ function PPPendaftaranView({ sekolahList }) {
   // ── Buang pendaftaran from acara ─────────────────────────────────────────────
   async function handleBuangDaftar(pRec, aceraId) {
     if (!kejohanan?.id) return
+    const docId = pRec.id || pRec.noKP
+    const newIds = (pRec.acaraIds || []).filter(id => id !== aceraId)
     try {
-      const newIds = (pRec.acaraIds || []).filter(id => id !== aceraId)
       if (newIds.length === 0) {
-        await deleteDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', pRec.id))
+        await deleteDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', docId))
       } else {
-        await updateDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', pRec.id), {
+        await updateDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', docId), {
           acaraIds: newIds, updatedAt: serverTimestamp(),
         })
       }
       await refreshData()
-    } catch (e) { console.error('handleBuangDaftar:', e) }
+    } catch (e) {
+      console.error('handleBuangDaftar:', e)
+      alert('Gagal buang pendaftaran: ' + e.message)
+    }
   }
 
   // Tukar atlet dalam acara — buang lama, masuk baru dalam satu operasi
@@ -4281,12 +4324,13 @@ function PPPendaftaranView({ sekolahList }) {
     const atletBaru = atletSekolah.find(a => a.noKP === noKPBaru)
     if (!atletBaru) return
     try {
-      // 1. Buang dari atlet lama
+      // 1. Buang dari atlet lama — guna noKP sebagai doc ID (primary key)
+      const docIdLama = pRec.id || pRec.noKP
       const idsLama = (pRec.acaraIds || []).filter(id => id !== aceraId)
       if (idsLama.length === 0) {
-        await deleteDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', pRec.id))
+        await deleteDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', docIdLama))
       } else {
-        await updateDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', pRec.id), {
+        await updateDoc(doc(db, 'kejohanan', kejohanan.id, 'pendaftaran', docIdLama), {
           acaraIds: idsLama, updatedAt: serverTimestamp(),
         })
       }

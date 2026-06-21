@@ -2505,6 +2505,137 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
   )
 }
 
+// ─── SlotKhas — Urus slot bukan-acara dalam jadual (perasmian, rehat, dll) ───
+
+const JENIS_SLOT = [
+  { key: 'perasmian',         label: '🎖 Perasmian Pembukaan', warna: 'bg-yellow-50 border-yellow-200 text-yellow-800' },
+  { key: 'perasmian_penutup', label: '🏁 Perasmian Penutup',  warna: 'bg-yellow-50 border-yellow-200 text-yellow-800' },
+  { key: 'rehearsal',         label: '🎬 Rehearsal',           warna: 'bg-purple-50 border-purple-200 text-purple-700' },
+  { key: 'hadiah',            label: '🏆 Majlis Hadiah',       warna: 'bg-amber-50 border-amber-200 text-amber-700' },
+  { key: 'rehat',             label: '☕ Rehat',               warna: 'bg-orange-50 border-orange-200 text-orange-700' },
+  { key: 'solat',             label: '🕌 Solat',               warna: 'bg-green-50 border-green-200 text-green-700' },
+  { key: 'lain',              label: '📋 Lain-lain',           warna: 'bg-gray-50 border-gray-200 text-gray-600' },
+]
+
+function SlotKhas({ kejohananId, tarikhHari }) {
+  const [slots,   setSlots]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving,  setSaving]  = useState(false)
+  const [form,    setForm]    = useState({ masa: '', perkara: '', jenis: 'perasmian' })
+  const [editId,  setEditId]  = useState(null)
+  const [err,     setErr]     = useState('')
+
+  async function fetchSlots() {
+    setLoading(true)
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'jadual_khas'),
+        where('kejohananId', '==', kejohananId),
+        where('tarikhAcara', '==', tarikhHari)
+      ))
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      list.sort((a, b) => (a.masa || '').localeCompare(b.masa || ''))
+      setSlots(list)
+    } catch(e) { console.error(e) }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { if (kejohananId && tarikhHari) fetchSlots() }, [kejohananId, tarikhHari])
+
+  async function handleSave() {
+    if (!form.masa || !form.perkara.trim()) { setErr('Masa dan perkara wajib diisi'); return }
+    setSaving(true); setErr('')
+    try {
+      const data = { kejohananId, tarikhAcara: tarikhHari, masa: form.masa, perkara: form.perkara.trim(), jenis: form.jenis, updatedAt: serverTimestamp() }
+      if (editId) {
+        await updateDoc(doc(db, 'jadual_khas', editId), data)
+      } else {
+        await setDoc(doc(collection(db, 'jadual_khas')), data)
+      }
+      setForm({ masa: '', perkara: '', jenis: 'perasmian' })
+      setEditId(null)
+      await fetchSlots()
+    } catch(e) { setErr(e.message) }
+    finally { setSaving(false) }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Padam slot ini?')) return
+    await deleteDoc(doc(db, 'jadual_khas', id))
+    await fetchSlots()
+  }
+
+  function startEdit(s) {
+    setEditId(s.id)
+    setForm({ masa: s.masa, perkara: s.perkara, jenis: s.jenis || 'lain' })
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Form tambah/edit */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
+        <p className="text-xs font-bold text-gray-600">{editId ? 'Edit Slot' : 'Tambah Slot Baru'}</p>
+        <div className="flex gap-3 flex-wrap">
+          <div>
+            <label className="block text-[10px] font-bold text-gray-400 mb-1 uppercase">Masa</label>
+            <input type="time" value={form.masa} onChange={e => setForm(p => ({ ...p, masa: e.target.value }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#003399]/25" />
+          </div>
+          <div className="flex-1 min-w-40">
+            <label className="block text-[10px] font-bold text-gray-400 mb-1 uppercase">Perkara</label>
+            <input type="text" value={form.perkara} onChange={e => setForm(p => ({ ...p, perkara: e.target.value }))}
+              placeholder="cth: Perasmian Pembukaan, Rehat 30 minit..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#003399]/25" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-gray-400 mb-1 uppercase">Jenis</label>
+            <select value={form.jenis} onChange={e => setForm(p => ({ ...p, jenis: e.target.value }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#003399]/25">
+              {JENIS_SLOT.map(j => <option key={j.key} value={j.key}>{j.label}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end gap-2">
+            <button onClick={handleSave} disabled={saving}
+              className="px-4 py-2 bg-[#003399] text-white text-xs font-bold rounded-lg hover:bg-[#002288] disabled:opacity-50">
+              {saving ? 'Simpan…' : editId ? 'Kemaskini' : 'Tambah'}
+            </button>
+            {editId && (
+              <button onClick={() => { setEditId(null); setForm({ masa: '', perkara: '', jenis: 'perasmian' }) }}
+                className="px-4 py-2 bg-gray-100 text-gray-500 text-xs font-bold rounded-lg hover:bg-gray-200">
+                Batal
+              </button>
+            )}
+          </div>
+        </div>
+        {err && <p className="text-[11px] text-red-500">{err}</p>}
+      </div>
+
+      {/* Senarai slot */}
+      {loading ? (
+        <p className="text-xs text-gray-400 text-center py-4">Memuatkan…</p>
+      ) : slots.length === 0 ? (
+        <div className="bg-gray-50 rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center">
+          <p className="text-xs text-gray-400">Tiada slot khas untuk hari ini.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {slots.map(s => {
+            const jObj = JENIS_SLOT.find(j => j.key === s.jenis) || JENIS_SLOT[3]
+            return (
+              <div key={s.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${jObj.warna}`}>
+                <span className="font-mono font-bold text-sm shrink-0">{s.masa || '—'}</span>
+                <span className="text-xs font-semibold flex-1">{jObj.label} — {s.perkara}</span>
+                <button onClick={() => startEdit(s)} className="text-[10px] font-bold text-gray-500 hover:text-[#003399] px-2 py-1 hover:bg-white/60 rounded">Edit</button>
+                <button onClick={() => handleDelete(s.id)} className="text-[10px] font-bold text-red-400 hover:text-red-600 px-2 py-1 hover:bg-white/60 rounded">Padam</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Halaman Utama ────────────────────────────────────────────────────────────
 
 export default function AcaraSetup() {
@@ -2742,6 +2873,7 @@ export default function AcaraSetup() {
           {[
             { key: 'setup', label: 'Urus Acara' },
             { key: 'semak', label: 'Semak Acara' },
+            { key: 'slot',  label: 'Slot Khas' },
           ].map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
               className={`px-5 py-2.5 font-semibold transition-colors border-r border-gray-200 last:border-r-0 ${
@@ -2762,6 +2894,34 @@ export default function AcaraSetup() {
           namaKej={namaKej}
           onHadUpdated={handleHadUpdated}
         />
+      )}
+
+      {/* Tab: Slot Khas */}
+      {selectedKej && activeTab === 'slot' && (
+        <div className="space-y-5">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700">
+            <p className="font-bold">Slot Khas — Perasmian, Rehat, Solat & Lain-lain</p>
+            <p className="text-[11px] text-blue-500 mt-0.5">Slot ini akan muncul dalam paparan jadual di Home bersama acara pertandingan.</p>
+          </div>
+          {/* Pilih hari */}
+          {(() => {
+            const tarikhUnik = [...new Set(acaraList.map(a => a.tarikhAcara).filter(Boolean))].sort()
+            if (tarikhUnik.length === 0) return <p className="text-xs text-gray-400">Tiada tarikh acara ditemui. Sila setup acara dahulu.</p>
+            return (
+              <div className="space-y-6">
+                {tarikhUnik.map((tarikh, idx) => {
+                  const label = new Date(tarikh).toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                  return (
+                    <div key={tarikh}>
+                      <p className="text-xs font-bold text-gray-600 mb-3">Hari {idx + 1} — {label}</p>
+                      <SlotKhas kejohananId={selectedKej} tarikhHari={tarikh} />
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+        </div>
       )}
 
       {selectedKej && activeTab === 'setup' && (
@@ -2876,7 +3036,7 @@ export default function AcaraSetup() {
                     const d = new Date(tarikh)
                     return d.toLocaleDateString('ms-MY', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
                   })()
-                  const hariRows = (byHari[tarikh] || []).sort((a, b) => (a.masa || '').localeCompare(b.masa || ''))
+                  const hariRows = (byHari[tarikh] || []).sort((a, b) => Number(a.noAcara || 0) - Number(b.noAcara || 0))
                   const isAdding = addingHari === tarikh
 
                   return (

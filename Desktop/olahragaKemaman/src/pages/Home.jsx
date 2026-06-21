@@ -380,8 +380,14 @@ function RekodModal({ peserta, acara, onClose }) {
 
   function fmtP(val) {
     if (val == null || val === '') return '—'
-    const n = Number(val); if (isNaN(n) || n === 0) return '—'
+    let n = Number(val); if (isNaN(n) || n === 0) return '—'
     if (unitM === 's') {
+      // Format mm.ss (rekod lama manual: 2.58 = 2:58.00)
+      if (n > 0 && n < 10) {
+        const m = Math.floor(n)
+        const s = Math.round((n - m) * 100)
+        return `${m}:${String(s).padStart(2, '0')}.00`
+      }
       if (n >= 60) { const m = Math.floor(n/60); return `${m}:${(n%60).toFixed(2).padStart(5,'0')}` }
       return n.toFixed(2) + 's'
     }
@@ -412,19 +418,19 @@ function RekodModal({ peserta, acara, onClose }) {
   const r = data?.rekodAsal
 
   // Rekod lama: jika tuntutan wujud → ambil prestasiLama dari tuntutan (null = rekod pertama)
-  //             jika tiada tuntutan tapi ada rekodAsal → rekodAsal itu sendiri adalah rekod lama (rujukan)
+  //             jika tiada tuntutan tapi ada rekodAsal → baca prestasiLama dari rekodAsal (rekod aktif simpan field ini)
   const prestasiLama = t != null
     ? (t.prestasiLama ?? null)
-    : (r ? Number(r.prestasi) : null)
+    : (r?.prestasiLama != null ? Number(r.prestasiLama) : null)
   const tahunLama = t != null
-    ? (t.tahunLama ?? (r ? String(r.tarikhRekod || '').slice(0, 4) : null))
-    : (r ? String(r.tarikhRekod || '').slice(0, 4) : null)
+    ? (t.tahunLama ?? null)
+    : (r?.tahunLama ?? null)
   const namaLama  = t != null
-    ? (t.namaLama  ?? (prestasiLama == null ? null : r?.namaAtlet ?? null))
-    : (r?.namaAtlet ?? null)
+    ? (t.namaLama  ?? null)
+    : (r?.namaLama ?? null)
   const lokasiLama = t != null
-    ? (t.lokasiLama ?? (prestasiLama == null ? null : (r?.namaSekolah ?? r?.namaDaerah ?? r?.namaNegeri ?? null)))
-    : (r?.namaSekolah ?? r?.namaDaerah ?? r?.namaNegeri ?? null)
+    ? (t.lokasiLama ?? null)
+    : (r?.lokasiLama ?? null)
 
   // Auto-approve: rekod dari postRasmi sentiasa dianggap sah
   const prestasiStatus = 'aktif'
@@ -528,6 +534,8 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
 
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isRelay  = acara.jenisAcara === 'relay'
+  // Lompat Tinggi: rank = kedudukan manual SAHAJA (abaikan rankDalamHeat lama)
+  const isLompatTinggi = /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
 
   // Semak sama ada acara ini adalah saringan (bukan final/akhir)
   const isSaringanAcara = (() => {
@@ -590,8 +598,9 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
   })
 
   allPeserta.sort((a, b) => {
-    const ar = a.kedudukan || a.rankDalamHeat
-    const br = b.kedudukan || b.rankDalamHeat
+    // Lompat Tinggi: HANYA guna kedudukan (jangan trust rankDalamHeat lama)
+    const ar = isLompatTinggi ? a.kedudukan : (a.kedudukan || a.rankDalamHeat)
+    const br = isLompatTinggi ? b.kedudukan : (b.kedudukan || b.rankDalamHeat)
     if (ar && br) return ar - br
     if (ar) return -1
     if (br) return 1
@@ -657,8 +666,12 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
             {heatPeserta.map((p, idx) => {
               const flagged     = ['DNS', 'DNF', 'DQ'].includes(p.status)
               const namaSkl     = (p.kodSekolah && (sekolahMap[p.kodSekolah] || p.kodSekolah)) || p.kodSekolah || '—'
-              const kddk        = p.kedudukan || p.rankDalamHeat
-              const isSementara = !p.kedudukan && !!p.rankDalamHeat
+              // Lompat Tinggi: HANYA kedudukan (jangan trust rankDalamHeat lama)
+              // Guard: kedudukan/rankDalamHeat boleh jadi string "undefined" — treat as null
+              const _ked  = (p.kedudukan === 'undefined' || p.kedudukan === '') ? null : p.kedudukan
+              const _rank = (p.rankDalamHeat === 'undefined' || p.rankDalamHeat === '') ? null : p.rankDalamHeat
+              const kddk        = isLompatTinggi ? _ked : (_ked || _rank)
+              const isSementara = !isLompatTinggi && !_ked && !!_rank
               const hasil       = isPadang ? fmtJarak(p.keputusan) : fmtMasa(p.keputusan)
               const medal       = isFinalHeat && (kddk === 1 ? '🥇' : kddk === 2 ? '🥈' : kddk === 3 ? '🥉' : null)
               // Relay: semak kelayakan guna kodSekolah; individu: guna noBib
@@ -765,7 +778,9 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
       const finalHeat = finalHeats[0]
       const peserta   = [...(finalHeat?.peserta || [])]
         .sort((a, b) => {
-          const ar = a.kedudukan || a.rankDalamHeat, br = b.kedudukan || b.rankDalamHeat
+          // Lompat Tinggi: HANYA kedudukan (jangan trust rankDalamHeat lama)
+          const ar = isLompatTinggi ? a.kedudukan : (a.kedudukan || a.rankDalamHeat)
+          const br = isLompatTinggi ? b.kedudukan : (b.kedudukan || b.rankDalamHeat)
           if (ar && br) return ar - br
           if (ar) return -1; if (br) return 1
           const av = Number(a.keputusan)||0, bv = Number(b.keputusan)||0
@@ -1315,7 +1330,7 @@ export default function Home() {
   }
 
   async function loadHeatsForAcara(acara) {
-    const aceraKey = acara.noAcara || acara.aceraId || acara.acaraId
+    const aceraKey = String(acara.acaraId || acara.noAcara || acara.aceraId || '')
     if (heatCache[aceraKey] !== undefined || heatLoading.has(aceraKey)) return
     setHeatLoading(prev => new Set([...prev, aceraKey]))
     const kId = acara._kejId || kejohananId
@@ -1342,7 +1357,7 @@ export default function Home() {
   }
 
   function toggleAcara(acara) {
-    const id = acara.acaraId || acara.noAcara
+    const id = String(acara.acaraId || acara.noAcara || '')
     setExpandedAcara(prev => {
       const next = new Set(prev)
       if (next.has(id)) {
@@ -2033,9 +2048,9 @@ export default function Home() {
                                       </tr>
                                     )
                                   }
-                                  const aceraKey = item.acara.noAcara || item.acara.aceraId || item.acara.acaraId
+                                  const aceraKey = String(item.acara.acaraId || item.acara.noAcara || item.acara.aceraId || '')
                                   const rowKey   = aceraKey + '_' + i
-                                  const expKey   = item.acara.acaraId || aceraKey
+                                  const expKey   = aceraKey
                                   return (
                                     <AcaraTableRow
                                       key={rowKey}
@@ -2145,8 +2160,8 @@ export default function Home() {
                   ) : (
                     <div className="space-y-2">
                       {filtered.map((item, i) => {
-                        const aceraKey = item.acara.noAcara || item.acara.aceraId || item.acara.acaraId
-                        const expKey   = item.acara.acaraId || aceraKey
+                        const aceraKey = String(item.acara.acaraId || item.acara.noAcara || item.acara.aceraId || '')
+                        const expKey   = aceraKey
                         const isExp    = expandedAcara.has(expKey)
                         return (
                           <div key={aceraKey + '_kep_' + i} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -2386,11 +2401,14 @@ export default function Home() {
             if ((b.tempat5||0) !== (a.tempat5||0)) return (b.tempat5||0) - (a.tempat5||0)
             return (a.namaSekolah||'').localeCompare(b.namaSekolah||'', 'ms')
           })
+          // Dense ranking: tie tidak skip rank seterusnya
+          let curR = 0
           return s.map((item, i, arr) => {
-            if (i === 0) return { ...item, rank: 1 }
+            if (i === 0) { curR = 1; return { ...item, rank: 1 } }
             const prev = arr[i - 1]
             const tie = ['emas','perak','gangsa','tempat4','tempat5'].every(k => (item[k]||0) === (prev[k]||0))
-            return { ...item, rank: tie ? arr[i-1].rank : i + 1 }
+            if (!tie) curR++
+            return { ...item, rank: curR }
           })
         }
 
@@ -2412,13 +2430,6 @@ export default function Home() {
                 <div className="border-l-4 border-[#003399] pl-3">
                   <h2 className="text-base font-black text-gray-800 leading-tight">Kedudukan Pingat</h2>
                 </div>
-                <button onClick={() => loadMedalTally(kejohananId)} disabled={medalLoading}
-                  className="p-2 text-gray-400 hover:text-[#003399] hover:bg-white rounded-xl transition-all disabled:opacity-50"
-                  title="Muat semula">
-                  <svg className={`w-4 h-4 ${medalLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                </button>
               </div>
 
               {/* Content */}

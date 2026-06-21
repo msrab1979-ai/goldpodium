@@ -131,6 +131,7 @@ export function katLabel(kod, kategoriList = []) {
 export function buatStartListPDFUnified({
   acara, heats, namaKej, jadual, rekodDNK = { D: null, N: null, K: null },
   namaSekolahMap = {}, kategoriList = [], logoKiri = null, logoKanan = null,
+  bibPrefixMap = {},
 }) {
   const isPadang       = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isMass         = acara.jenisAcara === 'mass_start'
@@ -139,6 +140,10 @@ export function buatStartListPDFUnified({
 
   const pdf = new jsPDF({ orientation: isPadang ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' })
   const M   = 12
+  // Standard column widths — seragam untuk semua salinan & jenis acara
+  // BIB sokong sehingga 5-6 character bold (PP21, RR08, WW123 dll) tanpa wrap
+  const BIB_W = 22
+  const BIB_STYLE = { cellWidth: BIB_W, halign: 'center', fontStyle: 'bold', overflow: 'visible' }
   const katLbl   = katLabel(acara.kategoriKod, kategoriList)
   const masa     = jadual?.masaMula || '—'
   const lokasi   = jadual?.lokasi   || '—'
@@ -193,19 +198,15 @@ export function buatStartListPDFUnified({
       SALINAN.forEach((s, i) => {
         const cy = startY_box + i * rowH
         const isThis = s.id === sal.id
-        if (isThis) {
-          pdf.setFillColor(sal.clr[0], sal.clr[1], sal.clr[2])
-          pdf.rect(boxX, cy, boxW, rowH, 'F')
-        }
-        pdf.setDrawColor(isThis ? sal.clr[0] : 160, isThis ? sal.clr[1] : 160, isThis ? sal.clr[2] : 160)
+        pdf.setDrawColor(0, 0, 0)
         pdf.setLineWidth(0.3)
         pdf.rect(boxX, cy, boxW, rowH)
         const cbX = boxX + 2, cbY = cy + 1.5, cbS = 3.5
-        pdf.setDrawColor(isThis ? 255 : 130, isThis ? 255 : 130, isThis ? 255 : 130)
+        pdf.setDrawColor(0, 0, 0)
         pdf.setFillColor(255, 255, 255)
-        pdf.rect(cbX, cbY, cbS, cbS, isThis ? 'FD' : 'S')
+        pdf.rect(cbX, cbY, cbS, cbS, 'S')
         if (isThis) {
-          pdf.setDrawColor(255, 255, 255)
+          pdf.setDrawColor(0, 0, 0)
           pdf.setLineWidth(0.7)
           pdf.line(cbX + 0.5, cbY + 1.8, cbX + 1.5, cbY + 2.8)
           pdf.line(cbX + 1.5, cbY + 2.8, cbX + 3.2, cbY + 0.7)
@@ -213,9 +214,8 @@ export function buatStartListPDFUnified({
         pdf.setLineWidth(0.3)
         pdf.setFont('helvetica', isThis ? 'bold' : 'normal')
         pdf.setFontSize(7.5)
-        pdf.setTextColor(isThis ? 255 : 100, isThis ? 255 : 100, isThis ? 255 : 100)
-        pdf.text(s.label, boxX + 7.5, cy + 4.3)
         pdf.setTextColor(0, 0, 0)
+        pdf.text(s.label, boxX + 7.5, cy + 4.3)
       })
 
       // ── Logo & teks header ────────────────────────────────────────────────
@@ -253,7 +253,7 @@ export function buatStartListPDFUnified({
       )
 
       y = 44
-      pdf.setDrawColor(sal.clr[0], sal.clr[1], sal.clr[2])
+      pdf.setDrawColor(0, 0, 0)
       pdf.setLineWidth(0.7)
       pdf.line(M, y, W - M, y)
       y += 3
@@ -274,8 +274,9 @@ export function buatStartListPDFUnified({
         startY: y,
         head: [['Rekod', 'Tahun', 'Prestasi', 'Nama Atlet', 'Catatan']],
         body: rekodRows,
-        styles: { fontSize: 7, cellPadding: 1 },
-        headStyles: { fillColor: [80, 80, 80], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.2, textColor: [0, 0, 0] },
+        headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 7, lineColor: [0, 0, 0], lineWidth: 0.25 },
         columnStyles: {
           0: { fontStyle: 'bold', cellWidth: 20 },
           1: { halign: 'center', cellWidth: 14 },
@@ -284,19 +285,20 @@ export function buatStartListPDFUnified({
           4: { cellWidth: 'auto' },
         },
         margin: { left: M, right: M },
-        tableLineColor: [200, 200, 200], tableLineWidth: 0.2,
+        tableLineColor: [0, 0, 0], tableLineWidth: 0.25,
       })
       y = pdf.lastAutoTable.finalY + 3
 
       // ── Heat header bar ───────────────────────────────────────────────────
-      pdf.setFillColor(sal.clr[0], sal.clr[1], sal.clr[2])
-      pdf.roundedRect(M, y, W - M * 2, 9, 1, 1, 'F')
+      pdf.setDrawColor(0, 0, 0)
+      pdf.setLineWidth(0.5)
+      pdf.rect(M, y, W - M * 2, 9)
       pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(10)
-      pdf.setTextColor(255, 255, 255)
+      pdf.setTextColor(0, 0, 0)
       pdf.text(`${fasaStr}  —  ${acara.namaAcara}`, M + 3, y + 6)
       pdf.setFontSize(8)
-      pdf.text(`${peserta.length} peserta`, W - M - 3, y + 6, { align: 'right' })
+      pdf.text(isRelay ? `${peserta.length} pasukan` : `${peserta.length} peserta`, W - M - 3, y + 6, { align: 'right' })
       pdf.setTextColor(0, 0, 0)
       y += 11
 
@@ -311,75 +313,200 @@ export function buatStartListPDFUnified({
             p.giliran ?? '—', p.noBib, p.namaAtlet,
             namaSekolahMap[p.kodSekolah] || p.kodSekolah,
           ])
-          colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:20} }
+          colStyles = {
+            0:{halign:'center',cellWidth:14}, 1:BIB_STYLE,
+            2:{cellWidth:80,overflow:'linebreak'}, 3:{cellWidth:'auto',overflow:'linebreak'},
+          }
         } else if (sal.id === 'callroom') {
           head = [[c0, 'No. BIB', 'Nama Atlet', 'Sekolah', 'Hadir (✓ / DNS)']]
           body = peserta.map(p => [
             p.giliran ?? '—', p.noBib, p.namaAtlet,
             namaSekolahMap[p.kodSekolah] || p.kodSekolah, '',
           ])
-          colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:20}, 4:{cellWidth:40} }
-        } else {
-          const gilW = 12, bibW = 16, namaW = 60, kddkW = 16, cW = 28
-          head = [
-            [
-              { content: 'Gil.', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
-              { content: 'No. BIB', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
-              { content: 'Nama Atlet / Sekolah', rowSpan: 2, styles: { valign: 'middle' } },
-              { content: 'Cubaan (m)', colSpan: bilanganCubaan, styles: { halign: 'center' } },
-              { content: 'Kddk', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
-            ],
-            Array.from({ length: bilanganCubaan }, (_, i) => ({
-              content: String(i + 1),
-              styles: { halign: 'center' },
-            })),
-          ]
-          body = peserta.map(p => [
-            p.giliran ?? '—',
-            p.noBib ?? '—',
-            `${p.namaAtlet || '—'}\n${namaSekolahMap[p.kodSekolah] || p.kodSekolah || ''}`,
-            ...Array(bilanganCubaan).fill(''),
-            '',
-          ])
           colStyles = {
-            0: { halign: 'center', cellWidth: gilW, valign: 'middle' },
-            1: { halign: 'center', cellWidth: bibW, fontStyle: 'bold', valign: 'middle' },
-            2: { cellWidth: namaW, fontStyle: 'bold', valign: 'middle', overflow: 'linebreak' },
-            ...Object.fromEntries(Array.from({ length: bilanganCubaan }, (_, i) => [
-              i + 3, { halign: 'center', cellWidth: cW, valign: 'middle' }
-            ])),
-            [3 + bilanganCubaan]: { halign: 'center', cellWidth: kddkW, valign: 'middle' },
+            0:{halign:'center',cellWidth:14}, 1:BIB_STYLE,
+            2:{cellWidth:68,overflow:'linebreak'}, 3:{cellWidth:'auto',overflow:'linebreak'},
+            4:{cellWidth:36},
+          }
+        } else {
+          const isLompatTinggi = /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+          if (isLompatTinggi) {
+            // Format standard borang Lompat Tinggi MSSM
+            // Columns: Gil | Nama Peserta | No. Peserta + Pasukan | Ketinggian (7×3) | Jumlah Gagal | Kedudukan | Catatan
+            // BIB + Pasukan digabung jadi 1 column → ruang lebih untuk Jumlah Gagal/Kedudukan/Catatan horizontal
+            const KET = 7, SUB = 3
+            // Landscape 297mm - margin 8×2 = 281mm available
+            // Gil(9) + Nama(40) + BIB/Pasukan(38) + 21sub(7×21=147) + JG(16) + Kdk(16) + Catatan(15) = 281mm ✅
+            const gilW = 9, namaW = 40, bibPasukanW = 38
+            const subW = 7, jgW = 16, kdkW = 16, catatanW = 15
+
+            const headTallStyle = { valign: 'middle', halign: 'center', minCellHeight: 14 }
+            head = [
+              [
+                { content: 'Gil',                       rowSpan: 3, styles: headTallStyle },
+                { content: 'Nama Peserta',              rowSpan: 3, styles: headTallStyle },
+                { content: 'No. Peserta\n/ Pasukan',    rowSpan: 3, styles: headTallStyle },
+                { content: 'Ketinggian', colSpan: KET * SUB, styles: { halign: 'center', valign: 'middle' } },
+                { content: 'Jumlah Gagal',              rowSpan: 3, styles: headTallStyle },
+                { content: 'Kedudukan',                 rowSpan: 3, styles: headTallStyle },
+                { content: 'Catatan',                   rowSpan: 3, styles: headTallStyle },
+              ],
+              Array.from({ length: KET }, () => ({
+                content: '', colSpan: SUB, styles: { halign: 'center', valign: 'middle', minCellHeight: 9 },
+              })),
+              Array.from({ length: KET * SUB }, (_, i) => ({
+                content: String((i % SUB) + 1),
+                styles: { halign: 'center', fontSize: 7, fontStyle: 'bold' },
+              })),
+            ]
+            body = peserta.map(p => [
+              p.giliran ?? '—',
+              p.namaAtlet || '—',
+              // Marker @@LINE@@ = garisan datar pemisah dalam cell (didDrawCell hook)
+              // Line kosong di tengah → ruang nafas atas/bawah garisan
+              `@@LINE@@${p.noBib ?? '—'}\n \n${namaSekolahMap[p.kodSekolah] || p.kodSekolah || ''}`,
+              ...Array(KET * SUB).fill(''),
+              '', // Jumlah Gagal
+              '', // Kedudukan
+              '', // Catatan
+            ])
+            colStyles = {
+              0: { halign: 'center', cellWidth: gilW, valign: 'middle' },
+              1: { cellWidth: namaW, fontStyle: 'bold', valign: 'middle', overflow: 'linebreak' },
+              2: { halign: 'center', cellWidth: bibPasukanW, fontStyle: 'bold', valign: 'middle', overflow: 'linebreak' },
+              ...Object.fromEntries(
+                Array.from({ length: KET * SUB }, (_, i) => [
+                  i + 3, { halign: 'center', cellWidth: subW, valign: 'middle' },
+                ])
+              ),
+              [3 + KET * SUB]: { halign: 'center', cellWidth: jgW, valign: 'middle', fontStyle: 'bold' },
+              [4 + KET * SUB]: { halign: 'center', cellWidth: kdkW, valign: 'middle', fontStyle: 'bold' },
+              [5 + KET * SUB]: { halign: 'center', cellWidth: catatanW, valign: 'middle' },
+            }
+          } else {
+            // Acara padang JARAK (Lompat Jauh, Lompat Kijang, Lontar Peluru, Lontar Cakera, Rejam Lembing, Lontar Tukul)
+            // Format: Gil | Nama | BIB | Pasukan | Percubaan(1-3) | Percubaan Terbaik | Percubaan(4-6) | Percubaan Terbaik | Kdk | Cat
+            const adaSplit = bilanganCubaan >= 6
+            const cubaanAwal = adaSplit ? 3 : bilanganCubaan
+            const cubaanFinal = adaSplit ? bilanganCubaan - 3 : 0
+            // Landscape 297mm - margin 8×2 = 281mm available
+            // Gil(8)+Nama(30)+BIB(16)+Pasukan(22)+3sub(20×3=60)+Best1(20)+3sub(20×3=60)+Best2(20)+Kdk(22)+Cat(22) = 280mm ✅
+            // Sub Percubaan 20mm, Kdk 22mm + Cat 22mm (header "Kedudukan"/"Catatan" muat satu baris)
+            const gilW = 8, bibW = 16, namaW = 30, pasukanW = 22
+            const cW = adaSplit ? 20 : 28
+            const terbaikW = 20, kdkW = 22, catatanW = 22
+
+            // Marker '@@ROT@@' = text rotated 90° dalam didDrawCell hook
+            const headRow1 = [
+              { content: 'Gil', rowSpan: 2, styles: { valign: 'middle', halign: 'center', minCellHeight: 22 } },
+              { content: 'Nama Peserta', rowSpan: 2, styles: { valign: 'middle', halign: 'center', minCellHeight: 22 } },
+              { content: 'No. Peserta', rowSpan: 2, styles: { valign: 'middle', halign: 'center', minCellHeight: 22 } },
+              { content: 'Pasukan', rowSpan: 2, styles: { valign: 'middle', halign: 'center', minCellHeight: 22 } },
+              { content: 'Percubaan (m)', colSpan: cubaanAwal, styles: { halign: 'center' } },
+            ]
+            if (adaSplit) {
+              headRow1.push(
+                { content: 'Percubaan Terbaik', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold', minCellHeight: 22 } },
+                { content: 'Percubaan (m)', colSpan: cubaanFinal, styles: { halign: 'center' } },
+                { content: 'Percubaan Terbaik', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold', minCellHeight: 22 } },
+              )
+            }
+            headRow1.push(
+              { content: 'Kedudukan', rowSpan: 2, styles: { valign: 'middle', halign: 'center', minCellHeight: 22 } },
+              { content: 'Catatan', rowSpan: 2, styles: { valign: 'middle', halign: 'center', minCellHeight: 22 } },
+            )
+
+            const headRow2 = []
+            for (let i = 0; i < cubaanAwal; i++) {
+              headRow2.push({ content: String(i + 1), styles: { halign: 'center' } })
+            }
+            for (let i = 0; i < cubaanFinal; i++) {
+              headRow2.push({ content: String(cubaanAwal + i + 1), styles: { halign: 'center' } })
+            }
+            head = [headRow1, headRow2]
+
+            body = peserta.map(p => {
+              const row = [
+                p.giliran ?? '—',
+                p.namaAtlet || '—',
+                p.noBib ?? '—',
+                namaSekolahMap[p.kodSekolah] || p.kodSekolah || '—',
+                ...Array(cubaanAwal).fill(''),
+              ]
+              if (adaSplit) {
+                row.push('') // Percubaan Terbaik (awal)
+                row.push(...Array(cubaanFinal).fill(''))
+                row.push('') // Percubaan Terbaik (akhir)
+              }
+              row.push('') // Kedudukan
+              row.push('') // Catatan
+              return row
+            })
+
+            colStyles = {
+              0: { halign: 'center', cellWidth: gilW, valign: 'middle' },
+              1: { cellWidth: namaW, fontStyle: 'bold', valign: 'middle', overflow: 'linebreak' },
+              2: { halign: 'center', cellWidth: bibW, fontStyle: 'bold', valign: 'middle', overflow: 'visible' },
+              3: { cellWidth: pasukanW, valign: 'middle', overflow: 'linebreak' },
+            }
+            let colIdx = 4
+            // Percubaan 1-3
+            for (let i = 0; i < cubaanAwal; i++) {
+              colStyles[colIdx++] = { halign: 'center', cellWidth: cW, valign: 'middle' }
+            }
+            if (adaSplit) {
+              // Percubaan Terbaik (awal) — garis tebal kiri (separator dari awal)
+              colStyles[colIdx++] = {
+                halign: 'center', cellWidth: terbaikW, valign: 'middle',
+                fontStyle: 'bold',
+                lineWidth: { left: 0.8, top: 0.25, bottom: 0.25, right: 0.25 },
+              }
+              // Percubaan 4-6
+              for (let i = 0; i < cubaanFinal; i++) {
+                colStyles[colIdx++] = { halign: 'center', cellWidth: cW, valign: 'middle' }
+              }
+              // Percubaan Terbaik (akhir) — garis tebal kiri sahaja (separator dari final)
+              colStyles[colIdx++] = {
+                halign: 'center', cellWidth: terbaikW, valign: 'middle',
+                fontStyle: 'bold',
+                lineWidth: { left: 0.8, top: 0.25, bottom: 0.25, right: 0.25 },
+              }
+            }
+            colStyles[colIdx++] = { halign: 'center', cellWidth: kdkW, valign: 'middle', fontStyle: 'bold' }
+            colStyles[colIdx] = { halign: 'center', cellWidth: catatanW, valign: 'middle' }
           }
         }
       } else if (isRelay) {
+        const getBib = p => bibPrefixMap[p.kodSekolah] || p.kodSekolah || '—'
         if (sal.id === 'juruhebah') {
-          head = [['Lrg', 'Sekolah / Pasukan', 'Ahli Pasukan']]
+          head = [['Lrg', 'Sekolah / Pasukan', 'No BIB']]
           body = peserta.map(p => [
             p.lorong ?? '—',
             namaSekolahMap[p.kodSekolah] || p.kodSekolah,
-            (p.ahliPasukan || []).map(a => a.namaAtlet || a.noBib || '?').join(', '),
+            getBib(p),
           ])
-          colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:55} }
+          colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:'auto'}, 2:{halign:'center',cellWidth:40,fontStyle:'bold',overflow:'visible'} }
         } else if (sal.id === 'callroom') {
-          head = [['Lrg', 'Sekolah / Pasukan', 'Ahli Pasukan', 'Hadir (✓ / DNS)']]
+          head = [['Lrg', 'Sekolah / Pasukan', 'No BIB', 'Hadir (✓ / DNS)']]
           body = peserta.map(p => [
             p.lorong ?? '—',
             namaSekolahMap[p.kodSekolah] || p.kodSekolah,
-            (p.ahliPasukan || []).map(a => a.namaAtlet || a.noBib || '?').join(', '),
+            getBib(p),
             '',
           ])
-          colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:55}, 3:{cellWidth:35} }
+          colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:'auto'}, 2:{halign:'center',cellWidth:40,fontStyle:'bold',overflow:'visible'}, 3:{cellWidth:44} }
         } else {
-          head = [['Lrg', 'Sekolah / Pasukan', 'Ahli Pasukan', 'Masa', 'Keputusan']]
+          head = [['Lrg', 'Sekolah / Pasukan', 'No BIB', 'Masa', 'Keputusan']]
           body = peserta.map(p => [
             p.lorong ?? '—',
             namaSekolahMap[p.kodSekolah] || p.kodSekolah,
-            (p.ahliPasukan || []).map(a => a.namaAtlet || a.noBib || '?').join(', '),
+            getBib(p),
             '', '',
           ])
           colStyles = {
-            0:{halign:'center',cellWidth:14}, 1:{cellWidth:55},
-            3:{cellWidth:30}, 4:{cellWidth:30},
+            0:{halign:'center',cellWidth:14}, 1:{cellWidth:'auto'},
+            2:{halign:'center',cellWidth:40,fontStyle:'bold',overflow:'visible'},
+            3:{cellWidth:32}, 4:{cellWidth:32},
           }
         }
       } else {
@@ -397,7 +524,8 @@ export function buatStartListPDFUnified({
               p.qualifyType || p._qualifyType || '—',
             ])
             colStyles = {
-              0:{halign:'center',cellWidth:14}, 1:{cellWidth:18},
+              0:{halign:'center',cellWidth:14}, 1:BIB_STYLE,
+              2:{cellWidth:68,overflow:'linebreak'}, 3:{cellWidth:'auto',overflow:'linebreak'},
               4:{halign:'center',cellWidth:12}, 5:{halign:'center',cellWidth:10, fontStyle:'bold'},
             }
           } else {
@@ -406,7 +534,10 @@ export function buatStartListPDFUnified({
               getPos(p), p.noBib, p.namaAtlet,
               namaSekolahMap[p.kodSekolah] || p.kodSekolah,
             ])
-            colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:20} }
+            colStyles = {
+              0:{halign:'center',cellWidth:14}, 1:BIB_STYLE,
+              2:{cellWidth:80,overflow:'linebreak'}, 3:{cellWidth:'auto',overflow:'linebreak'},
+            }
           }
         } else if (sal.id === 'callroom') {
           head = [[c0, 'No. BIB', 'Nama Atlet', 'Sekolah', 'Hadir (✓ / DNS)']]
@@ -414,7 +545,11 @@ export function buatStartListPDFUnified({
             getPos(p), p.noBib, p.namaAtlet,
             namaSekolahMap[p.kodSekolah] || p.kodSekolah, '',
           ])
-          colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:20}, 4:{cellWidth:40} }
+          colStyles = {
+            0:{halign:'center',cellWidth:14}, 1:BIB_STYLE,
+            2:{cellWidth:68,overflow:'linebreak'}, 3:{cellWidth:'auto',overflow:'linebreak'},
+            4:{cellWidth:36},
+          }
         } else {
           head = [[c0, 'No. BIB', 'Nama Atlet', 'Sekolah', 'Masa', 'Keputusan']]
           body = peserta.map(p => [
@@ -423,37 +558,118 @@ export function buatStartListPDFUnified({
             '', '',
           ])
           colStyles = {
-            0:{halign:'center',cellWidth:14}, 1:{cellWidth:20},
-            4:{cellWidth:34}, 5:{cellWidth:34},
+            0:{halign:'center',cellWidth:14}, 1:BIB_STYLE,
+            2:{cellWidth:60,overflow:'linebreak'}, 3:{cellWidth:'auto',overflow:'linebreak'},
+            4:{cellWidth:30}, 5:{cellWidth:30},
           }
         }
       }
 
       const isTeknikalPadang = isPadang && isTeknikal
+      const isLompatTinggiPdf = isPadang && /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+      const isLompatTinggiTeknikal = isLompatTinggiPdf && isTeknikal
+      const isPadangBiasaTeknikal = isPadang && isTeknikal && !isLompatTinggiPdf && bilanganCubaan >= 6
+      // Safe margin 8mm minimum — printer non-printable area ~5mm
+      const tableMargin = isLompatTinggiTeknikal ? 8
+        : isPadangBiasaTeknikal ? 8
+        : (isLompatTinggiPdf ? 8 : M)
+      // Untuk Padang Teknikal: kira row height supaya semua peserta muat dalam 1 page
+      // Available height: A4 landscape 210mm - header(~80mm) - footer(~30mm) = ~100mm
+      // Bahagikan ikut bilangan peserta
+      const tableAvailableH = isPadang ? 95 : 150
+      const dynamicRowH = isPadangBiasaTeknikal && peserta.length > 0
+        ? Math.max(9, Math.min(14, tableAvailableH / peserta.length))
+        : null
+
       autoTable(pdf, {
         startY: y,
         head,
         body,
-        styles: isTeknikalPadang
-          ? { fontSize: 9, cellPadding: { top: 3, right: 2, bottom: 3, left: 3 }, minCellHeight: 16, overflow: 'linebreak' }
-          : { fontSize: 9, cellPadding: 4, minCellHeight: 12 },
+        theme: 'grid',
+        rowPageBreak: 'avoid',
+        styles: isLompatTinggiTeknikal
+          ? {
+              fontSize: 8, cellPadding: { top: 2, right: 0.5, bottom: 2, left: 0.5 },
+              minCellHeight: 16, overflow: 'linebreak',
+              lineColor: [0, 0, 0], lineWidth: 0.25,
+              textColor: [0, 0, 0],
+            }
+          : isPadangBiasaTeknikal
+          ? {
+              fontSize: 8, cellPadding: { top: 1.5, right: 1, bottom: 1.5, left: 1 },
+              minCellHeight: dynamicRowH, overflow: 'linebreak',
+              lineColor: [0, 0, 0], lineWidth: 0.25,
+              textColor: [0, 0, 0],
+            }
+          : isTeknikalPadang
+          ? {
+              fontSize: 8, cellPadding: { top: 3, right: 1, bottom: 3, left: 1 },
+              minCellHeight: 14, overflow: 'linebreak',
+              lineColor: [0, 0, 0], lineWidth: 0.25,
+            }
+          : {
+              fontSize: 12, cellPadding: 3, minCellHeight: 12,
+              lineColor: [0, 0, 0], lineWidth: 0.2,
+            },
         headStyles: {
-          fillColor: [sal.clr[0], sal.clr[1], sal.clr[2]],
-          textColor: 255, fontStyle: 'bold', fontSize: 8,
-          cellPadding: isTeknikalPadang ? 3 : 2,
-          halign: 'center',
+          fillColor: [255, 255, 255],
+          textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 10,
+          cellPadding: 2, halign: 'center',
+          lineColor: [0, 0, 0], lineWidth: 0.3,
         },
-        alternateRowStyles: isTeknikalPadang ? {} : { fillColor: [248, 248, 252] },
+        alternateRowStyles: {},
         columnStyles: colStyles,
-        margin: { left: M, right: M },
-        tableLineColor: isTeknikalPadang ? [80, 80, 80] : [160, 160, 160],
-        tableLineWidth: isTeknikalPadang ? 0.5 : 0.3,
+        margin: { left: tableMargin, right: tableMargin, bottom: 28 },
+        tableLineColor: [0, 0, 0],
+        tableLineWidth: 0.4,
+        // Hook: strip marker text @@ROT@@ (header) atau @@LINE@@ (body) sebelum draw
+        willDrawCell: (data) => {
+          if (data.section === 'head' && typeof data.cell.raw === 'object'
+              && typeof data.cell.raw?.content === 'string'
+              && data.cell.raw.content.startsWith('@@ROT@@')) {
+            data.cell.text = ['']
+          }
+          if (data.section === 'body' && typeof data.cell.raw === 'string'
+              && data.cell.raw.startsWith('@@LINE@@')) {
+            // Buang marker — text jadi 3 baris: BIB | <space> | Sekolah
+            const clean = data.cell.raw.replace('@@LINE@@', '')
+            data.cell.text = clean.split('\n')
+          }
+        },
+        didDrawCell: (data) => {
+          // Header rotated text (Lompat Tinggi version lama, tinggal untuk safety)
+          if (data.section === 'head') {
+            const raw = data.cell.raw
+            if (typeof raw !== 'object' || typeof raw?.content !== 'string') return
+            if (!raw.content.startsWith('@@ROT@@')) return
+            const label = raw.content.replace('@@ROT@@', '')
+            const cx = data.cell.x + data.cell.width / 2
+            const cyBottom = data.cell.y + data.cell.height - 2
+            pdf.saveGraphicsState && pdf.saveGraphicsState()
+            pdf.setFont('helvetica', 'bold')
+            pdf.setFontSize(8)
+            pdf.setTextColor(0, 0, 0)
+            pdf.text(label, cx, cyBottom, { align: 'left', baseline: 'middle', angle: 90 })
+            pdf.restoreGraphicsState && pdf.restoreGraphicsState()
+            return
+          }
+          // Body cell BIB+Pasukan (Lompat Tinggi) — lukis garisan datar di tengah cell
+          if (data.section === 'body' && typeof data.cell.raw === 'string'
+              && data.cell.raw.startsWith('@@LINE@@')) {
+            const { x, y, width, height } = data.cell
+            const midY = y + height / 2
+            pdf.setDrawColor(0, 0, 0)
+            pdf.setLineWidth(0.25)
+            // Garisan padding 2mm dari tepi kiri & kanan
+            pdf.line(x + 2, midY, x + width - 2, midY)
+          }
+        },
       })
 
       // ── Footer tandatangan ────────────────────────────────────────────────
       const H = pdf.internal.pageSize.getHeight()
       const footY = H - 24
-      pdf.setDrawColor(sal.clr[0], sal.clr[1], sal.clr[2])
+      pdf.setDrawColor(0, 0, 0)
       pdf.setLineWidth(0.4)
       pdf.line(M, footY, W - M, footY)
       pdf.setTextColor(0, 0, 0)

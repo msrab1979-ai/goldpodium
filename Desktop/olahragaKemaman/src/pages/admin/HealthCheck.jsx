@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs, getDocsFromServer, query, where, doc, deleteDoc, updateDoc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 
@@ -60,6 +60,87 @@ export default function HealthCheck() {
   const [result, setResult]     = useState(null)
   const [progress, setProgress] = useState('')
 
+  // ── Panel Pembaikan Khas ──────────────────────────────────────────────────────
+  const [fixNoKP, setFixNoKP]         = useState('')
+  const [fixAceraId, setFixAceraId]   = useState('')
+  const [fixKodSkl, setFixKodSkl]     = useState('')
+  const [fixLog, setFixLog]           = useState([])
+  const [fixing, setFixing]           = useState(false)
+
+  async function getKejId() {
+    const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+    if (kejSnap.empty) throw new Error('Tiada kejohanan aktif.')
+    return kejSnap.docs[0].id
+  }
+
+  async function jalanFix() {
+    const noKP = fixNoKP.trim()
+    const aceraId = fixAceraId.trim()
+    if (!noKP) { setFixLog(['❌ Masukkan noKP dahulu.']); return }
+    setFixing(true)
+    setFixLog(['🔍 Mencari kejohanan aktif...'])
+    try {
+      const kejId = await getKejId()
+      setFixLog(l => [...l, `✓ Kejohanan: ${kejId}`])
+      setFixLog(l => [...l, '🔍 Memuatkan pendaftaran dari Firestore...'])
+      const pendSnap = await getDocsFromServer(collection(db, 'kejohanan', kejId, 'pendaftaran'))
+      const logs = []
+      const targetDocs = pendSnap.docs.filter(d => d.data().noKP === noKP)
+      logs.push(`✓ Jumpa ${targetDocs.length} doc dengan noKP=${noKP}`)
+      if (targetDocs.length === 0) { setFixLog(l => [...l, ...logs, '⚠ Tiada doc dijumpai.']); setFixing(false); return }
+      for (const d of targetDocs) {
+        const data = d.data()
+        logs.push(`  Doc ID: ${d.id} | namaAtlet: ${data.namaAtlet} | acaraIds: [${(data.acaraIds||[]).join(', ')}]`)
+        if (!aceraId) {
+          await deleteDoc(doc(db, 'kejohanan', kejId, 'pendaftaran', d.id))
+          logs.push(`  🗑 Doc ${d.id} DIPADAM.`)
+        } else {
+          const acaraIds = data.acaraIds || []
+          if (!acaraIds.includes(aceraId)) {
+            logs.push(`  ⚠ aceraId '${aceraId}' tiada dalam doc — langkau.`)
+          } else {
+            const newIds = acaraIds.filter(id => id !== aceraId)
+            if (newIds.length === 0) {
+              await deleteDoc(doc(db, 'kejohanan', kejId, 'pendaftaran', d.id))
+              logs.push(`  🗑 Doc ${d.id} DIPADAM (tiada acara baki).`)
+            } else {
+              await updateDoc(doc(db, 'kejohanan', kejId, 'pendaftaran', d.id), { acaraIds: newIds, updatedAt: serverTimestamp() })
+              logs.push(`  ✏ Doc ${d.id} dikemaskini. Acara baki: [${newIds.join(', ')}]`)
+            }
+          }
+        }
+      }
+      logs.push('✅ Selesai.')
+      setFixLog(l => [...l, ...logs])
+    } catch (e) { setFixLog(l => [...l, '❌ Ralat: ' + e.message]) }
+    setFixing(false)
+  }
+
+  async function jalanFixSekolah() {
+    const kodSkl = fixKodSkl.trim().toUpperCase()
+    if (!kodSkl) { setFixLog(['❌ Masukkan Kod Sekolah dahulu.']); return }
+    if (!window.confirm(`Padam SEMUA pendaftaran untuk sekolah "${kodSkl}"? Tindakan ini tidak boleh dibatalkan.`)) return
+    setFixing(true)
+    setFixLog([`🔍 Mencari pendaftaran untuk sekolah ${kodSkl}...`])
+    try {
+      const kejId = await getKejId()
+      setFixLog(l => [...l, `✓ Kejohanan: ${kejId}`])
+      const pendSnap = await getDocsFromServer(collection(db, 'kejohanan', kejId, 'pendaftaran'))
+      const targetDocs = pendSnap.docs.filter(d => d.data().kodSekolah === kodSkl)
+      setFixLog(l => [...l, `✓ Jumpa ${targetDocs.length} rekod untuk sekolah ${kodSkl}`])
+      if (targetDocs.length === 0) { setFixLog(l => [...l, '⚠ Tiada rekod dijumpai.']); setFixing(false); return }
+      // Padam dalam batch
+      const BATCH_SIZE = 400
+      for (let i = 0; i < targetDocs.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db)
+        targetDocs.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref))
+        await batch.commit()
+      }
+      setFixLog(l => [...l, `🗑 ${targetDocs.length} rekod DIPADAM untuk sekolah ${kodSkl}.`, '✅ Selesai.'])
+    } catch (e) { setFixLog(l => [...l, '❌ Ralat: ' + e.message]) }
+    setFixing(false)
+  }
+
   async function jalanSemak() {
     setRunning(true)
     setResult(null)
@@ -104,17 +185,26 @@ export default function HealthCheck() {
         }
       }
 
-      // C2 — noBib duplikat dalam pendaftaran
+      // C2 — noBib duplikat dalam pendaftaran (dalam kategori sekolah yang sama sahaja)
+      // SK vs SM dibenar sama prefix — duplikat hanya error jika SR+SR atau SM+SM atau PPKI+PPKI
+      const sekolahSnap = await getDocs(collection(db, 'sekolah'))
+      const sekolahKatMap = {}
+      sekolahSnap.docs.forEach(d => { sekolahKatMap[d.id] = d.data().kategori || '' })
+
+      // Key = noBib + '|' + kategoriSekolah
       const bibCount = {}
       for (const p of pendList) {
         if (!p.noBib) continue
-        bibCount[p.noBib] = bibCount[p.noBib] || []
-        bibCount[p.noBib].push(`${p.noKP} / ${p.namaAtlet || '—'} / ${p.kodSekolah || '—'}`)
+        const katSkl = sekolahKatMap[p.kodSekolah] || ''
+        const key = `${p.noBib}|${katSkl}`
+        bibCount[key] = bibCount[key] || []
+        bibCount[key].push(`${p.noKP} / ${p.namaAtlet || '—'} / ${p.kodSekolah || '—'} [${katSkl || '?'}]`)
       }
       const dupBib = []
-      for (const [bib, list] of Object.entries(bibCount)) {
+      for (const [key, list] of Object.entries(bibCount)) {
         if (list.length > 1) {
-          dupBib.push(`noBib:${bib} → ${list.join(' | ')}`)
+          const [bib, kat] = key.split('|')
+          dupBib.push(`noBib:${bib} [${kat || '?'}] → ${list.join(' | ')}`)
         }
       }
 
@@ -403,6 +493,64 @@ export default function HealthCheck() {
           <p className="text-xs text-gray-300 mt-1">Semak akan mengambil masa 10–30 saat bergantung pada saiz data</p>
         </div>
       )}
+
+      {/* ── Panel Pembaikan Khas ── */}
+      <div className="bg-white rounded-xl border border-orange-200 overflow-hidden">
+        <div className="px-4 py-3 bg-orange-50 border-b border-orange-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Pembaikan Khas — Buang Rekod Pendaftaran</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Buang rekod pendaftaran yang gagal dipadam melalui PP/Admin.</p>
+
+          {/* Fix by noKP */}
+          <div className="border border-orange-100 rounded-lg p-3 space-y-2">
+            <p className="text-[10px] font-bold text-orange-600 uppercase">Buang by No KP Atlet</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">No KP Atlet</label>
+                <input value={fixNoKP} onChange={e => setFixNoKP(e.target.value)}
+                  placeholder="cth: 160215-11-0390"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300"/>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">ID Acara (kosong = padam semua)</label>
+                <input value={fixAceraId} onChange={e => setFixAceraId(e.target.value)}
+                  placeholder="cth: 112 (kosong = padam doc)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300"/>
+              </div>
+            </div>
+            <button onClick={jalanFix} disabled={fixing || !fixNoKP.trim()}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+              {fixing ? 'Membaiki...' : 'Buang by noKP'}
+            </button>
+          </div>
+
+          {/* Fix by kodSekolah */}
+          <div className="border border-red-100 rounded-lg p-3 space-y-2">
+            <p className="text-[10px] font-bold text-red-600 uppercase">Padam Semua Pendaftaran by Kod Sekolah</p>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">Kod Sekolah</label>
+              <input value={fixKodSkl} onChange={e => setFixKodSkl(e.target.value)}
+                placeholder="cth: ABC123"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-300"/>
+            </div>
+            <button onClick={jalanFixSekolah} disabled={fixing || !fixKodSkl.trim()}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+              {fixing ? 'Membuang...' : 'Padam Semua Pendaftaran Sekolah Ini'}
+            </button>
+          </div>
+          {fixLog.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {fixLog.map((l, i) => (
+                <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   )

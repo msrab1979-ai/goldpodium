@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  collection, getDocs, doc, setDoc, updateDoc, deleteDoc,
+  collection, getDocs, doc, setDoc, updateDoc, deleteDoc, deleteField,
   query, orderBy, where, serverTimestamp, getDoc, writeBatch,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
@@ -1171,6 +1171,160 @@ export default function Rekod() {
     }
   }
 
+  // Auto-clean kesan rekod baru:
+  // - mata_olahragawan: padam field rekod_{acaraId}
+  // - heat.peserta[]: buang flag pecahRekod & samaiRekod
+  // Tidak sentuh: jumlahMata, pingat, medal_tally, acaraDetail
+  async function autoCleanKesanRekod(rekod) {
+    const kejId = rekod.kejohananId
+    if (!kejId) return { mataCount: 0, heatCount: 0 }
+
+    try {
+      // 1. Cari acara yang match (namaAcara/Pendek + kategoriKod + jantina)
+      const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+      const matchAcara = acaraSnap.docs.find(a => {
+        const d = a.data()
+        const namaA = (d.namaAcaraPendek || d.namaAcara || '').trim().toUpperCase()
+        const namaR = (rekod.namaAcara || '').trim().toUpperCase()
+        return namaA === namaR &&
+               d.kategoriKod === rekod.kategoriKod &&
+               d.jantina === rekod.jantina
+      })
+      if (!matchAcara) return { mataCount: 0, heatCount: 0 }
+
+      const acaraId = matchAcara.id
+      const fieldKey = `rekod_${acaraId}`
+
+      // 2. Padam field rekod_{acaraId} dari mata_olahragawan
+      const mataSnap = await getDocs(query(
+        collection(db, 'mata_olahragawan'),
+        where('kejohananId', '==', kejId)
+      ))
+      let mataCount = 0
+      for (const d of mataSnap.docs) {
+        if (d.data()[fieldKey] !== undefined) {
+          await updateDoc(d.ref, { [fieldKey]: deleteField() })
+          mataCount++
+        }
+      }
+
+      // 3. Buang flag pecahRekod/samaiRekod dari heat.peserta
+      const heatSnap = await getDocs(
+        collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat')
+      )
+      let heatCount = 0
+      for (const h of heatSnap.docs) {
+        const peserta = h.data().peserta || []
+        let hasChange = false
+        const newPeserta = peserta.map(p => {
+          if (p.pecahRekod || p.samaiRekod) {
+            hasChange = true
+            const { pecahRekod, samaiRekod, ...rest } = p
+            return rest
+          }
+          return p
+        })
+        if (hasChange) {
+          await updateDoc(h.ref, { peserta: newPeserta })
+          heatCount++
+        }
+      }
+
+      return { mataCount, heatCount }
+    } catch (e) {
+      console.warn('autoCleanKesanRekod:', e.message)
+      return { mataCount: 0, heatCount: 0, error: e.message }
+    }
+  }
+
+  // Padam dengan extra confirm (taip "PADAM")
+  async function handlePadamRekod(rekod) {
+    const input = prompt(
+      `🗑️ PADAM REKOD?\n\n` +
+      `Acara: ${rekod.namaAcara}\n` +
+      `Kategori: ${rekod.kategoriKod} ${rekod.jantina}\n` +
+      `Prestasi: ${rekod.prestasi}${rekod.unit || ''}\n` +
+      `Atlet: ${rekod.namaAtlet || '-'}\n\n` +
+      `Taip PADAM untuk confirm:`
+    )
+    if (input !== 'PADAM') {
+      if (input !== null) alert('❌ Padam dibatalkan — anda taip: ' + input)
+      return
+    }
+    try {
+      // Archive ke sejarah
+      const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+      await setDoc(sejarahRef, { ...rekod, dipadamPada: serverTimestamp() })
+      await deleteDoc(doc(db, 'rekod', rekod.id))
+      await deleteDoc(doc(db, 'rekod', rekod.id + '_tuntutan')).catch(() => {})
+      // Auto-clean kesan: mata_olahragawan + heat.peserta badges
+      const cleaned = await autoCleanKesanRekod(rekod)
+      setMsg({ type: 'ok', text: `✅ Rekod dipadam. Dibersihkan: ${cleaned.mataCount} atlet, ${cleaned.heatCount} heat.` })
+      load()
+    } catch (e) {
+      setMsg({ type: 'err', text: 'Gagal padam: ' + e.message })
+    }
+  }
+
+  // Restore — kembalikan kepada nilai prestasiLama
+  async function handleRestoreLama(rekod) {
+    if (rekod.prestasiLama == null) {
+      alert('⚠️ Tiada data rekod lama untuk restore')
+      return
+    }
+    const ok = confirm(
+      `🔄 RESTORE REKOD LAMA?\n\n` +
+      `Acara: ${rekod.namaAcara}\n\n` +
+      `📊 SEMASA (akan dibuang):\n` +
+      `  • ${rekod.prestasi}${rekod.unit || ''}\n` +
+      `  • ${rekod.namaAtlet || '-'}\n` +
+      `  • ${rekod.namaSekolah || rekod.kodSekolah || '-'}\n` +
+      `  • ${rekod.tarikhRekod || '-'}\n\n` +
+      `⬅️ KEMBALI KE (rekod lama):\n` +
+      `  • ${rekod.prestasiLama}${rekod.unit || ''}\n` +
+      `  • ${rekod.namaLama || '-'}\n` +
+      `  • ${rekod.lokasiLama || '-'}\n` +
+      `  • ${rekod.tahunLama || '-'}\n\n` +
+      `⚠️ Tindakan tidak boleh dibatalkan.`
+    )
+    if (!ok) return
+    try {
+      // Archive nilai semasa ke sejarah dulu
+      const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+      await setDoc(sejarahRef, { ...rekod, dipadamPada: serverTimestamp(), sebab: 'restored_to_lama' })
+
+      // Patch ke nilai lama
+      await updateDoc(doc(db, 'rekod', rekod.id), {
+        prestasi:     Number(rekod.prestasiLama),
+        namaAtlet:    rekod.namaLama || '—',
+        namaSekolah:  rekod.lokasiLama || '—',
+        kodSekolah:   null,
+        noKP:         null,
+        tarikhRekod:  rekod.tahunLama ? `${rekod.tahunLama}-01-01` : null,
+        windSpeed:    null,
+        isWindLegal:  true,
+        // Buang fields baru
+        prestasiLama: null,
+        tahunLama:    null,
+        namaLama:     null,
+        lokasiLama:   null,
+        catatanLama:  null,
+        // Audit
+        restoredBy:   userData?.uid || null,
+        restoredAt:   serverTimestamp(),
+        updatedAt:    serverTimestamp(),
+      })
+      // Padam tuntutan version (kalau ada)
+      await deleteDoc(doc(db, 'rekod', rekod.id + '_tuntutan')).catch(() => {})
+      // Auto-clean kesan: mata_olahragawan + heat.peserta badges
+      const cleaned = await autoCleanKesanRekod(rekod)
+      setMsg({ type: 'ok', text: `✅ Rekod lama dikembalikan. Dibersihkan: ${cleaned.mataCount} atlet, ${cleaned.heatCount} heat.` })
+      load()
+    } catch (e) {
+      setMsg({ type: 'err', text: 'Gagal restore: ' + e.message })
+    }
+  }
+
   // ── Baiki Orphan — re-key rekod ke namaAcara yang betul ─────────────────────
 
   // targetNamaAcara  = namaAcaraPendek (untuk bina key)
@@ -1630,7 +1784,18 @@ export default function Rekod() {
                                       Edit
                                     </button>
                                     <button
-                                      onClick={() => handleDelete(r)}
+                                      onClick={() => handleRestoreLama(r)}
+                                      title={r.prestasiLama != null ? `Restore: ${r.prestasiLama}${r.unit || ''}` : 'Tiada data lama'}
+                                      className={`text-[10px] px-2 py-1 rounded font-semibold transition-colors ${
+                                        r.prestasiLama != null
+                                          ? 'bg-amber-50 hover:bg-amber-100 text-amber-700'
+                                          : 'bg-gray-50 text-gray-400'
+                                      }`}
+                                    >
+                                      🔄 Restore
+                                    </button>
+                                    <button
+                                      onClick={() => handlePadamRekod(r)}
                                       className="text-[10px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded font-semibold transition-colors"
                                     >
                                       Padam
@@ -1964,7 +2129,18 @@ export default function Rekod() {
                                       {isExpanded ? 'Tutup' : 'Baiki'}
                                     </button>
                                     <button
-                                      onClick={() => handleDelete(r)}
+                                      onClick={() => handleRestoreLama(r)}
+                                      title={r.prestasiLama != null ? `Restore: ${r.prestasiLama}${r.unit || ''}` : 'Tiada data lama'}
+                                      className={`text-[10px] px-2 py-1 rounded font-semibold transition-colors ${
+                                        r.prestasiLama != null
+                                          ? 'bg-amber-50 hover:bg-amber-100 text-amber-700'
+                                          : 'bg-gray-50 text-gray-400'
+                                      }`}
+                                    >
+                                      🔄
+                                    </button>
+                                    <button
+                                      onClick={() => handlePadamRekod(r)}
                                       className="text-[10px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded font-semibold transition-colors"
                                     >
                                       Padam
@@ -2230,17 +2406,37 @@ export default function Rekod() {
                                       </button>
                                     )}
                                     {x.connectionType === 'kuat' && (
-                                      <button
-                                        onClick={() => setModal({ mode: 'edit', initial: {
-                                          ...EMPTY_FORM,
-                                          ...x.rekodItem,
-                                          prestasi:  String(x.rekodItem.prestasi),
-                                          windSpeed: x.rekodItem.windSpeed != null ? String(x.rekodItem.windSpeed) : '',
-                                        }})}
-                                        className="text-[10px] px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded font-semibold transition-colors"
-                                      >
-                                        Edit
-                                      </button>
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button
+                                          onClick={() => setModal({ mode: 'edit', initial: {
+                                            ...EMPTY_FORM,
+                                            ...x.rekodItem,
+                                            prestasi:  String(x.rekodItem.prestasi),
+                                            windSpeed: x.rekodItem.windSpeed != null ? String(x.rekodItem.windSpeed) : '',
+                                          }})}
+                                          className="text-[10px] px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded font-semibold transition-colors"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          onClick={() => handleRestoreLama(x.rekodItem)}
+                                          title={x.rekodItem.prestasiLama != null ? `Restore: ${x.rekodItem.prestasiLama}${x.rekodItem.unit || ''}` : 'Tiada data lama'}
+                                          className={`text-[10px] px-2 py-1 rounded font-semibold transition-colors ${
+                                            x.rekodItem.prestasiLama != null
+                                              ? 'bg-amber-50 hover:bg-amber-100 text-amber-700'
+                                              : 'bg-gray-50 text-gray-400'
+                                          }`}
+                                        >
+                                          🔄
+                                        </button>
+                                        <button
+                                          onClick={() => handlePadamRekod(x.rekodItem)}
+                                          title="Padam rekod"
+                                          className="text-[10px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded font-semibold transition-colors"
+                                        >
+                                          🗑️
+                                        </button>
+                                      </div>
                                     )}
                                   </td>
                                 )}

@@ -171,9 +171,9 @@ async function janaSheetExcel(addLog) {
     const namaAcara = a.namaAcara || ''
     const kat = katMap[a.kategoriKod] || a.kategoriKod || ''
     const jantina = a.jantina === 'L' ? 'Lelaki' : a.jantina === 'P' ? 'Perempuan' : ''
-    // Helper: bina formula VLOOKUP untuk kolum bibCol
-    const vlNama = bibCol => ({ f: `IFERROR(VLOOKUP(${bibCol}${r},PENDAFTARAN!$C:$E,2,0),"")` })
-    const vlSkl  = bibCol => ({ f: `IFERROR(VLOOKUP(${bibCol}${r},PENDAFTARAN!$C:$E,3,0),"")` })
+    // INDEX/MATCH — cari NoBib dalam PENDAFTARAN!C, ambil B=Nama atau D=KodSekolah
+    const vlNama = bibCol => ({ f: `IFERROR(INDEX(PENDAFTARAN!$B:$B,MATCH(${bibCol}${r},PENDAFTARAN!$C:$C,0)),"")`, t: 's', v: '' })
+    const vlSkl  = bibCol => ({ f: `IFERROR(INDEX(PENDAFTARAN!$D:$D,MATCH(${bibCol}${r},PENDAFTARAN!$C:$C,0)),"")`, t: 's', v: '' })
     return [
       a.noAcara || '', namaAcara, kat, jantina,
       '', vlNama('E'), vlSkl('E'),   // 🥇 — admin isi E, F+G auto
@@ -200,14 +200,14 @@ async function janaSheetExcel(addLog) {
     const r = i + 2
     const kodSkl = s.id
     return [
-      { f: `RANK(E${r},$E$2:$E${sekolahAll.length + 1},0)` },
+      { f: `RANK(E${r},$E$2:$E${sekolahAll.length + 1},0)`, t: 'n', v: 0 },
       kodSkl,
       s.namaSekolah || kodSkl,
       s.kategori || '',
-      { f: `COUNTIF(KEPUTUSAN!$G:$G,B${r})` },   // Emas: kolum G
-      { f: `COUNTIF(KEPUTUSAN!$J:$J,B${r})` },   // Perak: kolum J
-      { f: `COUNTIF(KEPUTUSAN!$M:$M,B${r})` },   // Gangsa: kolum M
-      { f: `SUM(E${r}:G${r})` },
+      { f: `COUNTIF(KEPUTUSAN!$G:$G,B${r})`, t: 'n', v: 0 },   // Emas: kolum G
+      { f: `COUNTIF(KEPUTUSAN!$J:$J,B${r})`, t: 'n', v: 0 },   // Perak: kolum J
+      { f: `COUNTIF(KEPUTUSAN!$M:$M,B${r})`, t: 'n', v: 0 },   // Gangsa: kolum M
+      { f: `SUM(E${r}:G${r})`, t: 'n', v: 0 },
     ]
   })
   const ws6 = XLSX.utils.aoa_to_sheet([medalHeader, ...medalRows])
@@ -233,14 +233,14 @@ async function janaSheetExcel(addLog) {
       katMap[p.kategoriKod] || p.kategoriKod || '',
       p.jantina || '',
       // KEPUTUSAN: F=🥇 Nama Atlet, I=🥈, L=🥉, O=T4 (auto VLOOKUP)
-      { f: `COUNTIF(KEPUTUSAN!$F:$F,B${r})` },   // Emas
-      { f: `COUNTIF(KEPUTUSAN!$I:$I,B${r})` },   // Perak
-      { f: `COUNTIF(KEPUTUSAN!$L:$L,B${r})` },   // Gangsa
-      { f: `COUNTIF(KEPUTUSAN!$O:$O,B${r})` },   // T4
+      { f: `COUNTIF(KEPUTUSAN!$F:$F,B${r})`, t: 'n', v: 0 },   // Emas
+      { f: `COUNTIF(KEPUTUSAN!$I:$I,B${r})`, t: 'n', v: 0 },   // Perak
+      { f: `COUNTIF(KEPUTUSAN!$L:$L,B${r})`, t: 'n', v: 0 },   // Gangsa
+      { f: `COUNTIF(KEPUTUSAN!$O:$O,B${r})`, t: 'n', v: 0 },   // T4
       // Mata = E*5 + P*3 + G*2 + T4*1
-      { f: `(G${r}*5)+(H${r}*3)+(I${r}*2)+(J${r}*1)` },
+      { f: `(G${r}*5)+(H${r}*3)+(I${r}*2)+(J${r}*1)`, t: 'n', v: 0 },
       // Kedudukan ikut mata
-      { f: `RANK(K${r},$K$2:$K${pendAll.length + 1},0)` },
+      { f: `RANK(K${r},$K$2:$K${pendAll.length + 1},0)`, t: 'n', v: 0 },
     ]
   })
   const ws7 = XLSX.utils.aoa_to_sheet([olaHeader, ...olaRows])
@@ -263,9 +263,9 @@ async function janaSheetExcel(addLog) {
     // OLAHRAGAWAN: E=Kategori, K=Mata, B=Nama
     return [
       kat, label,
-      { f: `IFERROR(INDEX(OLAHRAGAWAN!$B:$B,MATCH(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),OLAHRAGAWAN!$K:$K,0)),"—")` },
-      { f: `IFERROR(INDEX(OLAHRAGAWAN!$D:$D,MATCH(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),OLAHRAGAWAN!$K:$K,0)),"—")` },
-      { f: `IFERROR(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),0)` },
+      { f: `IFERROR(INDEX(OLAHRAGAWAN!$B:$B,MATCH(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),OLAHRAGAWAN!$K:$K,0)),"—")`, t: 's', v: '' },
+      { f: `IFERROR(INDEX(OLAHRAGAWAN!$D:$D,MATCH(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),OLAHRAGAWAN!$K:$K,0)),"—")`, t: 's', v: '' },
+      { f: `IFERROR(MAXIFS(OLAHRAGAWAN!$K:$K,OLAHRAGAWAN!$E:$E,A${r}),0)`, t: 'n', v: 0 },
     ]
   })
   const ws8 = XLSX.utils.aoa_to_sheet([terbaikHeader, ...terbaikRows])

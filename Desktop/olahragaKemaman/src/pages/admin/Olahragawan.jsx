@@ -49,16 +49,17 @@ function sortOlahragawan(a, b) {
 }
 
 function rankWithTies(sorted) {
-  let rank = 1
+  // Dense ranking: tie tidak skip rank seterusnya
+  let rank = 0
   return sorted.map((item, i) => {
-    if (i === 0) return { ...item, rank: 1 }
+    if (i === 0) { rank = 1; return { ...item, rank: 1 } }
     const prev = sorted[i - 1]
     const sama =
       (item.jumlahMata   || 0) === (prev.jumlahMata   || 0) &&
       (item.pingat_emas  || 0) === (prev.pingat_emas  || 0) &&
       (item.pingat_perak || 0) === (prev.pingat_perak || 0) &&
       (item.pingat_gangsa|| 0) === (prev.pingat_gangsa|| 0)
-    if (!sama) rank = i + 1
+    if (!sama) rank++
     return { ...item, rank }
   })
 }

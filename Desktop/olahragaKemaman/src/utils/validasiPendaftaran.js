@@ -453,6 +453,7 @@ export async function validasiPendaftaran({
   kategoriId,
   jenisAcara,
   tahunKejohanan,
+  bypassHeat = false,
 }) {
   let result
 
@@ -485,9 +486,11 @@ export async function validasiPendaftaran({
   result = await gate7_konflikJadual(noKP, aceraId, kejohananId)
   if (result.warning) gate7Warning = result.warning
 
-  // GATE 8 — Heat sudah dijana (pendaftaran ditutup)
-  result = await gate8_heatSudahDijana(aceraId, kejohananId)
-  if (!result.valid) return result
+  // GATE 8 — Heat sudah dijana (pendaftaran ditutup) — skip jika bypass aktif
+  if (!bypassHeat) {
+    result = await gate8_heatSudahDijana(aceraId, kejohananId)
+    if (!result.valid) return result
+  }
 
   return { valid: true, gate: '', mesej: '', had: 0, semasa: 0, warning: gate7Warning }
 }

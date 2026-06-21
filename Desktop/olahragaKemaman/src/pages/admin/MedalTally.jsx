@@ -32,18 +32,18 @@ function sortTally(a, b) {
 }
 
 function rankWithTies(sorted) {
-  let rank = 1
+  // Dense ranking: tie tidak skip rank seterusnya (1, 2, 2, 3 bukan 1, 2, 2, 4)
+  let rank = 0
   return sorted.map((item, i) => {
-    if (i === 0) return { ...item, rank: 1 }
+    if (i === 0) { rank = 1; return { ...item, rank: 1 } }
     const prev = sorted[i - 1]
-    // Seri hanya jika E, P, G, T4, T5 semua sama
     const sama =
       (item.emas    || 0) === (prev.emas    || 0) &&
       (item.perak   || 0) === (prev.perak   || 0) &&
       (item.gangsa  || 0) === (prev.gangsa  || 0) &&
       (item.tempat4 || 0) === (prev.tempat4 || 0) &&
       (item.tempat5 || 0) === (prev.tempat5 || 0)
-    if (!sama) rank = i + 1
+    if (!sama) rank++
     return { ...item, rank }
   })
 }

@@ -68,11 +68,31 @@ async function cetakHadiahPDF({
     })
   }
 
-  // Peserta final
-  const pesertaFinal = (finalHeat.peserta || [])
-    .filter(p => p.rankDalamHeat && (p.status === 'selesai' || p.keputusan != null))
-    .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
-    .slice(0, cetakBilangan)
+  // Peserta final — kira rank on-the-fly
+  // - Lompat Tinggi: TERUS pakai kedudukan pencatat (no fallback)
+  // - Lain: sequential auto (1,2,3,4,5)
+  const isPadangAcaraCH = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
+  const isLompatTinggiCH = /lompat tinggi/i.test(
+    acara?.namaAcara || acara?.namaAcaraPendek || ''
+  )
+  let pesertaFinal
+  if (isLompatTinggiCH) {
+    // Lompat Tinggi: rank = kedudukan (pencatat decide)
+    pesertaFinal = (finalHeat.peserta || [])
+      .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0 && p.kedudukan)
+      .map(p => ({ ...p, rankDalamHeat: Number(p.kedudukan) }))
+      .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
+      .filter(p => p.rankDalamHeat <= cetakBilangan)
+  } else {
+    // Lain: sequential auto
+    pesertaFinal = (finalHeat.peserta || [])
+      .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
+      .sort((a, b) => isPadangAcaraCH
+        ? Number(b.keputusan) - Number(a.keputusan)
+        : Number(a.keputusan) - Number(b.keputusan))
+      .map((p, i) => ({ ...p, rankDalamHeat: i + 1 }))
+      .filter(p => p.rankDalamHeat <= cetakBilangan)
+  }
 
   // Q/q map
   const isSaringanHeat = !['final', 'terus_final'].includes(finalHeat?.fasa) && finalHeat?.peringkat !== 'final'
@@ -90,9 +110,9 @@ async function cetakHadiahPDF({
   const now      = new Date().toLocaleString('ms-MY')
 
   const SALINAN = [
-    { label: 'JURUHEBAH', clr: [0, 51, 153],  tblSize: 13 },
-    { label: 'HADIAH',    clr: [0, 120, 50],  tblSize: 10 },
-    { label: 'FAIL',      clr: [70, 70, 70],  tblSize: 10 },
+    { label: 'JURUHEBAH', clr: [0, 51, 153],  tblSize: 11 },
+    { label: 'HADIAH',    clr: [0, 120, 50],  tblSize: 11 },
+    { label: 'FAIL',      clr: [70, 70, 70],  tblSize: 11 },
   ]
 
   const pdf    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -197,24 +217,27 @@ async function cetakHadiahPDF({
       startY: y, head: tblHead, body: tblBody,
       styles: {
         fontSize: sal.tblSize,
-        cellPadding: sal.tblSize >= 12 ? 3 : 2.5,
-        minCellHeight: sal.tblSize >= 12 ? 8 : 7,
-        overflow: 'hidden',
+        cellPadding: 2,
+        minCellHeight: 8,
+        overflow: 'linebreak',
+        valign: 'middle',
       },
       headStyles: {
         fillColor: sal.clr, textColor: [255, 255, 255], fontStyle: 'bold',
         fontSize: sal.tblSize - 1, halign: 'center', minCellHeight: 8,
       },
       columnStyles: isRelay ? {
-        0: { halign: 'center', cellWidth: 12, fontStyle: 'bold' },
-        1: { cellWidth: 50 }, 2: { cellWidth: 'auto' },
-        3: { halign: 'center', cellWidth: 26, fontStyle: 'bold', textColor: [0, 51, 153] },
-        4: { halign: 'center', cellWidth: 28, fontStyle: 'bold', textColor: [180, 60, 60] },
+        0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+        1: { cellWidth: 50, overflow: 'linebreak' },
+        2: { cellWidth: 'auto', overflow: 'linebreak' },
+        3: { halign: 'center', cellWidth: 24, fontStyle: 'bold', textColor: [0, 51, 153] },
+        4: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [180, 60, 60] },
       } : {
-        0: { halign: 'center', cellWidth: 12, fontStyle: 'bold' },
-        1: { cellWidth: 'auto' }, 2: { cellWidth: 55 },
-        3: { halign: 'center', cellWidth: 26, fontStyle: 'bold', textColor: [0, 51, 153] },
-        4: { halign: 'center', cellWidth: 28, fontStyle: 'bold', textColor: [180, 60, 60] },
+        0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+        1: { cellWidth: 75, overflow: 'linebreak' },
+        2: { cellWidth: 'auto', overflow: 'linebreak' },
+        3: { halign: 'center', cellWidth: 24, fontStyle: 'bold', textColor: [0, 51, 153] },
+        4: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [180, 60, 60] },
       },
       alternateRowStyles: { fillColor: [248, 248, 252] },
       margin: { left: M, right: M },
@@ -466,12 +489,31 @@ export default function CetakanHadiah() {
              (a.kategoriKod || '').toLowerCase().includes(t)
     })
 
-  const pemenang = finalHeat
-    ? (finalHeat.peserta || [])
-        .filter(p => p.rankDalamHeat && (p.status === 'selesai' || p.keputusan != null))
+  // Kira rank on-the-fly
+  // - Lompat Tinggi: TERUS pakai kedudukan pencatat
+  // - Lain: sequential auto (1,2,3,4,5)
+  const isPadangAcaraUI = ['padang_lompat', 'padang_balin'].includes(selAcara?.jenisAcara)
+  const isLompatTinggiUI = /lompat tinggi/i.test(
+    selAcara?.namaAcara || selAcara?.namaAcaraPendek || ''
+  )
+  let pemenang = []
+  if (finalHeat) {
+    if (isLompatTinggiUI) {
+      pemenang = (finalHeat.peserta || [])
+        .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0 && p.kedudukan)
+        .map(p => ({ ...p, rankDalamHeat: Number(p.kedudukan) }))
         .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
         .slice(0, 5)
-    : []
+    } else {
+      pemenang = (finalHeat.peserta || [])
+        .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
+        .sort((a, b) => isPadangAcaraUI
+          ? Number(b.keputusan) - Number(a.keputusan)
+          : Number(a.keputusan) - Number(b.keputusan))
+        .map((p, i) => ({ ...p, rankDalamHeat: i + 1 }))
+        .slice(0, 5)
+    }
+  }
 
   const isPadangSelAcara = selAcara && ['padang_lompat', 'padang_balin'].includes(selAcara.jenisAcara)
   function fmtHasil(val) {

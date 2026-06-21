@@ -384,11 +384,56 @@ function formatMasa(val) {
   return m > 0 ? `${m}:${s}` : `${Number(s).toFixed(2)}`
 }
 
-function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, sekolahMap = {}, finalisBibs = new Set(), finalisQMap = new Map() }) {
+// Parse input pencatat (mm.ss.ms) → saat tulen untuk simpan ke Firestore
+// Format diterima: "2.58.34" | "2:58.34" | "58.34" (tiada minit) | "178.34" (saat terus)
+function parseMasaInput(raw) {
+  if (raw === '' || raw == null) return ''
+  const s = String(raw).trim().replace(/:/g, '.')
+  const parts = s.split('.')
+  if (parts.length === 3) {
+    // mm.ss.ms → minit.saat.milisaat
+    const mm = Number(parts[0]) || 0
+    const ss = Number(parts[1]) || 0
+    const ms = Number(parts[2]) || 0
+    // Normalise ms: "3" → 0.03, "34" → 0.34, "340" → 0.34
+    const msFrac = ms / Math.pow(10, parts[2].length)
+    return mm * 60 + ss + msFrac
+  }
+  if (parts.length === 2) {
+    // Mungkin ss.ms (tanpa minit) atau mm.ss (format lama)
+    const a = Number(parts[0]) || 0
+    const b = Number(parts[1]) || 0
+    const bFrac = b / Math.pow(10, parts[1].length)
+    // Jika bahagian pertama >= 60 → anggap sudah dalam saat.ms
+    // Jika < 60 → anggap mm.ss (format lama) atau ss.ms bergantung konteks
+    // Pencatat digalak taip mm.ss.ms, tapi jika taip ss.ms → anggap ss.ms
+    return a + bFrac
+  }
+  return Number(s) || ''
+}
+
+// Display saat tulen → "m:ss.ms" untuk tunjuk kepada pencatat
+function fmtMasaDisplay(saat) {
+  if (saat === '' || saat == null) return ''
+  const n = Number(saat)
+  if (isNaN(n) || n <= 0) return ''
+  const m = Math.floor(n / 60)
+  const s = (n % 60).toFixed(2).padStart(5, '0')
+  return m > 0 ? `${m}:${s}` : `${Number(s).toFixed(2)}s`
+}
+
+function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, sekolahMap = {}, finalisBibs = new Set(), finalisQMap = new Map(), carianBib = '' }) {
   const bilLorong   = acara.bilanganLorong || heat.bilanganLorong || 8
   const isWind      = acara.isWindReading || false
-  const slots       = Array.from({ length: bilLorong }, (_, i) => i + 1)
-  const rankMap     = kiraLaranRank(slots, keputusan)
+  const slotsAsal   = Array.from({ length: bilLorong }, (_, i) => i + 1)
+  const slots = carianBib
+    ? [...slotsAsal].sort((a, b) => {
+        const matchA = (keputusan[a]?.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchB = (keputusan[b]?.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        return matchA - matchB
+      })
+    : slotsAsal
+  const rankMap     = kiraLaranRank(slotsAsal, keputusan)
 
   return (
     <div className="space-y-3">
@@ -415,14 +460,14 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
       {/* Table */}
       <div className="rounded-xl border border-gray-200 overflow-hidden">
         {/* Header */}
-        <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
-          style={{ gridTemplateColumns: '36px 72px 1fr 72px 52px 90px' }}>
-          <div className="px-2 py-2.5 text-center">Lrg</div>
-          <div className="px-2 py-2.5 text-center">No BIB</div>
-          <div className="px-2 py-2.5">Atlet / Sekolah</div>
-          <div className="px-2 py-2.5 text-center">Masa (s)</div>
-          <div className="px-2 py-2.5 text-center">Kddk</div>
-          <div className="px-2 py-2.5 text-center">Catatan</div>
+        <div className="grid bg-[#003399] text-white text-xs font-bold uppercase tracking-wider"
+          style={{ gridTemplateColumns: '44px 80px 1fr 88px 60px 100px' }}>
+          <div className="px-2 py-3 text-center">Lrg</div>
+          <div className="px-2 py-3 text-center">No BIB</div>
+          <div className="px-2 py-3">Atlet / Sekolah</div>
+          <div className="px-2 py-3 text-center">Masa</div>
+          <div className="px-2 py-3 text-center">Kddk</div>
+          <div className="px-2 py-3 text-center">Catatan</div>
         </div>
 
         {/* Rows */}
@@ -434,12 +479,12 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
           if (isKosong) {
             return (
               <div key={lorong} className="grid border-t border-gray-100 bg-gray-50"
-                style={{ gridTemplateColumns: '36px 72px 1fr 72px 52px 90px' }}>
+                style={{ gridTemplateColumns: '44px 80px 1fr 88px 60px 100px' }}>
                 <div className="px-1 py-3 flex items-center justify-center">
-                  <span className="text-[10px] font-black text-gray-300">{lorong}</span>
+                  <span className="text-sm font-black text-gray-300">{lorong}</span>
                 </div>
                 <div className="col-span-5 px-3 flex items-center">
-                  <span className="text-[10px] text-gray-300 italic">— Lorong kosong —</span>
+                  <span className="text-sm text-gray-300 italic">— Lorong kosong —</span>
                 </div>
               </div>
             )
@@ -447,12 +492,13 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
 
           const rank    = rankMap[lorong]
           const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
-          const rowBg  = flagged ? 'bg-red-50' :
+          const isCarian = carianBib && (kp.noBib || '').toUpperCase().includes(carianBib)
+          const rowBg  = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset' :
+                         flagged ? 'bg-red-50' :
                          rank === 1 ? 'bg-yellow-50' :
                          rank === 2 ? 'bg-gray-50' :
                          rank === 3 ? 'bg-orange-50' :
                          idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-          // Kedudukan yg telah dipilih oleh lorong lain — sembunyikan dari dropdown ini
           const usedByOthers = new Set(
             slots.filter(s => s !== lorong)
               .map(s => keputusan[s]?.kedudukan)
@@ -462,56 +508,63 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
           return (
             <div key={lorong}
               className={`grid border-t border-gray-100 ${rowBg}`}
-              style={{ gridTemplateColumns: '36px 72px 1fr 72px 52px 90px' }}>
+              style={{ gridTemplateColumns: '44px 80px 1fr 88px 60px 100px' }}>
 
               {/* Lorong */}
-              <div className="px-1 py-2 flex items-center justify-center">
-                <span className="text-xs font-black text-gray-500">{lorong}</span>
+              <div className="px-1 py-3 flex items-center justify-center">
+                <span className="text-sm font-black text-gray-700">{lorong}</span>
               </div>
 
               {/* No BIB — read only */}
-              <div className="px-1 py-1.5 flex items-center">
+              <div className="px-1 py-2 flex items-center">
                 <input type="text"
                   value={kp.noBib || ''}
                   readOnly
-                  className="w-full border border-gray-100 rounded-lg px-1.5 py-1.5 text-[11px] font-mono text-center bg-gray-50 text-gray-500 cursor-default select-none" />
+                  className="w-full border border-gray-100 rounded-lg px-1.5 py-2 text-sm font-mono font-bold text-center bg-gray-50 text-gray-700 cursor-default select-none" />
               </div>
 
               {/* Atlet + Sekolah */}
-              <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+              <div className="px-2 py-2 flex flex-col justify-center min-w-0">
                 <div className="flex items-center gap-1 min-w-0">
-                  <p className="text-[11px] font-semibold text-gray-700 truncate leading-tight">
+                  <p className="text-sm font-semibold text-gray-900 truncate leading-tight">
                     {kp.namaAtlet || '—'}</p>
                   {kp.noBib && finalisQMap.has(kp.noBib) && (
-                    <span className={`shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded leading-none text-white ${finalisQMap.get(kp.noBib) === 'Q' ? 'bg-green-600' : 'bg-sky-500'}`}>
+                    <span className={`shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded leading-none text-white ${finalisQMap.get(kp.noBib) === 'Q' ? 'bg-green-600' : 'bg-sky-500'}`}>
                       {finalisQMap.get(kp.noBib)}
                     </span>
                   )}
                 </div>
-                <p className="text-[9px] text-gray-400 truncate leading-tight">
+                <p className="text-xs text-gray-600 truncate leading-tight mt-0.5">
                   {(kp.kodSekolah && (sekolahMap[kp.kodSekolah] || kp.kodSekolah)) || ''}
                 </p>
               </div>
 
               {/* Masa */}
-              <div className="px-1 py-1.5 flex items-center">
-                <input type="number" step="0.01" min="0"
-                  value={kp.keputusan ?? ''}
-                  onChange={e => onChange(lorong, 'keputusan', e.target.value)}
-                  placeholder="0.00"
+              <div className="px-1 py-2 flex flex-col items-center gap-0.5">
+                <input type="text" inputMode="decimal"
+                  defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
+                  key={`masa-${lorong}-${kp.keputusan ?? ''}`}
+                  onBlur={e => {
+                    const saat = parseMasaInput(e.target.value)
+                    onChange(lorong, 'keputusan', saat)
+                  }}
+                  placeholder="m.ss.ms"
                   disabled={flagged}
-                  className="w-full border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+                  className="w-full border-2 border-gray-300 rounded-lg px-1 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+                {kp.keputusan > 0 && (
+                  <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+                )}
               </div>
 
               {/* Kedudukan */}
-              <div className="px-1 py-1.5 flex items-center justify-center">
+              <div className="px-1 py-2 flex items-center justify-center">
                 {flagged ? (
-                  <span className="text-[10px] font-bold text-red-400">—</span>
+                  <span className="text-sm font-bold text-red-400">—</span>
                 ) : (
                   <select
                     value={kp.kedudukan ?? ''}
                     onChange={e => onChange(lorong, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="w-full border border-gray-200 rounded-lg px-0.5 py-1 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white"
+                    className="w-full border-2 border-gray-300 rounded-lg px-0.5 py-2.5 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white"
                   >
                     <option value="">{rank ? `(${rank})` : '—'}</option>
                     {Array.from({ length: bilLorong }, (_, i) => {
@@ -524,7 +577,7 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
               </div>
 
               {/* Catatan DNS/DNF/DQ */}
-              <div className="px-1 py-1.5 flex items-center gap-0.5">
+              <div className="px-1 py-2 flex items-center gap-0.5">
                 {['DNS', 'DNF', 'DQ'].map(flag => (
                   <button key={flag} type="button"
                     onClick={() => {
@@ -532,10 +585,10 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
                       onChange(lorong, 'status', newStatus)
                       if (newStatus) onChange(lorong, 'keputusan', '')
                     }}
-                    className={`flex-1 py-1 text-[9px] font-bold rounded transition-colors ${
+                    className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${
                       kp.status === flag
                         ? 'bg-red-500 text-white'
-                        : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
+                        : 'bg-white border border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-400'
                     }`}>
                     {flag}
                   </button>
@@ -549,25 +602,36 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
   )
 }
 
-function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBibs = new Set(), finalisQMap = new Map() }) {
+function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBibs = new Set(), finalisQMap = new Map(), carianBib = '' }) {
   const pesertaArr = heat.peserta || []
   const bilAtlet   = pesertaArr.length || 10
-  const slots      = Array.from({ length: bilAtlet }, (_, i) => i + 1)
+  const slotsAsal  = Array.from({ length: bilAtlet }, (_, i) => i + 1)
+
+  // Sort: baris carian naik ke atas
+  const slots = carianBib
+    ? [...slotsAsal].sort((a, b) => {
+        const kpA = keputusan[a] || {}
+        const kpB = keputusan[b] || {}
+        const matchA = (kpA.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchB = (kpB.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        return matchA - matchB
+      })
+    : slotsAsal
 
   // Auto-rank dari masa (masa terkecil = rank 1)
-  const rankMap = kiraLaranRank(slots, keputusan)
+  const rankMap = kiraLaranRank(slotsAsal, keputusan)
 
   return (
     <div className="rounded-xl border border-gray-200 overflow-hidden">
       {/* Header */}
-      <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
-        style={{ gridTemplateColumns: '36px 68px 1fr 72px 52px 86px' }}>
-        <div className="px-2 py-2.5 text-center">Bil</div>
-        <div className="px-2 py-2.5 text-center">No BIB</div>
-        <div className="px-2 py-2.5">Atlet / Sekolah</div>
-        <div className="px-2 py-2.5 text-center">Masa (s)</div>
-        <div className="px-2 py-2.5 text-center">Kddk</div>
-        <div className="px-2 py-2.5 text-center">Catatan</div>
+      <div className="grid bg-[#003399] text-white text-xs font-bold uppercase tracking-wider"
+        style={{ gridTemplateColumns: '40px 76px 1fr 90px 60px 96px' }}>
+        <div className="px-2 py-3 text-center">Bil</div>
+        <div className="px-2 py-3 text-center">No BIB</div>
+        <div className="px-2 py-3">Atlet / Sekolah</div>
+        <div className="px-2 py-3 text-center">Masa</div>
+        <div className="px-2 py-3 text-center">Kddk</div>
+        <div className="px-2 py-3 text-center">Catatan</div>
       </div>
 
       {slots.map((slot, idx) => {
@@ -578,7 +642,9 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
         const usedByOthers = new Set(
           slots.filter(s => s !== slot).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
         )
-        const rowBg = flagged ? 'bg-red-50' :
+        const isCarian = carianBib && (kp.noBib || '').toUpperCase().includes(carianBib)
+        const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset' :
+                      flagged ? 'bg-red-50' :
                       rank === 1 ? 'bg-yellow-50' :
                       rank === 2 ? 'bg-gray-50' :
                       rank === 3 ? 'bg-orange-50' :
@@ -586,22 +652,22 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
 
         return (
           <div key={slot} className={`grid border-t border-gray-100 ${rowBg}`}
-            style={{ gridTemplateColumns: '36px 68px 1fr 72px 52px 86px' }}>
+            style={{ gridTemplateColumns: '40px 76px 1fr 90px 60px 96px' }}>
 
-            <div className="px-1 py-2 flex items-center justify-center">
-              <span className="text-xs font-black text-gray-500">{slot}</span>
+            <div className="px-1 py-2.5 flex items-center justify-center">
+              <span className="text-sm font-black text-gray-600">{slot}</span>
             </div>
 
-            <div className="px-1 py-1.5 flex items-center">
+            <div className="px-1 py-2 flex items-center">
               <input type="text"
                 value={kp.noBib || ''}
                 readOnly
-                className="w-full border border-gray-100 rounded-lg px-1.5 py-1.5 text-[11px] font-mono text-center bg-gray-50 text-gray-500 cursor-default select-none" />
+                className="w-full border border-gray-100 rounded-lg px-1.5 py-2 text-sm font-mono font-bold text-center bg-gray-50 text-gray-700 cursor-default select-none" />
             </div>
 
-            <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+            <div className="px-2 py-2 flex flex-col justify-center min-w-0">
               <div className="flex items-center gap-1 min-w-0">
-                <p className="text-[11px] font-semibold text-gray-700 truncate leading-tight">
+                <p className="text-sm font-semibold text-gray-900 truncate leading-tight">
                   {kp.namaAtlet || p.namaAtlet || '—'}
                 </p>
                 {(kp.noBib || p.noBib) && finalisQMap.has(kp.noBib || p.noBib) && (
@@ -610,27 +676,34 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
                   </span>
                 )}
               </div>
-              <p className="text-[9px] text-gray-400 truncate leading-tight">
+              <p className="text-[10px] text-gray-500 truncate leading-tight mt-0.5">
                 {(kp.kodSekolah && (sekolahMap[kp.kodSekolah] || kp.kodSekolah)) ||
                  (p.kodSekolah  && (sekolahMap[p.kodSekolah]  || p.kodSekolah)) || ''}
               </p>
             </div>
 
-            <div className="px-1 py-1.5 flex items-center">
-              <input type="number" step="0.01" min="0"
-                value={kp.keputusan ?? ''}
-                onChange={e => onChange(slot, 'keputusan', e.target.value)}
-                placeholder="0.00" disabled={flagged}
-                className="w-full border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+            <div className="px-1 py-2 flex flex-col items-center gap-0.5">
+              <input type="text" inputMode="decimal"
+                defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
+                key={`masa-${slot}-${kp.keputusan ?? ''}`}
+                onBlur={e => {
+                  const saat = parseMasaInput(e.target.value)
+                  onChange(slot, 'keputusan', saat)
+                }}
+                placeholder="m.ss.ms" disabled={flagged}
+                className="w-full border-2 border-gray-300 rounded-lg px-2 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+              {kp.keputusan > 0 && (
+                <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+              )}
             </div>
 
-            <div className="px-1 py-1.5 flex items-center justify-center">
+            <div className="px-1 py-2 flex items-center justify-center">
               {flagged ? (
-                <span className="text-[10px] font-bold text-red-400">—</span>
+                <span className="text-sm font-bold text-red-400">—</span>
               ) : (
                 <select value={kp.kedudukan ?? ''}
                   onChange={e => onChange(slot, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
-                  className="w-full border border-gray-200 rounded-lg px-0.5 py-1 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white">
+                  className="w-full border-2 border-gray-300 rounded-lg px-1 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white">
                   <option value="">{rank ? `(${rank})` : '—'}</option>
                   {slots.map(v => {
                     if (usedByOthers.has(v) && kp.kedudukan !== v) return null
@@ -640,7 +713,7 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
               )}
             </div>
 
-            <div className="px-1 py-1.5 flex items-center gap-0.5">
+            <div className="px-1 py-2 flex items-center gap-0.5">
               {['DNS', 'DNF', 'DQ'].map(flag => (
                 <button key={flag} type="button"
                   onClick={() => {
@@ -648,7 +721,7 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
                     onChange(slot, 'status', n)
                     if (n) onChange(slot, 'keputusan', '')
                   }}
-                  className={`flex-1 py-1 text-[9px] font-bold rounded transition-colors ${
+                  className={`flex-1 py-1.5 text-[10px] font-bold rounded transition-colors ${
                     kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
                   }`}>{flag}</button>
               ))}
@@ -707,10 +780,19 @@ function RankBadge({ rank }) {
   )
 }
 
-function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
-  const rankMap = kiraPadangRank(peserta, keputusan)
-  const bilPes  = peserta.length
+function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
+  // Lompat Tinggi: tiada auto-rank — pencatat mesti pilih kedudukan manual
+  const isLompatTinggi = /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+  const rankMap = isLompatTinggi ? {} : kiraPadangRank(peserta, keputusan)
   const unit    = acara.jenisAcara === 'padang_balin' ? 'm' : 'm'
+  const bilPes  = peserta.length
+  const pesertaSorted = carianBib
+    ? [...peserta].sort((a, b) => {
+        const matchA = (a.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchB = (b.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        return matchA - matchB
+      })
+    : peserta
 
   // Live leaderboard
   const board = peserta
@@ -730,13 +812,13 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
       {/* Live leaderboard */}
       {board.length > 0 && (
         <div className="bg-[#003399]/5 rounded-xl p-3 border border-[#003399]/10">
-          <p className="text-[9px] font-black text-[#003399] uppercase tracking-widest mb-2">Kedudukan Semasa</p>
-          <div className="space-y-1.5">
+          <p className="text-xs font-black text-[#003399] uppercase tracking-widest mb-2">Kedudukan Semasa</p>
+          <div className="space-y-2">
             {board.map(r => (
               <div key={r.key} className="flex items-center gap-2">
-                <div className="w-6 flex justify-center shrink-0"><RankBadge rank={r.rank} /></div>
-                <span className="text-xs font-semibold text-gray-700 flex-1 truncate">{r.nama}</span>
-                <span className="text-xs font-mono font-bold text-gray-800 shrink-0">
+                <div className="w-7 flex justify-center shrink-0"><RankBadge rank={r.rank} /></div>
+                <span className="text-sm font-semibold text-gray-700 flex-1 truncate">{r.nama}</span>
+                <span className="text-sm font-mono font-bold text-gray-800 shrink-0">
                   {r.best ? `${r.best.toFixed(2)} ${unit}` : <span className="text-red-400">{r.status}</span>}
                 </span>
               </div>
@@ -745,18 +827,19 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
         </div>
       )}
 
-      {/* Jadual ringkas: No | Atlet/Sekolah | Jarak | Kddk | DQ/DNS */}
+      {/* Jadual: No BIB | Sekolah | Nama Atlet | Jarak | Kddk | Catatan */}
       <div className="rounded-xl border border-gray-200 overflow-hidden">
-        <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
-          style={{ gridTemplateColumns: '40px 1fr 88px 52px 72px' }}>
-          <div className="px-2 py-2.5 text-center">No</div>
-          <div className="px-2 py-2.5">Atlet / Sekolah</div>
-          <div className="px-2 py-2.5 text-center">Jarak ({unit})</div>
-          <div className="px-2 py-2.5 text-center">Kddk</div>
-          <div className="px-2 py-2.5 text-center">Catatan</div>
+        <div className="grid bg-[#003399] text-white text-xs font-bold uppercase tracking-wider"
+          style={{ gridTemplateColumns: '80px 1fr 1fr 100px 64px 88px' }}>
+          <div className="px-2 py-3 text-center">No BIB</div>
+          <div className="px-2 py-3">Sekolah</div>
+          <div className="px-2 py-3">Nama Atlet</div>
+          <div className="px-2 py-3 text-center">Jarak ({unit})</div>
+          <div className="px-2 py-3 text-center">Kddk</div>
+          <div className="px-2 py-3 text-center">Catatan</div>
         </div>
 
-        {peserta.map((p, idx) => {
+        {pesertaSorted.map((p, idx) => {
           const key     = p.noBib || idx
           const kp      = keputusan[key] || {}
           const rank    = rankMap[key]
@@ -768,7 +851,9 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
               .map(pp => keputusan[pp.noBib || i]?.kedudukan)
               .filter(v => v !== '' && v != null)
           )
-          const rowBg = flagged ? 'bg-red-50' :
+          const isCarian = carianBib && (p.noBib || '').toUpperCase().includes(carianBib)
+          const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset' :
+                        flagged ? 'bg-red-50' :
                         rank === 1 ? 'bg-yellow-50' :
                         rank === 2 ? 'bg-gray-50' :
                         rank === 3 ? 'bg-orange-50' :
@@ -776,44 +861,49 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
 
           return (
             <div key={key} className={`grid border-t border-gray-100 ${rowBg}`}
-              style={{ gridTemplateColumns: '40px 1fr 88px 52px 72px' }}>
+              style={{ gridTemplateColumns: '80px 1fr 1fr 100px 64px 88px' }}>
 
-              {/* No / Rank */}
-              <div className="px-1 py-2 flex items-center justify-center">
-                <div className="w-6 flex justify-center"><RankBadge rank={rank} /></div>
+              {/* No BIB */}
+              <div className="px-2 py-2.5 flex items-center justify-center">
+                <span className="text-sm font-mono font-bold text-gray-800">{p.noBib || '—'}</span>
               </div>
 
-              {/* Atlet + Sekolah */}
-              <div className="px-2 py-2 flex flex-col justify-center min-w-0">
-                <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{p.namaAtlet || `#${idx+1}`}</p>
-                <p className="text-[9px] text-gray-400 truncate leading-tight mt-0.5">
-                  {p.noBib && <span className="font-mono">{p.noBib} · </span>}
-                  {(p.kodSekolah && (sekolahMap[p.kodSekolah] || p.kodSekolah)) || ''}
+              {/* Sekolah */}
+              <div className="px-2 py-2.5 flex items-center min-w-0">
+                <p className="text-sm text-gray-700 truncate leading-tight">
+                  {(p.kodSekolah && (sekolahMap[p.kodSekolah] || p.kodSekolah)) || '—'}
                 </p>
               </div>
 
-              {/* Jarak — satu input sahaja */}
-              <div className="px-2 py-1.5 flex items-center">
+              {/* Nama Atlet */}
+              <div className="px-2 py-2.5 flex items-center min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{p.namaAtlet || `#${idx+1}`}</p>
+              </div>
+
+              {/* Jarak */}
+              <div className="px-2 py-2 flex items-center">
                 <input type="number" step="0.01" min="0"
                   value={kp.keputusan ?? ''}
                   disabled={flagged}
                   onChange={e => onChange(key, 'keputusan', e.target.value)}
                   placeholder="0.00"
-                  className="w-full border-2 border-gray-200 rounded-lg px-2 py-2 text-sm font-mono font-bold text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300 transition-colors" />
+                  className="w-full border-2 border-gray-300 rounded-lg px-2 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300 transition-colors" />
               </div>
 
               {/* Kedudukan */}
-              <div className="px-1 py-1.5 flex items-center justify-center">
+              <div className="px-1 py-2 flex items-center justify-center">
                 {flagged ? (
-                  <span className="text-[10px] font-bold text-red-400">—</span>
+                  <span className="text-sm font-bold text-red-400">—</span>
                 ) : (
                   <select value={kp.kedudukan ?? ''}
                     onChange={e => onChange(key, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
-                    className="w-full border border-gray-200 rounded-lg px-0.5 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white">
-                    <option value="">{rank ? `(${rank})` : '—'}</option>
+                    className={`w-full border-2 rounded-lg px-0.5 py-2.5 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white ${
+                      isLompatTinggi && !kp.kedudukan ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}>
+                    <option value="">{isLompatTinggi ? '— pilih —' : (rank ? `(${rank})` : '—')}</option>
                     {Array.from({ length: bilPes }, (_, i) => {
                       const v = i + 1
-                      if (usedByOthers.has(v) && kp.kedudukan !== v) return null
+                      if (!isLompatTinggi && usedByOthers.has(v) && kp.kedudukan !== v) return null
                       return <option key={v} value={v}>{v}</option>
                     })}
                   </select>
@@ -821,12 +911,12 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
               </div>
 
               {/* DQ / DNS */}
-              <div className="px-1 py-1.5 flex flex-col items-center gap-0.5">
+              <div className="px-1 py-2 flex flex-col items-center gap-1">
                 {['DQ', 'DNS'].map(flag => (
                   <button key={flag} type="button"
                     onClick={() => onChange(key, 'status', kp.status === flag ? '' : flag)}
-                    className={`w-full py-1 text-[9px] font-bold rounded transition-colors ${
-                      kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
+                    className={`w-full py-2 text-xs font-bold rounded transition-colors ${
+                      kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-400'
                     }`}>{flag}</button>
                 ))}
               </div>
@@ -838,21 +928,28 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {} }) {
   )
 }
 
-function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {} }) {
+function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
   const bilPasukan = acara.bilPasukan || heat.bilPasukan || acara.bilanganLorong || 8
-  const slots      = Array.from({ length: bilPasukan }, (_, i) => i + 1)
-  const rankMap    = kiraLaranRank(slots, keputusan)
+  const slotsAsal  = Array.from({ length: bilPasukan }, (_, i) => i + 1)
+  const slots = carianBib
+    ? [...slotsAsal].sort((a, b) => {
+        const matchA = (keputusan[a]?.kodSekolah || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchB = (keputusan[b]?.kodSekolah || '').toUpperCase().includes(carianBib) ? 0 : 1
+        return matchA - matchB
+      })
+    : slotsAsal
+  const rankMap    = kiraLaranRank(slotsAsal, keputusan)
 
   return (
     <div className="rounded-xl border border-gray-200 overflow-hidden">
       {/* Header */}
-      <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase tracking-wider"
-        style={{ gridTemplateColumns: '36px 1fr 72px 52px 86px' }}>
-        <div className="px-2 py-2.5 text-center">Lrg</div>
-        <div className="px-2 py-2.5">Sekolah</div>
-        <div className="px-2 py-2.5 text-center">Masa (s)</div>
-        <div className="px-2 py-2.5 text-center">Kddk</div>
-        <div className="px-2 py-2.5 text-center">Catatan</div>
+      <div className="grid bg-[#003399] text-white text-xs font-bold uppercase tracking-wider"
+        style={{ gridTemplateColumns: '44px 1fr 88px 60px 100px' }}>
+        <div className="px-2 py-3 text-center">Lrg</div>
+        <div className="px-2 py-3">Sekolah</div>
+        <div className="px-2 py-3 text-center">Masa</div>
+        <div className="px-2 py-3 text-center">Kddk</div>
+        <div className="px-2 py-3 text-center">Catatan</div>
       </div>
 
       {slots.map((lorong, idx) => {
@@ -863,12 +960,12 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {} }) {
         if (isKosong) {
           return (
             <div key={lorong} className="grid border-t border-gray-100 bg-gray-50"
-              style={{ gridTemplateColumns: '36px 1fr 72px 52px 86px' }}>
+              style={{ gridTemplateColumns: '44px 1fr 88px 60px 100px' }}>
               <div className="px-1 py-3 flex items-center justify-center">
-                <span className="text-[10px] font-black text-gray-300">{lorong}</span>
+                <span className="text-sm font-black text-gray-300">{lorong}</span>
               </div>
               <div className="col-span-4 px-3 flex items-center">
-                <span className="text-[10px] text-gray-300 italic">— Lorong kosong —</span>
+                <span className="text-xs text-gray-300 italic">— Lorong kosong —</span>
               </div>
             </div>
           )
@@ -879,7 +976,9 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {} }) {
         const usedByOthers = new Set(
           slots.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
         )
-        const rowBg = flagged ? 'bg-red-50' :
+        const isCarian = carianBib && (kp.kodSekolah || '').toUpperCase().includes(carianBib)
+        const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset' :
+                      flagged ? 'bg-red-50' :
                       rank === 1 ? 'bg-yellow-50' :
                       rank === 2 ? 'bg-gray-50' :
                       rank === 3 ? 'bg-orange-50' :
@@ -887,39 +986,46 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {} }) {
 
         return (
           <div key={lorong} className={`grid border-t border-gray-100 ${rowBg}`}
-            style={{ gridTemplateColumns: '36px 1fr 72px 52px 86px' }}>
+            style={{ gridTemplateColumns: '44px 1fr 88px 60px 100px' }}>
 
-            <div className="px-1 py-2 flex items-center justify-center">
-              <span className="text-xs font-black text-gray-500">{lorong}</span>
+            <div className="px-1 py-2.5 flex items-center justify-center">
+              <span className="text-sm font-black text-gray-700">{lorong}</span>
             </div>
 
             {/* Sekolah — input kod, papar nama */}
-            <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
+            <div className="px-2 py-2 flex flex-col justify-center min-w-0">
               <input type="text" inputMode="text"
                 value={kp.kodSekolah || ''}
                 onChange={e => onChange(lorong, 'kodSekolah', e.target.value.toUpperCase())}
                 placeholder="Kod Sekolah" disabled={flagged}
-                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100" />
+                className="w-full border-2 border-gray-300 rounded-lg px-2 py-2 text-sm font-mono font-bold text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100" />
               {kp.kodSekolah && sekolahMap[kp.kodSekolah] && (
-                <p className="text-[9px] text-gray-400 truncate mt-0.5">{sekolahMap[kp.kodSekolah]}</p>
+                <p className="text-xs text-gray-500 truncate mt-0.5">{sekolahMap[kp.kodSekolah]}</p>
               )}
             </div>
 
-            <div className="px-1 py-1.5 flex items-center">
-              <input type="number" step="0.01" min="0"
-                value={kp.keputusan ?? ''}
-                onChange={e => onChange(lorong, 'keputusan', e.target.value)}
-                placeholder="0.00" disabled={flagged}
-                className="w-full border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+            <div className="px-1 py-2 flex flex-col items-center gap-0.5">
+              <input type="text" inputMode="decimal"
+                defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
+                key={`masa-${lorong}-${kp.keputusan ?? ''}`}
+                onBlur={e => {
+                  const saat = parseMasaInput(e.target.value)
+                  onChange(lorong, 'keputusan', saat)
+                }}
+                placeholder="m.ss.ms" disabled={flagged}
+                className="w-full border-2 border-gray-300 rounded-lg px-2 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+              {kp.keputusan > 0 && (
+                <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+              )}
             </div>
 
-            <div className="px-1 py-1.5 flex items-center justify-center">
+            <div className="px-1 py-2 flex items-center justify-center">
               {flagged ? (
-                <span className="text-[10px] font-bold text-red-400">—</span>
+                <span className="text-sm font-bold text-red-400">—</span>
               ) : (
                 <select value={kp.kedudukan ?? ''}
                   onChange={e => onChange(lorong, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
-                  className="w-full border border-gray-200 rounded-lg px-0.5 py-1 text-[11px] font-mono text-center focus:outline-none focus:border-[#003399] bg-white">
+                  className="w-full border-2 border-gray-300 rounded-lg px-0.5 py-2.5 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white">
                   <option value="">{rank ? `(${rank})` : '—'}</option>
                   {slots.map(v => {
                     if (usedByOthers.has(v) && kp.kedudukan !== v) return null
@@ -929,7 +1035,7 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {} }) {
               )}
             </div>
 
-            <div className="px-1 py-1.5 flex items-center gap-0.5">
+            <div className="px-1 py-2 flex items-center gap-0.5">
               {['DNS', 'DNF', 'DQ'].map(flag => (
                 <button key={flag} type="button"
                   onClick={() => {
@@ -937,8 +1043,8 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {} }) {
                     onChange(lorong, 'status', n)
                     if (n) onChange(lorong, 'keputusan', '')
                   }}
-                  className={`flex-1 py-1 text-[9px] font-bold rounded transition-colors ${
-                    kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
+                  className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${
+                    kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-400'
                   }`}>{flag}</button>
               ))}
             </div>
@@ -1072,6 +1178,7 @@ export default function InputKeputusan() {
   const [jadualAll,     setJadualAll]     = useState([]) // semua jadual semua hari
   const [selectedHari,  setSelectedHari]  = useState(null)
   const [sekolahMap,    setSekolahMap]    = useState({})
+  const [bibPrefixMap,  setBibPrefixMap]  = useState({})
   const [kategoriMap,   setKategoriMap]   = useState({}) // kod → label (L12/P15...)
   const [cetakLoading,      setCetakLoading]      = useState(false)
   const [cetakBilangan,    setCetakBilangan]    = useState(3)
@@ -1101,6 +1208,7 @@ export default function InputKeputusan() {
   const [saving,          setSaving]          = useState(false)
   const [saved,           setSaved]           = useState(false)
   const [janaFinalLoading, setJanaFinalLoading] = useState(false)
+  const [carianBib, setCarianBib] = useState('')
 
   // ── Load data ──────────────────────────────────────────────────────────────
 
@@ -1121,8 +1229,13 @@ export default function InputKeputusan() {
         // Load sekolah untuk nama sekolah lookup
         getDocs(collection(db, 'sekolah')).then(snap => {
           const map = {}
-          snap.docs.forEach(d => { map[d.id] = d.data().namaSekolah || d.id })
+          const prefixMap = {}
+          snap.docs.forEach(d => {
+            map[d.id] = d.data().namaSekolah || d.id
+            prefixMap[d.id] = d.data().bibPrefix || d.id
+          })
           setSekolahMap(map)
+          setBibPrefixMap(prefixMap)
         }).catch(err => console.warn('[InputKeputusan] gagal load sekolah map:', err))
 
         // Load kategori untuk label (L12/P15...)
@@ -1240,10 +1353,12 @@ export default function InputKeputusan() {
       pesertaArr.forEach((p, i) => {
         const slot = p.giliran ?? (i + 1)
         kpMap[slot] = {
-          noBib:     p.noBib     || '',
-          namaAtlet: p.namaAtlet || '',
-          keputusan: p.keputusan != null ? String(p.keputusan) : '',
-          status:    (p.status && p.status !== 'belum') ? p.status : '',
+          noBib:      p.noBib      || '',
+          namaAtlet:  p.namaAtlet  || '',
+          kodSekolah: p.kodSekolah || '',
+          keputusan:  p.keputusan  != null ? String(p.keputusan) : '',
+          kedudukan:  p.kedudukan  != null ? p.kedudukan : '',
+          status:     (p.status && p.status !== 'belum') ? p.status : '',
         }
       })
     } else {
@@ -1474,9 +1589,12 @@ export default function InputKeputusan() {
             return isNaN(n) ? v : n
           })
         }
-        // Simpan kedudukan manual jika ada (lorong/relay)
-        const kedudukan = (jenisAcara === 'lorong' || jenisAcara === 'relay')
-          ? (kp.kedudukan !== '' && kp.kedudukan != null ? kp.kedudukan : (p.kedudukan ?? null))
+        // Simpan kedudukan manual jika ada
+        // - lorong/relay: dari UI dropdown
+        // - padang_lompat (Lompat Tinggi): dari UI dropdown — guna sebagai rank manual
+        // - lain: kekal dari p.kedudukan jika ada
+        const kedudukan = (kp.kedudukan !== '' && kp.kedudukan != null)
+          ? kp.kedudukan
           : (p.kedudukan ?? null)
 
         // Auto-set status 'selesai' bila ada keputusan sah & tiada flag DNS/DNF/DQ
@@ -1486,31 +1604,44 @@ export default function InputKeputusan() {
         const hasResult = val != null && val !== '' && !isNaN(Number(val)) && Number(val) > 0
         const finalStatus = isFlagged ? rawStatus : hasResult ? 'selesai' : rawStatus
 
-        return { ...p, keputusan: val, kedudukan, status: finalStatus, cubaan, updatedBy: userData?.uid || '' }
+        const namaSekolah = p.namaSekolah || sekolahMap[p.kodSekolah] || p.kodSekolah || ''
+        return { ...p, keputusan: val, kedudukan, status: finalStatus, cubaan, namaSekolah, updatedBy: userData?.uid || '' }
       })
 
       // ── Kira rankDalamHeat ─────────────────────────────────────────────────
       // rankDalamHeat diperlukan oleh KeputusanRasmi.postRasmi() untuk assign mata & medal.
-      // Tanpa field ini, postRasmi() skip semua atlet secara senyap.
       const isPadang = ['padang_lompat', 'padang_balin'].includes(jenisAcara)
+      const isLompatTinggi = /lompat tinggi/i.test(
+        selectedAcara.namaAcara || selectedAcara.namaAcaraPendek || ''
+      )
       const finishers = [...updatedPeserta]
         .filter(p => p.status === 'selesai' && p.keputusan != null)
         .sort((a, b) => isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan)
+
       // Relay guna lorong sebagai key (noBib tiada dalam relay peserta)
       const rankKey = p => jenisAcara === 'relay' ? p.lorong : p.noBib
       const autoRankMap = new Map()
-      finishers.forEach((p, i) => {
-        const prevSame = i > 0 && p.keputusan === finishers[i - 1].keputusan
-        autoRankMap.set(rankKey(p), prevSame ? autoRankMap.get(rankKey(finishers[i - 1])) : i + 1)
-      })
+      if (isLompatTinggi) {
+        // Lompat Tinggi: TERUS BACA kedudukan pencatat — pencatat decide sendiri
+        // Atlet tanpa kedudukan → tiada rank → tiada medal
+        finishers.forEach(p => {
+          if (p.kedudukan) autoRankMap.set(rankKey(p), Number(p.kedudukan))
+        })
+      } else {
+        // Acara lain: sequential auto (1,2,3,4,5)
+        finishers.forEach((p, i) => {
+          autoRankMap.set(rankKey(p), i + 1)
+        })
+      }
       const pesertaDenganRank = updatedPeserta.map(p => ({
         ...p,
         rankDalamHeat: (p.status === 'selesai' && p.keputusan != null)
-          ? (p.kedudukan || autoRankMap.get(rankKey(p)) || null)
+          ? (autoRankMap.get(rankKey(p)) || null)
           : null,
       }))
 
-      const updates = { peserta: pesertaDenganRank, updatedAt: serverTimestamp() }
+      const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined))
+      const updates = { peserta: pesertaDenganRank.map(stripUndef), updatedAt: serverTimestamp() }
       if (selectedAcara.isWindReading && windSpeed !== '') {
         updates.windSpeed = Number(windSpeed) || null
       }
@@ -1798,6 +1929,7 @@ export default function InputKeputusan() {
         kategoriList,
         logoKiri:      homeCfg.logoKiriBase64  || null,
         logoKanan:     homeCfg.logoKananBase64 || null,
+        bibPrefixMap,
       })
 
       const kat      = _katLabel(finalAcara.kategoriKod, kategoriList)
@@ -1850,11 +1982,12 @@ export default function InputKeputusan() {
         return (b64.startsWith('data:image/jpeg') || b64.startsWith('data:image/jpg')) ? 'JPEG' : 'PNG'
       }
 
-      // Peserta final — had kepada cetakBilangan (3 atau 5)
+      // Peserta final — had kepada rank ≤ cetakBilangan (sokong tie)
+      // Cth cetakBilangan=3 + tie perak (1,2,2,3) → ambil semua 4 (rank ≤ 3)
       const pesertaFinal = (selectedHeat.peserta || [])
         .filter(p => p.rankDalamHeat && (p.status === 'selesai' || p.keputusan != null))
         .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
-        .slice(0, cetakBilangan)
+        .filter(p => p.rankDalamHeat <= cetakBilangan)
 
       // Q/q map untuk saringan heat
       const isSaringanHeat = !['final', 'terus_final'].includes(selectedHeat?.fasa) && selectedHeat?.peringkat !== 'final'
@@ -1891,9 +2024,9 @@ export default function InputKeputusan() {
       const now      = new Date().toLocaleString('ms-MY')
 
       const SALINAN = [
-        { label: 'JURUHEBAH', clr: [0, 51, 153],  tblSize: 13 },
-        { label: 'HADIAH',    clr: [0, 120, 50],  tblSize: 10 },
-        { label: 'FAIL',      clr: [70, 70, 70],  tblSize: 10 },
+        { label: 'JURUHEBAH', clr: [0, 51, 153],  tblSize: 11 },
+        { label: 'HADIAH',    clr: [0, 120, 50],  tblSize: 11 },
+        { label: 'FAIL',      clr: [70, 70, 70],  tblSize: 11 },
       ]
 
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -2015,9 +2148,10 @@ export default function InputKeputusan() {
           body: tblBody,
           styles: {
             fontSize: sal.tblSize,
-            cellPadding: sal.tblSize >= 12 ? 3 : 2.5,
-            minCellHeight: sal.tblSize >= 12 ? 8 : 7,
-            overflow: 'hidden',
+            cellPadding: 2,
+            minCellHeight: 8,
+            overflow: 'linebreak',
+            valign: 'middle',
           },
           headStyles: {
             fillColor: sal.clr,
@@ -2028,17 +2162,17 @@ export default function InputKeputusan() {
             minCellHeight: 8,
           },
           columnStyles: isRelayAcara ? {
-            0: { halign: 'center', cellWidth: 12, fontStyle: 'bold' },
-            1: { cellWidth: 50 },
-            2: { cellWidth: 'auto' },
-            3: { halign: 'center', cellWidth: 26, fontStyle: 'bold', textColor: [0, 51, 153] },
-            4: { halign: 'center', cellWidth: 28, fontStyle: 'bold', textColor: [180, 60, 60] },
+            0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+            1: { cellWidth: 50, overflow: 'linebreak' },
+            2: { cellWidth: 'auto', overflow: 'linebreak' },
+            3: { halign: 'center', cellWidth: 24, fontStyle: 'bold', textColor: [0, 51, 153] },
+            4: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [180, 60, 60] },
           } : {
-            0: { halign: 'center', cellWidth: 12, fontStyle: 'bold' },
-            1: { cellWidth: 'auto' },
-            2: { cellWidth: 55 },
-            3: { halign: 'center', cellWidth: 26, fontStyle: 'bold', textColor: [0, 51, 153] },
-            4: { halign: 'center', cellWidth: 28, fontStyle: 'bold', textColor: [180, 60, 60] },
+            0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+            1: { cellWidth: 75, overflow: 'linebreak' },
+            2: { cellWidth: 'auto', overflow: 'linebreak' },
+            3: { halign: 'center', cellWidth: 24, fontStyle: 'bold', textColor: [0, 51, 153] },
+            4: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [180, 60, 60] },
           },
           alternateRowStyles: { fillColor: [248, 248, 252] },
           margin: { left: M, right: M },
@@ -2388,7 +2522,9 @@ export default function InputKeputusan() {
   [jadualAll])
 
   const acaraTanpaJadual = useMemo(() =>
-    acaraList.filter(a => !jadualAcaraIds.has(a.aceraId) && !jadualAcaraIds.has(a.acaraId)),
+    acaraList
+      .filter(a => !jadualAcaraIds.has(a.aceraId) && !jadualAcaraIds.has(a.acaraId))
+      .sort((a, b) => (a.noAcara || 0) - (b.noAcara || 0)),
   [acaraList, jadualAcaraIds])
 
   // Set of noAcara yang menjadi SARINGAN (ada acara lain yg parentAcaraId = noAcara ini)
@@ -2621,26 +2757,23 @@ export default function InputKeputusan() {
             </div>
           ) : (
             <>
-              {/* ── Hari Tabs ── */}
+              {/* ── Hari Pills ── */}
               {hariList.length > 0 && (
-                <div className="flex gap-0 overflow-x-auto border-b border-gray-100 bg-white">
+                <div className="flex gap-2 overflow-x-auto px-4 py-3 bg-white border-b border-gray-100">
                   {hariList.map(h => {
                     const isActive = h.tarikh === selectedHari
                     const isToday  = h.tarikh === new Date().toISOString().slice(0, 10)
                     return (
                       <button key={h.tarikh}
                         onClick={() => setSelectedHari(h.tarikh)}
-                        className={`shrink-0 flex flex-col items-center px-4 py-2.5 border-b-2 transition-all ${
+                        className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                           isActive
-                            ? 'border-[#003399] text-[#003399] bg-blue-50/50'
-                            : 'border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                            ? 'bg-[#003399] text-white shadow-sm'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                         }`}>
-                        <span className={`text-[9px] font-bold uppercase tracking-wider ${isActive ? 'text-[#003399]' : 'text-gray-400'}`}>
-                          Hari {h.hariKe}{isToday ? ' · Hari Ini' : ''}
-                        </span>
-                        <span className={`text-xs font-black mt-0.5 ${isActive ? 'text-[#003399]' : 'text-gray-500'}`}>
-                          {h.label}
-                        </span>
+                        <span className="text-base leading-none">{isToday ? '📅' : '📆'}</span>
+                        <span>{h.label}</span>
+                        {isToday && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-600'}`}>Hari Ini</span>}
                       </button>
                     )
                   })}
@@ -2748,7 +2881,7 @@ export default function InputKeputusan() {
           STEP: INPUT KEPUTUSAN
       ══════════════════════════════════════════════ */}
       {step === 'input' && selectedAcara && (
-        <div className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
+        <div className="max-w-5xl mx-auto px-4 pt-4 space-y-4">
 
           {/* ── Acara header + Heat tab bar ── */}
           <div className="bg-[#003399]/5 rounded-2xl p-3.5 border border-[#003399]/10 space-y-2.5">
@@ -2912,21 +3045,38 @@ export default function InputKeputusan() {
             )}
           </div>
 
+          {/* ── Search No BIB ── */}
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input
+              type="text"
+              value={carianBib}
+              onChange={e => setCarianBib(e.target.value.toUpperCase())}
+              placeholder="Cari No BIB…"
+              className="flex-1 bg-transparent text-sm font-mono font-bold text-gray-800 placeholder-amber-300 focus:outline-none"
+            />
+            {carianBib && (
+              <button onClick={() => setCarianBib('')} className="text-amber-400 hover:text-amber-600 text-lg leading-none font-bold">✕</button>
+            )}
+          </div>
+
           {/* ── Input form (locked if rasmi or not pencatat) ── */}
           <div className={!bolehInputSekarang ? 'opacity-50 pointer-events-none select-none' : ''}>
             {selectedAcara.jenisAcara === 'lorong' && (
               <InputLorong heat={selectedHeat} acara={selectedAcara} keputusan={keputusan} finalisBibs={finalisBibs} finalisQMap={finalisQMap}
-                onChange={handleChange} onWind={setWindSpeed} windSpeed={windSpeed} sekolahMap={sekolahMap} />
+                onChange={handleChange} onWind={setWindSpeed} windSpeed={windSpeed} sekolahMap={sekolahMap} carianBib={carianBib} />
             )}
             {selectedAcara.jenisAcara === 'mass_start' && (
-              <InputMassStart heat={selectedHeat} keputusan={keputusan} onChange={handleChange} sekolahMap={sekolahMap} finalisBibs={finalisBibs} finalisQMap={finalisQMap} />
+              <InputMassStart heat={selectedHeat} keputusan={keputusan} onChange={handleChange} sekolahMap={sekolahMap} finalisBibs={finalisBibs} finalisQMap={finalisQMap} carianBib={carianBib} />
             )}
             {['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara) && (
               <InputPadang acara={selectedAcara} peserta={peserta} keputusan={keputusan}
-                onChange={handleChange} sekolahMap={sekolahMap} />
+                onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
             )}
             {selectedAcara.jenisAcara === 'relay' && (
-              <InputRelay heat={selectedHeat} acara={selectedAcara} keputusan={keputusan} onChange={handleChange} sekolahMap={sekolahMap} />
+              <InputRelay heat={selectedHeat} acara={selectedAcara} keputusan={keputusan} onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
             )}
           </div>
 

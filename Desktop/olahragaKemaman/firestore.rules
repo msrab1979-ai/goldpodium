@@ -136,7 +136,7 @@ service cloud.firestore {
       allow read:   if true;
       allow create: if true;
       allow update: if true;
-      allow delete: if false;
+      allow delete: if true;
     }
 
     match /kategori/{id} {
@@ -179,6 +179,13 @@ service cloud.firestore {
       allow create: if true;
       allow update: if true;
       allow delete: if false;
+    }
+
+    match /jadual_khas/{id} {
+      allow read:   if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
     }
   }
 }

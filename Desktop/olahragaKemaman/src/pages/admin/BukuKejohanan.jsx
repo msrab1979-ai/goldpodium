@@ -194,9 +194,9 @@ export default function BukuKejohanan() {
       const acaraList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       const acaraMap  = Object.fromEntries(acaraList.map(a => [a.id, a]))
 
-      // 6. Heats untuk acara yang RASMI — parallel load
+      // 6. Heats untuk acara yang ada keputusan (rasmi atau ada_keputusan)
       setProgress('Memuatkan keputusan rasmi…')
-      const rasmiAcara = acaraList.filter(a => a.statusAcara === 'rasmi')
+      const rasmiAcara = acaraList.filter(a => ['rasmi', 'ada_keputusan', 'tidak_rasmi'].includes(a.statusAcara))
       const heatResults = await Promise.all(
         rasmiAcara.map(async a => {
           const hSnap = await getDocs(
@@ -206,12 +206,16 @@ export default function BukuKejohanan() {
           const final = heats.find(h =>
             ['final', 'terus_final'].includes(h.fasa) && h.statusKeputusan === 'rasmi'
           ) || (heats.length === 1 && heats[0].statusKeputusan === 'rasmi' ? heats[0] : null)
-          return { acaraId: a.id, heat: final }
+          // Semua heat dengan keputusan (rasmi/diterima/tidak_rasmi)
+          const allHeats = heats.filter(h => ['rasmi', 'diterima', 'tidak_rasmi'].includes(h.statusKeputusan))
+          return { acaraId: a.id, heat: final, allHeats }
         })
       )
       const finalHeatMap = {}
-      heatResults.forEach(({ acaraId, heat }) => {
+      const allHeatsMap  = {}
+      heatResults.forEach(({ acaraId, heat, allHeats }) => {
         if (heat) finalHeatMap[acaraId] = heat
+        if (allHeats?.length) allHeatsMap[acaraId] = allHeats
       })
 
       // 7. Rekod semasa
@@ -278,8 +282,8 @@ export default function BukuKejohanan() {
       await janaPDF({
         cfg, kej, kejId, namaKej, peringkatKej,
         sekolahList, jadualList, acaraList, acaraMap,
-        finalHeatMap, rekodMap, pilihan, mataMap, katList, pendaftaranDocs,
-        medalTallyDocs,
+        finalHeatMap, allHeatsMap, rekodMap, pilihan, mataMap, katList, pendaftaranDocs,
+        medalTallyDocs, bukuCfg, useCustomCover,
       })
 
       setMsg({ type: 'ok', text: 'Buku Kejohanan berjaya dijana dan dimuat turun.' })
@@ -421,8 +425,8 @@ export default function BukuKejohanan() {
   async function janaPDF({
     cfg, kej, kejId, namaKej, peringkatKej,
     sekolahList, jadualList, acaraList, acaraMap,
-    finalHeatMap, rekodMap, pilihan, mataMap, katList, pendaftaranDocs,
-    medalTallyDocs,
+    finalHeatMap, allHeatsMap = {}, rekodMap, pilihan, mataMap, katList, pendaftaranDocs,
+    medalTallyDocs, bukuCfg = {}, useCustomCover = false,
   }) {
     const { jsPDF }             = await import('jspdf')
     const { default: autoTable } = await import('jspdf-autotable')
@@ -956,115 +960,162 @@ export default function BukuKejohanan() {
     }
 
     // ════════════════════════════════════════════════════════════
-    // HALAMAN — KEPUTUSAN RASMI (per hari → per acara, TOP 2)
+    // HALAMAN — KEPUTUSAN HARIAN (per hari → per acara, semua heat + final, semua peserta)
+    // Setiap hari = page baru. Susun ikut noAcara. Skip acara/hari tanpa keputusan.
     // ════════════════════════════════════════════════════════════
-    const rasmiItems = []
-    days.forEach(date => {
-      jadualByDay[date].forEach(j => {
-        const aId  = j.aceraId || j.acaraId
-        const heat = finalHeatMap[aId]
-        if (!heat) return
-        const acara = acaraMap[aId]
-        if (!acara) return
-        rasmiItems.push({ acara, heat, tarikh: date })
-      })
+    const MEDAL_MAP = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5' }
+
+    // Group acara (yg ada keputusan) by tarikhAcara dari jadual
+    const acaraTarikhMap = {}
+    jadualList.forEach(j => {
+      const aId = j.aceraId || j.acaraId
+      if (aId && j.tarikhAcara && !acaraTarikhMap[aId]) {
+        acaraTarikhMap[aId] = j.tarikhAcara
+      }
     })
-    Object.entries(finalHeatMap).forEach(([aId, heat]) => {
-      if (rasmiItems.find(r => r.acara.id === aId)) return
+
+    const keputusanByDay = {}
+    Object.keys(allHeatsMap).forEach(aId => {
       const acara = acaraMap[aId]
-      if (!acara) return
-      rasmiItems.push({ acara, heat, tarikh: '' })
+      const heats = allHeatsMap[aId] || []
+      if (!acara || heats.length === 0) return
+      const tarikh = acaraTarikhMap[aId] || acara.tarikhAcara || ''
+      if (!tarikh) return  // skip kalau tiada tarikh
+      if (!keputusanByDay[tarikh]) keputusanByDay[tarikh] = []
+      keputusanByDay[tarikh].push({ acara, heats })
     })
 
-    if (rasmiItems.length > 0) {
-      pdf.addPage()
-      hdrHalaman('Keputusan Rasmi', 'KEPUTUSAN RASMI')
-      y = 26
+    const hariSorted = Object.keys(keputusanByDay).sort()
+      .filter(d => keputusanByDay[d].some(it => it.heats.some(h => (h.peserta || []).some(p => p.rankDalamHeat))))
 
-      const rasmiByDay = rasmiItems.reduce((acc, r) => {
-        const d = r.tarikh || 'Lain-lain'
-        if (!acc[d]) acc[d] = []
-        acc[d].push(r)
-        return acc
-      }, {})
-      const rDays = Object.keys(rasmiByDay).sort()
+    if (hariSorted.length > 0) {
+      hariSorted.forEach((tarikh, hariIdx) => {
+        const items = keputusanByDay[tarikh]
+          .sort((a, b) => Number(a.acara.noAcara || 0) - Number(b.acara.noAcara || 0))
 
-      rDays.forEach((date) => {
-        const dayItems = rasmiByDay[date]
-        const dayLabel = date
-          ? `HARI ${days.indexOf(date) + 1} — ${fmtTarikh(date).toUpperCase()}`
-          : 'LAIN-LAIN'
+        // Page baru setiap hari
+        pdf.addPage()
+        hdrHalaman('Keputusan', 'KEPUTUSAN HARIAN')
+        y = 26
 
-        if (y > 250) { pdf.addPage(); hdrHalaman('Keputusan Rasmi', ''); y = 16 }
+        // Header hari besar
         pdf.setFillColor(...DARK_BLUE)
-        pdf.rect(M, y, W - M * 2, 7, 'F')
-        pdf.setFontSize(8)
+        pdf.rect(M, y, W - M * 2, 10, 'F')
+        pdf.setFontSize(11)
         pdf.setFont('helvetica', 'bold')
         pdf.setTextColor(255, 255, 255)
-        pdf.text(dayLabel, W / 2, y + 4.8, { align: 'center' })
+        pdf.text(
+          `HARI ${hariIdx + 1} — ${fmtTarikh(tarikh).toUpperCase()}`,
+          W / 2, y + 6.8, { align: 'center' }
+        )
         pdf.setTextColor(0, 0, 0)
-        y += 10
+        y += 13
 
-        dayItems.forEach(({ acara, heat }) => {
-          if (y > 255) { pdf.addPage(); hdrHalaman('Keputusan Rasmi', ''); y = 16 }
-
+        items.forEach(({ acara, heats }) => {
           const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
           const isRelay  = acara.jenisAcara === 'relay'
-
-          const peserta = (heat.peserta || [])
-            .filter(p => p.rankDalamHeat && p.status === 'selesai')
-            .sort((a, b) => (a.rankDalamHeat || 99) - (b.rankDalamHeat || 99))
-            .slice(0, 2) // TOP 2 sahaja
-
-          if (peserta.length === 0) return
-
-          const rKey    = rekodKey(acara.namaAcaraPendek || acara.namaAcara, acara.jantina, acara.kategoriKod, peringkatKej)
-          const rekodDoc = rekodMap[rKey] || rekodMap[rKey + '_tuntutan']
-          const top1    = peserta[0]
-          const adaRekod = rekodDoc && top1 && (() => {
-            const np = Number(top1.keputusan)
-            const rp = Number(rekodDoc.prestasi)
-            return isPadang ? np > rp : np < rp
-          })()
-
           const jantinaLabel = acara.jantina === 'L' ? 'Lelaki' : acara.jantina === 'P' ? 'Perempuan' : ''
-          const acaraHeader  = `${acara.noAcara ? `[${acara.noAcara}] ` : ''}${acara.namaAcara}  ${jantinaLabel}  Kat ${katLabel(acara.kategoriKod, katList) || '—'}`
 
-          const rows = peserta.map((p, i) => {
-            const pingat = ['🥇', '🥈'][i] || ''
-            const isRK   = i === 0 && adaRekod
-            return [
-              `${pingat} ${p.rankDalamHeat}`,
-              isRelay ? (p.kodSekolah || '—') : (p.namaAtlet || '—'),
-              isRelay ? '' : (p.kodSekolah || '—'),
-              fmtPrestasi(p.keputusan, acara.jenisAcara) + (isRK ? ' ★RD' : ''),
-            ]
+          // Susun heat: saringan dulu (by noHeat), final last
+          const sortedHeats = [...heats].sort((a, b) => {
+            const aIsFinal = ['final', 'terus_final'].includes(a.fasa) || a.peringkat === 'final'
+            const bIsFinal = ['final', 'terus_final'].includes(b.fasa) || b.peringkat === 'final'
+            if (aIsFinal && !bIsFinal) return 1
+            if (!aIsFinal && bIsFinal) return -1
+            return Number(a.noHeat || 0) - Number(b.noHeat || 0)
           })
 
-          autoTable(pdf, {
-            startY: y,
-            head: [[{
-              content: acaraHeader,
-              colSpan: 4,
-              styles: { fillColor: [235, 240, 255], textColor: [0, 30, 100], fontStyle: 'bold', fontSize: 7.5 },
-            }]],
-            body: rows,
-            styles:      { fontSize: 7.5, cellPadding: 1.8 },
-            headStyles:  { fontSize: 7.5 },
-            columnStyles: {
-              0: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
-              1: { cellWidth: 'auto' },
-              2: { cellWidth: 35 },
-              3: { cellWidth: 30, halign: 'right', fontStyle: 'bold', textColor: BLUE },
-            },
-            theme: 'plain',
-            tableLineColor: [220, 220, 220],
-            tableLineWidth: 0.1,
+          // Header acara
+          if (y > 255) { pdf.addPage(); hdrHalaman('Keputusan', ''); y = 16 }
+          pdf.setFillColor(235, 240, 255)
+          pdf.rect(M, y, W - M * 2, 7, 'F')
+          pdf.setFontSize(8.5)
+          pdf.setFont('helvetica', 'bold')
+          pdf.setTextColor(0, 30, 100)
+          pdf.text(
+            `${acara.noAcara ? `[${acara.noAcara}] ` : ''}${acara.namaAcara}  —  ${jantinaLabel}  —  Kat ${katLabel(acara.kategoriKod, katList) || '—'}`,
+            M + 2, y + 4.8
+          )
+          pdf.setTextColor(0, 0, 0)
+          y += 8
+
+          // Loop heat
+          sortedHeats.forEach(heat => {
+            const isFinal = ['final', 'terus_final'].includes(heat.fasa) || heat.peringkat === 'final'
+            const heatLabel = isFinal ? 'FINAL' : `HEAT ${heat.noHeat || ''}`.trim()
+
+            const peserta = (heat.peserta || [])
+              .filter(p => p.rankDalamHeat || p.keputusan != null)
+              .sort((a, b) => (a.rankDalamHeat || 99) - (b.rankDalamHeat || 99))
+            if (peserta.length === 0) return
+
+            // Build table
+            const head = isRelay
+              ? [['Ked', 'Sekolah / Pasukan', 'BIB', isPadang ? 'Jarak' : 'Masa', 'Status']]
+              : [['Ked', 'BIB', 'Nama Atlet', 'Sekolah', isPadang ? 'Jarak' : 'Masa', 'Status']]
+            const body = peserta.map(p => {
+              const flagged = ['DNS','DNF','DQ'].includes(p.status)
+              const status = flagged ? p.status : (isFinal ? (MEDAL_MAP[p.rankDalamHeat] || '') : '')
+              const prestasi = flagged ? '—' : fmtPrestasi(p.keputusan, acara.jenisAcara)
+              const ked = flagged ? '—' : String(p.rankDalamHeat || '')
+              if (isRelay) return [ked, p.kodSekolah || '—', p.noBib || '—', prestasi, status]
+              return [ked, p.noBib || '—', p.namaAtlet || '—', p.kodSekolah || '—', prestasi, status]
+            })
+
+            if (y > 255) { pdf.addPage(); hdrHalaman('Keputusan', ''); y = 16 }
+            autoTable(pdf, {
+              startY: y,
+              head: [
+                [{ content: heatLabel, colSpan: isRelay ? 5 : 6, styles: { fillColor: isFinal ? [0, 100, 60] : [120, 120, 120], textColor: [255,255,255], fontStyle: 'bold', fontSize: 7.5, halign: 'left' } }],
+                head[0],
+              ],
+              body,
+              styles:      { fontSize: 7.5, cellPadding: 1.5 },
+              headStyles:  { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', fontSize: 7 },
+              columnStyles: isRelay ? {
+                0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' },
+                1: { cellWidth: 'auto' },
+                2: { cellWidth: 20, halign: 'center' },
+                3: { cellWidth: 25, halign: 'right', fontStyle: 'bold', textColor: BLUE },
+                4: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+              } : {
+                0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' },
+                1: { cellWidth: 14, halign: 'center' },
+                2: { cellWidth: 'auto' },
+                3: { cellWidth: 30 },
+                4: { cellWidth: 22, halign: 'right', fontStyle: 'bold', textColor: BLUE },
+                5: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+              },
+              theme: 'grid',
+              tableLineColor: [200, 200, 200],
+              tableLineWidth: 0.15,
+              margin: { left: M, right: M },
+            })
+            y = pdf.lastAutoTable.finalY + 2
           })
-          y = pdf.lastAutoTable.finalY + 4
+
+          // Badge rekod baru (semak final)
+          const finalHeat = sortedHeats.find(h => ['final', 'terus_final'].includes(h.fasa) || h.peringkat === 'final')
+          if (finalHeat) {
+            const pecahRekodAtlet = (finalHeat.peserta || []).find(p => p.pecahRekod)
+            if (pecahRekodAtlet) {
+              if (y > 270) { pdf.addPage(); hdrHalaman('Keputusan', ''); y = 16 }
+              pdf.setFillColor(255, 248, 210)
+              pdf.rect(M, y, W - M * 2, 5, 'F')
+              pdf.setFontSize(7)
+              pdf.setFont('helvetica', 'bold')
+              pdf.setTextColor(180, 100, 0)
+              pdf.text(
+                `🏆 REKOD BARU ${pecahRekodAtlet.pecahRekod === 'N' ? 'NEGERI' : pecahRekodAtlet.pecahRekod === 'K' ? 'KEBANGSAAN' : 'DAERAH'}: ${pecahRekodAtlet.namaAtlet || pecahRekodAtlet.kodSekolah} — ${fmtPrestasi(pecahRekodAtlet.keputusan, acara.jenisAcara)}`,
+                M + 2, y + 3.5
+              )
+              pdf.setTextColor(0, 0, 0)
+              y += 6
+            }
+          }
+
+          y += 3
         })
-
-        y += 4
       })
     }
 

@@ -43,9 +43,21 @@ Sistem pengurusan kejohanan olahraga sekolah (MSSD) berasaskan web, dibina denga
 | Cetak Acara | `/dashboard/cetak-acara` | Cetak keputusan ikut acara |
 | Tetapan Home | `/dashboard/tetapan` | Urus dokumen & pautan |
 | Cetakan Hadiah | `/dashboard/cetakan-hadiah` | Cetak PDF hadiah & sijil by acara |
+| Sijil Penyertaan | `/dashboard/esijil` | Setup template Sijil Penyertaan (drag-drop) |
+| Setup Sijil Pencapaian | `/dashboard/esijil-pencapaian` | Setup template Sijil Pencapaian + toggle ON/OFF + had kedudukan dinamik |
+| Kongsi Buku | `/dashboard/buku-kongsi-setup` | Kongsi URL Google Drive (max 10) untuk PP muat turun |
+| Muat Turun Sijil | `/dashboard/muaturunsijil` | Admin muat turun ZIP sijil penyertaan by sekolah |
 | Backup Sistem | `/dashboard/backup` | Muat turun & pulihkan data (.koam) |
 | Reset Sistem | `/dashboard/reset` | Reset data kejohanan secara selektif |
 | User Management | `/dashboard/users` | Urus akaun pengguna |
+
+### Pengurus Pasukan (PP)
+
+| Menu | Path | Keterangan |
+|---|---|---|
+| Sijil Penyertaan | `/dashboard/sijilsaya` | Senarai atlet sekolah + muat turun sijil penyertaan PDF/ZIP |
+| Sijil Pencapaian | `/dashboard/sijil-pencapaian` | Senarai atlet sekolah dapat tempat 1 – hadKedudukan + muat turun PDF (tersembunyi kalau admin OFF) |
+| Buku Kejohanan | `/dashboard/buku-kongsi` | Buka PDF dari Google Drive yang admin kongsi (tersembunyi kalau admin OFF) |
 
 ---
 
@@ -68,7 +80,45 @@ pendaftaran_counter/{kejId_kodSekolah} — counter noBib per sekolah per kejohan
 wa_config/{kejId}            — konfigurasi lorong WA per kejohanan (lorongKumpulan per jenisLorong)
 tetapan/home                 — tetapan papan pemuka awam (logo, tajuk)
 tetapan/finalSetup           — tetapan pilih finalis (bestHeat, bestTime per kategori)
+tetapan/sijil                — Sijil Penyertaan: template + posisi + gaya (drag-drop 3 item)
+tetapan/sijilPencapaian      — Sijil Pencapaian: { aktif, templateImg, hadKedudukan, posisi×6, style×6, tempatKejohanan[] }
+tetapan/bukuKongsi           — Buku Kongsi: { aktif, senarai: [{ id, tajuk, url, createdAt }] }
+mata_olahragawan/{noKP}_{kejId}  — { acaraDetail_{acaraId}: { rank, pingat, namaAcara, prestasi, ... } } — sumber data Sijil Pencapaian
 ```
+
+---
+
+## Sijil Pencapaian
+
+Sijil pencapaian (Tempat 1-N) automatik dijana selepas keputusan rasmi.
+
+**Trigger:** `runPostRasmi()` tulis `mata_olahragawan.acaraDetail_{acaraId}` (individu) atau scan `kejohanan/.../acara` jenisAcara=relay heat fasa=final/terus_final statusKeputusan=rasmi/diterima (relay — setiap ahli pasukan dapat sijil sendiri).
+
+**Layak:** rank ≤ hadKedudukan (default 5, dinamik 1-10), bukan DNS/DNF/DQ, filter kodSekolah untuk PP.
+
+**Label kedudukan:** JOHAN / NAIB JOHAN / KETIGA / KEEMPAT / KELIMA / KEENAM…KESEPULUH.
+
+**6 item drag-drop:** Nama Atlet, Kedudukan, Acara, Nama Kejohanan, Tarikh, Tempat Kejohanan (multi-baris dinamik max 5 baris).
+
+**Toggle ON/OFF (admin):** `tetapan/sijilPencapaian.aktif` — bila OFF, menu PP tersembunyi dan akses URL langsung redirect ke `/dashboard`. Real-time via `onSnapshot` dalam `DashboardLayout`.
+
+---
+
+## Buku Kongsi (Google Drive Share)
+
+Admin kongsi URL Google Drive (cth Buku Kejohanan PDF) untuk PP muat turun.
+
+**Validate:** Hanya URL `drive.google.com`. Auto-extract FILE_ID. Convert ke View Link (PP klik → Drive viewer dalam tab baru → ada butang download).
+
+**Limit:** Max 10 buku per kejohanan.
+
+**Toggle ON/OFF:** Sama pattern macam Sijil Pencapaian — `tetapan/bukuKongsi.aktif`.
+
+**Setup Drive yang betul:**
+1. Klik kanan PDF di Google Drive → Share
+2. General access: "Anyone with the link"
+3. Role: "Viewer" (BUKAN Editor)
+4. Copy URL → paste dalam Kongsi Buku
 
 ---
 
@@ -109,6 +159,24 @@ Prestasi rasmi → postRasmiUtils → rekod/{id}_tuntutan  (pending)
 ```
 
 Rekod tidak pernah ditulis secara automatik tanpa kelulusan admin.
+
+**Format prestasi rekod:**
+- Data baru (Jun 2026+): disimpan dalam **saat tulen** (cth `178.34` = 2:58.34)
+- Data lama: format `mm.ss` (cth `2.58` = 2 minit 58 saat) — `normaliseSaat()` dalam postRasmiUtils handle kedua-dua format untuk perbandingan rekod
+
+---
+
+## Format Input Masa — Acara Larian
+
+Pencatat input masa dalam format `m.ss.ms` (minit.saat.milisaat):
+
+| Input pencatat | Nilai disimpan | Dipapar |
+|---|---|---|
+| `2.58.34` | `178.34` saat | `2:58.34` |
+| `58.34` | `58.34` saat | `58.34s` |
+| `1.05.67` | `65.67` saat | `1:05.67` |
+
+Selepas pencatat taip dan keluar dari field (blur), sistem parse dan papar semula nilai dalam format `m:ss.ms` di bawah input sebagai pengesahan visual.
 
 ---
 
