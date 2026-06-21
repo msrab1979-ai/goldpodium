@@ -160,6 +160,11 @@ Prestasi rasmi → postRasmiUtils → rekod/{id}_tuntutan  (pending)
 
 Rekod tidak pernah ditulis secara automatik tanpa kelulusan admin.
 
+**Paparan dalam Olahragawan:**
+- Tab kategori (L12, P12...) tunjuk atlet yang ada pingat (`jumlahMata > 0`) **atau** ada rekod dipecah (`rekod_*` fields)
+- Atlet pecah rekod tanpa pingat (tempat 5+) tetap muncul dalam tab mereka
+- `mata_olahragawan` hanya ditulis semasa fasa `final` / `terus_final` — heat saringan tidak dikira
+
 **Format prestasi rekod:**
 - Data baru (Jun 2026+): disimpan dalam **saat tulen** (cth `178.34` = 2:58.34)
 - Data lama: format `mm.ss` (cth `2.58` = 2 minit 58 saat) — `normaliseSaat()` dalam postRasmiUtils handle kedua-dua format untuk perbandingan rekod
