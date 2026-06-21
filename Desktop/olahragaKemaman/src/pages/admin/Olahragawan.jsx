@@ -1062,7 +1062,7 @@ export default function Olahragawan() {
 
   // ── Kat yang ada data ────────────────────────────────────────────────────
   // Ikut urutan dari Firestore; termasuk kat yang ada data walaupun tiada dalam kategoriList
-  const katDariData = [...new Set(allData.filter(a => (a.jumlahMata || 0) > 0).map(a => a.kategoriKod).filter(Boolean))]
+  const katDariData = [...new Set(allData.filter(a => (a.jumlahMata || 0) > 0 || getRekodDetail(a).length > 0).map(a => a.kategoriKod).filter(Boolean))]
   const katAda = [
     ...katOrder.filter(k => katDariData.includes(k)),
     ...katDariData.filter(k => !katOrder.includes(k)),
@@ -1619,7 +1619,7 @@ export default function Olahragawan() {
                 }`}>
                 {katLabel(kat)}
                 <span className="ml-1.5 text-[8px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded-full font-semibold">
-                  {allData.filter(a => a.kategoriKod === kat && (a.jumlahMata || 0) > 0).length}
+                  {allData.filter(a => a.kategoriKod === kat && ((a.jumlahMata || 0) > 0 || getRekodDetail(a).length > 0)).length}
                 </span>
               </button>
             ))}
