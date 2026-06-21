@@ -102,8 +102,8 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
     const hasResult = p.keputusan != null && Number(p.keputusan) > 0
     if (!rank || isFlagged || !hasResult) continue
 
-    // ── Mata olahragawan (individu, bukan relay, top 4) ──────────────────────
-    if (!isRelay && p.noKP && rank <= 4) {
+    // ── Mata olahragawan (individu, bukan relay, top 4, fasa final sahaja) ─────
+    if (grantMedal && !isRelay && p.noKP && rank <= 4) {
       const mata      = mataPingat[rank] ?? 0
       const pingat    = NAMA_PINGAT[rank]
       const mId       = `${p.noKP}_${kejId}`

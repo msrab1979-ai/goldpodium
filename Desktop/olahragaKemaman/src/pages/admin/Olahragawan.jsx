@@ -1000,7 +1000,7 @@ export default function Olahragawan() {
   // Helpers dinamik (fallback ke hardcode jika Firestore belum loaded)
   function katLabel(kod) {
     const info = kategoriList.find(k => k.kod === kod)
-    if (info) return `Kat ${kod} — Bwh ${info.umurHad}`
+    if (info) return info.label || `Kat ${kod}`
     return KAT_LABEL_FALLBACK[kod] || `Kat ${kod}`
   }
   // Urutan kategori — dari Firestore (ikut urutan), fallback ke A-E-PPKI
