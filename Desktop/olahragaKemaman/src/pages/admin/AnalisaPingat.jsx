@@ -2,10 +2,11 @@
  * AnalisaPingat — /dashboard/analisapingat
  * Kedudukan atlet terbaik by kategori — pingat dari acara final sahaja.
  * Rekod dari rekod collection (tuntutan) — bukan pecahRekod field (boleh dibuang).
+ * Tab "Atlet Terbaik" — admin cipta tajuk dinamik, pilih atlet, cetak PDF 3 salinan.
  */
 
 import { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, query, where, orderBy, doc, getDoc } from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -13,13 +14,13 @@ import autoTable from 'jspdf-autotable'
 const FASA_FINAL  = ['final', 'terus_final']
 const STATUS_SAH  = ['diterima', 'rasmi']
 const MATA_PINGAT = { 1: 5, 2: 3, 3: 2 }
+const SALINAN     = ['JURUHEBAH', 'HADIAH', 'PENGURUS PESERTA']
 
 function fmtPrestasi(val, unit) {
   if (val == null || val === '') return '—'
   const n = Number(val)
   if (isNaN(n) || n === 0) return '—'
   if (unit === 'm') return `${n.toFixed(2)}m`
-  // unit === 's' — larian
   const min = Math.floor(n / 60)
   const sek = (n % 60).toFixed(2).padStart(5, '0')
   return min > 0 ? `${min}:${sek}` : `${n.toFixed(2)}s`
@@ -31,8 +32,19 @@ export default function AnalisaPingat() {
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState('')
   const [kategoriList, setKategoriList] = useState([])
-  const [atletMap,     setAtletMap]     = useState({})  // noKP → { namaAtlet, namaSekolah, kategoriKod, pingat, mata, rekodList }
+  const [atletMap,     setAtletMap]     = useState({})
   const [selKat,       setSelKat]       = useState('')
+  const [namaKej,      setNamaKej]      = useState('')
+
+  // Tab: kod kategori atau 'atletTerbaik'
+  const [activeTab,    setActiveTab]    = useState('')
+
+  // Atlet Terbaik state
+  const [tajukList,    setTajukList]    = useState([])   // [{ id, namaTajuk, atlet: null|{...} }]
+  const [inputTajuk,   setInputTajuk]   = useState('')
+  const [savingTajuk,  setSavingTajuk]  = useState(false)
+  const [confirmGanti, setConfirmGanti] = useState(null) // { tajukId, atlet }
+  const [cetakTBLoading, setCetakTBLoading] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -44,6 +56,7 @@ export default function AnalisaPingat() {
         if (kejSnap.empty) { setError('Tiada kejohanan aktif.'); setLoading(false); return }
         const kej   = kejSnap.docs[0]
         const kejId = kej.id
+        setNamaKej(kej.data().namaKejohanan || kejId)
 
         // 2. Kategori list
         const katSnap = await getDocs(query(collection(db, 'kategori'), orderBy('urutan')))
@@ -52,16 +65,16 @@ export default function AnalisaPingat() {
           .sort((a, b) => a.order - b.order)
         setKategoriList(katList)
         if (katList.length > 0) setSelKat(katList[0].kod)
+        setActiveTab(katList.length > 0 ? katList[0].kod : 'atletTerbaik')
 
         // 3. Sekolah map
         const skolSnap = await getDocs(collection(db, 'sekolah'))
         const skolMap  = {}
         skolSnap.docs.forEach(d => { skolMap[d.id] = d.data().namaSekolah || d.id })
 
-        // 4. Rekod dipecah dari mata_olahragawan — sumber lebih lengkap dan terkini
-        //    mata_olahragawan/{noKP}_{kejId} → fields rekod_{acaraId}
+        // 4. Rekod dipecah dari mata_olahragawan
         const mataSnap = await getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
-        const tuntutanByNoKP = {}  // noKP → [{ namaAcara, prestasiBaru, unit, prestasiLama, ... }]
+        const tuntutanByNoKP = {}
         mataSnap.docs.forEach(d => {
           const data = d.data()
           const noKP = data.noKP || d.id.replace(`_${kejId}`, '')
@@ -72,6 +85,7 @@ export default function AnalisaPingat() {
             if (!tuntutanByNoKP[noKP]) tuntutanByNoKP[noKP] = []
             tuntutanByNoKP[noKP].push({
               namaAcara:    val.namaAcara    || '—',
+              namaAcaraPendek: val.namaAcaraPendek || val.namaAcara || '—',
               prestasiBaru: val.prestasiBaru ?? null,
               unit:         val.unit         || 's',
               prestasiLama: val.prestasiLama ?? null,
@@ -84,12 +98,11 @@ export default function AnalisaPingat() {
 
         // 5. Load semua acara → heat final → kira pingat
         const acaraSnap = await getDocs(query(collection(db, 'kejohanan', kejId, 'acara'), orderBy('noAcara')))
-        const aMap = {}  // noKP → { namaAtlet, kodSekolah, kategoriKod, pingat, mata, rekodList }
+        const aMap = {}
 
         for (const aDoc of acaraSnap.docs) {
           const ad = aDoc.data()
           if (ad.jenisAcara === 'relay') continue
-          // Acara ada parentAcaraId = acara final (walaupun fasa dalam heat null)
           const isFinalAcara = !!ad.parentAcaraId
 
           const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', aDoc.id, 'heat'))
@@ -102,7 +115,7 @@ export default function AnalisaPingat() {
             for (const p of (hd.peserta || [])) {
               const rank = p.rankDalamHeat
               if (!p.noKP) continue
-              if (!rank || rank > 3) continue  // hanya pingat 1/2/3
+              if (!rank || rank > 3) continue
 
               if (!aMap[p.noKP]) aMap[p.noKP] = {
                 namaAtlet:   p.namaAtlet   || '—',
@@ -125,13 +138,11 @@ export default function AnalisaPingat() {
           a.rekodList   = tuntutanByNoKP[noKP] || []
         })
 
-        // 7. Atlet ada rekod tapi tiada pingat — masukkan juga
-        //    Ambil maklumat atlet dari mata_olahragawan
+        // 7. Atlet ada rekod tapi tiada pingat
         mataSnap.docs.forEach(d => {
           const data = d.data()
           const noKP = data.noKP || d.id.replace(`_${kejId}`, '')
           if (!noKP || !tuntutanByNoKP[noKP] || aMap[noKP]) return
-          // Cari kategoriKod dari rekod_ field pertama
           const firstRekod = Object.entries(data).find(([k]) => k.startsWith('rekod_'))
           const katKod = firstRekod?.[1]?.kategoriKod || ''
           aMap[noKP] = {
@@ -147,6 +158,13 @@ export default function AnalisaPingat() {
         })
 
         setAtletMap(aMap)
+
+        // 8. Load tajuk atlet terbaik dari Firestore
+        const tbSnap = await getDoc(doc(db, 'tetapan', 'atletTerbaik'))
+        if (tbSnap.exists()) {
+          setTajukList(tbSnap.data().tajuk || [])
+        }
+
       } catch (e) {
         console.error(e)
         setError('Ralat: ' + e.message)
@@ -170,27 +188,24 @@ export default function AnalisaPingat() {
       })
   }, [atletMap, selKat])
 
+  // ── Audit state ──────────────────────────────────────────────────────────
   const [cetakLoading,  setCetakLoading]  = useState(false)
   const [auditLoading,  setAuditLoading]  = useState(false)
   const [auditResult,   setAuditResult]   = useState(null)
-  // auditResult: { medalBeza: [], rekodStale: [], rekodPending: [], rekodSah: 0, totalAtlet: 0 }
 
   async function handleAudit() {
     setAuditLoading(true)
     setAuditResult(null)
     try {
-      // Cari kejohananId semula
       const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
       if (kejSnap.empty) return
       const kejId = kejSnap.docs[0].id
 
-      // Load semua mata_olahragawan untuk kejohanan ini
       const mataSnap = await getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
 
-      // Load rekod library (semua — aktif + tuntutan)
       const rekodSnap = await getDocs(collection(db, 'rekod'))
-      const rekodLib     = {} // key → data (aktif)
-      const tuntutanLib  = {} // key → data (tuntutan pending)
+      const rekodLib     = {}
+      const tuntutanLib  = {}
       rekodSnap.docs.forEach(d => {
         if (d.id.endsWith('_tuntutan')) tuntutanLib[d.id.replace('_tuntutan', '')] = d.data()
         else rekodLib[d.id] = d.data()
@@ -208,14 +223,11 @@ export default function AnalisaPingat() {
         const skol  = data.namaSekolah || data.kodSekolah || '—'
         const katKod = data.kategoriKod || ''
 
-        // ── Semakan 1: Medal cross-check ──────────────────────────────────────
-        // Sumber Firestore: pingat_emas / pingat_perak / pingat_gangsa dalam mata_olahragawan
         const fsEmas   = data.pingat_emas   || 0
         const fsPerak  = data.pingat_perak  || 0
         const fsGangsa = data.pingat_gangsa || 0
         const fsMata   = data.jumlahMata    || 0
 
-        // Sumber dikira semula: dari atletMap (heat final)
         const atlet = atletMap[noKP]
         if (atlet) {
           const kirEmas   = atlet.pingat[1] || 0
@@ -232,12 +244,10 @@ export default function AnalisaPingat() {
           }
         }
 
-        // ── Semakan 2: Rekod cross-check ──────────────────────────────────────
         Object.entries(data).forEach(([key, val]) => {
           if (!key.startsWith('rekod_')) return
           if (!val?.namaAcara) return
 
-          // Bina rekodKey — guna namaAcaraPendek (sama seperti postRasmiUtils)
           const rekodNama = val.namaAcaraPendek || val.namaAcara || ''
           const rKey = [rekodNama, val.jantina || data.jantina || '', val.kategoriKod || katKod, val.peringkat || 'D']
             .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
@@ -246,21 +256,16 @@ export default function AnalisaPingat() {
           const inTuntutan = !!tuntutanLib[rKey]
 
           if (inLib) {
-            // Rekod sudah disahkan dalam library
             const lib = rekodLib[rKey]
             const libNoKP = lib.noKP || ''
-            // Semak sama ada atlet dalam library match noKP
             if (libNoKP && libNoKP !== noKP) {
-              // Rekod disahkan tapi bukan atlet ini — field stale
               rekodStale.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Rekod disahkan — pemegang lain', libNoKP, libNama: lib.namaAtlet || '—' })
             } else {
               rekodSah++
             }
           } else if (inTuntutan) {
-            // Tuntutan masih pending
             rekodPending.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey })
           } else {
-            // Tiada dalam library dan tiada tuntutan — stale
             rekodStale.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Tiada dalam library & tiada tuntutan' })
           }
         })
@@ -275,6 +280,60 @@ export default function AnalisaPingat() {
     }
   }
 
+  // ── Atlet Terbaik functions ──────────────────────────────────────────────
+
+  async function saveTajuk(newList) {
+    setSavingTajuk(true)
+    try {
+      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { tajuk: newList })
+      setTajukList(newList)
+    } catch (e) {
+      console.error('saveTajuk:', e)
+    } finally {
+      setSavingTajuk(false)
+    }
+  }
+
+  function handleTambahTajuk() {
+    const nama = inputTajuk.trim()
+    if (!nama) return
+    const newList = [...tajukList, { id: Date.now().toString(), namaTajuk: nama, atlet: null }]
+    saveTajuk(newList)
+    setInputTajuk('')
+  }
+
+  function handlePadamTajuk(id) {
+    saveTajuk(tajukList.filter(t => t.id !== id))
+  }
+
+  function handlePilihAtlet(tajukId, atlet) {
+    const tajuk = tajukList.find(t => t.id === tajukId)
+    if (!tajuk) return
+    if (tajuk.atlet) {
+      // Ada atlet sedia — minta confirm
+      setConfirmGanti({ tajukId, atlet })
+    } else {
+      doGantiAtlet(tajukId, atlet)
+    }
+  }
+
+  function doGantiAtlet(tajukId, atlet) {
+    const newList = tajukList.map(t =>
+      t.id === tajukId ? { ...t, atlet } : t
+    )
+    saveTajuk(newList)
+    setConfirmGanti(null)
+  }
+
+  function handleBuangAtlet(tajukId) {
+    const newList = tajukList.map(t =>
+      t.id === tajukId ? { ...t, atlet: null } : t
+    )
+    saveTajuk(newList)
+  }
+
+  // ── Cetak PDF Analisa Pingat (tab kategori) ──────────────────────────────
+
   function cetakPDF() {
     setCetakLoading(true)
     try {
@@ -283,7 +342,6 @@ export default function AnalisaPingat() {
       const pageH = pdf.internal.pageSize.height
       const today = new Date().toLocaleDateString('ms-MY', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
-      // Header halaman pertama
       pdf.setFillColor(0, 51, 153)
       pdf.rect(0, 0, pageW, 28, 'F')
       pdf.setTextColor(255, 255, 255)
@@ -313,7 +371,6 @@ export default function AnalisaPingat() {
 
         if (!isFirst) {
           pdf.addPage()
-          // Header ringkas untuk halaman seterusnya
           pdf.setFillColor(0, 51, 153)
           pdf.rect(0, 0, pageW, 16, 'F')
           pdf.setTextColor(255, 255, 255)
@@ -344,7 +401,6 @@ export default function AnalisaPingat() {
           ]
         })
 
-        // Jumlah baris footer
         const totalEmas   = katRows.reduce((s, a) => s + a.pingat[1], 0)
         const totalPerak  = katRows.reduce((s, a) => s + a.pingat[2], 0)
         const totalGangsa = katRows.reduce((s, a) => s + a.pingat[3], 0)
@@ -386,7 +442,6 @@ export default function AnalisaPingat() {
         startY = pdf.lastAutoTable.finalY + 6
       })
 
-      // Footer
       const totalPages = pdf.getNumberOfPages()
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i)
@@ -402,6 +457,122 @@ export default function AnalisaPingat() {
       setCetakLoading(false)
     }
   }
+
+  // ── Cetak PDF Atlet Terbaik — 3 salinan ─────────────────────────────────
+
+  function cetakAtletTerbaik() {
+    setCetakTBLoading(true)
+    try {
+      const pdf   = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.width
+      const pageH = pdf.internal.pageSize.height
+      const today = new Date().toLocaleDateString('ms-MY', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+      function drawPageHeader(salinan) {
+        pdf.setFillColor(0, 51, 153)
+        pdf.rect(0, 0, pageW, 24, 'F')
+        pdf.setTextColor(255, 255, 255)
+        pdf.setFontSize(13)
+        pdf.setFont('helvetica', 'bold')
+        pdf.text('SENARAI ATLET TERBAIK', pageW / 2, 9, { align: 'center' })
+        pdf.setFontSize(8)
+        pdf.setFont('helvetica', 'normal')
+        pdf.text(namaKej, pageW / 2, 15, { align: 'center' })
+        pdf.text(`Tarikh: ${today}`, pageW / 2, 20, { align: 'center' })
+        // Label salinan — hujung kanan
+        pdf.setFontSize(7)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setTextColor(255, 220, 0)
+        pdf.text(`SALINAN: ${salinan}`, pageW - 12, 9, { align: 'right' })
+        pdf.setTextColor(0, 0, 0)
+      }
+
+      function buildTajukTable(t, startY) {
+        const a = t.atlet
+        // Bina baris pingat & acara
+        const pingatLines = []
+        if (a) {
+          if (a.pingat[1] > 0) {
+            pingatLines.push(`Emas (${a.pingat[1]}) : ${a.acaraPingat[1].join(', ')}`)
+          }
+          if (a.pingat[2] > 0) {
+            pingatLines.push(`Perak (${a.pingat[2]}) : ${a.acaraPingat[2].join(', ')}`)
+          }
+          if (a.pingat[3] > 0) {
+            pingatLines.push(`Gangsa (${a.pingat[3]}) : ${a.acaraPingat[3].join(', ')}`)
+          }
+          if (pingatLines.length === 0) pingatLines.push('—')
+        }
+
+        // Bina baris rekod
+        const rekodLines = []
+        if (a && a.rekodList.length > 0) {
+          a.rekodList.forEach((r, idx) => {
+            rekodLines.push(`${idx + 1}. ${r.namaAcara}`)
+            rekodLines.push(`   Baru: ${fmtPrestasi(r.prestasiBaru, r.unit)}${r.prestasiLama != null ? `  |  Lama: ${fmtPrestasi(r.prestasiLama, r.unit)}` : ''}`)
+            if (r.namaLama)   rekodLines.push(`   ${r.namaLama}`)
+            if (r.lokasiLama) rekodLines.push(`   ${r.lokasiLama}${r.tahunLama ? ` (${r.tahunLama})` : ''}`)
+          })
+        }
+
+        const maxLines = Math.max(pingatLines.length, rekodLines.length, 1)
+        const bodyRows = []
+        for (let i = 0; i < maxLines; i++) {
+          if (i === 0) {
+            bodyRows.push([
+              a ? a.namaAtlet : '—',
+              a ? a.namaSekolah : '—',
+              pingatLines[i] || '',
+              rekodLines[i]  || '',
+            ])
+          } else {
+            bodyRows.push(['', '', pingatLines[i] || '', rekodLines[i] || ''])
+          }
+        }
+
+        autoTable(pdf, {
+          startY,
+          head: [
+            [{ content: t.namaTajuk, colSpan: 4, styles: { fillColor: [0, 51, 153], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10, halign: 'center' } }],
+            ['Nama Atlet', 'Sekolah', 'Pingat & Acara', 'Rekod Dipecah'],
+          ],
+          body: bodyRows,
+          styles:     { fontSize: 8, cellPadding: 2.5 },
+          headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 60, fontStyle: 'bold' },
+            1: { cellWidth: 65 },
+            2: { cellWidth: 70 },
+            3: { cellWidth: 'auto' },
+          },
+          margin: { left: 12, right: 12 },
+          theme:  'grid',
+        })
+
+        return pdf.lastAutoTable.finalY + 8
+      }
+
+      SALINAN.forEach((sal, si) => {
+        if (si > 0) pdf.addPage()
+        drawPageHeader(sal)
+        let y = 28
+        tajukList.forEach(t => {
+          y = buildTajukTable(t, y)
+        })
+        // Footer
+        pdf.setFontSize(6)
+        pdf.setTextColor(150)
+        pdf.text(`Sistem KOAM — mssdkemaman-olahraga.web.app`, pageW / 2, pageH - 5, { align: 'center' })
+        pdf.setTextColor(0)
+      })
+
+      pdf.save(`AtletTerbaik_${new Date().toISOString().slice(0, 10)}.pdf`)
+    } finally {
+      setCetakTBLoading(false)
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-[40vh] gap-3 text-gray-400">
@@ -441,7 +612,6 @@ export default function AnalisaPingat() {
 
       {/* ── Panel Audit ── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-        {/* Header panel */}
         <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
           <div>
             <p className="text-xs font-bold text-gray-700">Audit Konsistensi Data</p>
@@ -456,14 +626,11 @@ export default function AnalisaPingat() {
           </button>
         </div>
 
-        {/* Hasil audit */}
         {auditResult && (
           auditResult.err ? (
             <div className="px-4 py-3 text-xs text-red-600">✗ {auditResult.err}</div>
           ) : (
             <div className="divide-y divide-gray-100">
-
-              {/* Summary row */}
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100">
                 <div className={`px-4 py-3 text-center ${auditResult.medalBeza.length > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
                   <p className={`text-xl font-black ${auditResult.medalBeza.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -487,12 +654,11 @@ export default function AnalisaPingat() {
                 </div>
               </div>
 
-              {/* Medal berbeza */}
               {auditResult.medalBeza.length > 0 && (
                 <div>
                   <div className="px-4 py-2 bg-red-50 border-b border-red-100 flex items-start gap-2 flex-wrap">
                     <span className="text-[10px] font-black text-red-700 uppercase tracking-wide">⚠ Medal Tidak Konsisten — {auditResult.medalBeza.length} atlet</span>
-                    <span className="text-[9px] text-red-500">FS = nilai dalam Firestore (termasuk data lama saringan) · Kir = dikira semula dari heat final sahaja. Jika FS lebih tinggi = data lama saringan belum dibersihkan — hantar semula heat final untuk betulkan.</span>
+                    <span className="text-[9px] text-red-500">FS = nilai dalam Firestore (termasuk data lama saringan) · Kir = dikira semula dari heat final sahaja.</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
@@ -516,7 +682,6 @@ export default function AnalisaPingat() {
                             <td className="px-3 py-2.5">
                               <p className="font-semibold text-gray-800">{x.nama}</p>
                               <p className="text-[10px] text-gray-400">{x.skol}</p>
-                              <p className="text-[9px] text-gray-300 font-mono">{x.noKP}</p>
                             </td>
                             <td className="px-3 py-2.5 text-gray-500 text-[10px]">{x.katKod}</td>
                             {[
@@ -525,7 +690,7 @@ export default function AnalisaPingat() {
                               [x.fs.gangsa, x.kir.gangsa, 'text-amber-700'],
                             ].map(([fs, kir, cls], j) => (
                               <>
-                                <td key={`fs${j}`} className={`px-3 py-2.5 text-center font-black ${cls} ${fs !== kir ? 'bg-red-100' : ''}`}>{fs || '—'}</td>
+                                <td key={`fs${j}`}  className={`px-3 py-2.5 text-center font-black ${cls} ${fs !== kir ? 'bg-red-100' : ''}`}>{fs || '—'}</td>
                                 <td key={`kir${j}`} className={`px-3 py-2.5 text-center font-black ${cls} ${fs !== kir ? 'bg-red-100' : ''}`}>{kir || '—'}</td>
                               </>
                             ))}
@@ -539,7 +704,6 @@ export default function AnalisaPingat() {
                 </div>
               )}
 
-              {/* Rekod stale */}
               {auditResult.rekodStale.length > 0 && (
                 <div>
                   <div className="px-4 py-2 bg-amber-50 border-b border-amber-100">
@@ -575,7 +739,6 @@ export default function AnalisaPingat() {
                 </div>
               )}
 
-              {/* Rekod pending */}
               {auditResult.rekodPending.length > 0 && (
                 <div>
                   <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
@@ -607,29 +770,27 @@ export default function AnalisaPingat() {
                 </div>
               )}
 
-              {/* Semua bersih */}
               {auditResult.medalBeza.length === 0 && auditResult.rekodStale.length === 0 && (
                 <div className="px-4 py-4 text-center">
                   <p className="text-sm font-bold text-green-700">✓ Data konsisten — tiada isu dijumpai</p>
                   <p className="text-[10px] text-gray-400 mt-1">{auditResult.totalAtlet} atlet diaudit · {auditResult.rekodSah} rekod sah · {auditResult.rekodPending.length} rekod pending</p>
                 </div>
               )}
-
             </div>
           )
         )}
       </div>
 
-      {/* Tab kategori */}
+      {/* ── Tab bar ── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="flex overflow-x-auto border-b border-gray-100 px-3 pt-2 gap-1">
           {kategoriList.map(k => {
             const count = Object.values(atletMap).filter(a => a.kategoriKod === k.kod).length
             if (count === 0) return null
             return (
-              <button key={k.kod} onClick={() => setSelKat(k.kod)}
+              <button key={k.kod} onClick={() => { setSelKat(k.kod); setActiveTab(k.kod) }}
                 className={`shrink-0 px-3 py-1.5 text-[11px] font-bold rounded-t-lg border-b-2 transition-colors ${
-                  selKat === k.kod
+                  activeTab === k.kod
                     ? 'border-[#003399] text-[#003399] bg-blue-50'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}>
@@ -638,111 +799,319 @@ export default function AnalisaPingat() {
               </button>
             )
           })}
+          {/* Tab Atlet Terbaik — paling kanan */}
+          <button onClick={() => setActiveTab('atletTerbaik')}
+            className={`shrink-0 px-3 py-1.5 text-[11px] font-bold rounded-t-lg border-b-2 transition-colors ml-auto ${
+              activeTab === 'atletTerbaik'
+                ? 'border-yellow-500 text-yellow-700 bg-yellow-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>
+            Atlet Terbaik
+            {tajukList.length > 0 && <span className="ml-1 text-[10px] opacity-60">({tajukList.length})</span>}
+          </button>
         </div>
 
-        <div className="overflow-x-auto">
-          {rows.length === 0 ? (
-            <div className="py-10 text-center text-gray-400 text-sm">
-              Tiada atlet dalam kategori {selKatLabel}.
-            </div>
-          ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="px-3 py-2.5 text-center font-bold text-gray-500 w-10">#</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-gray-500">Nama Atlet</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-gray-500">Sekolah</th>
-                  <th className="px-3 py-2.5 text-center font-bold text-yellow-600 w-10">🥇</th>
-                  <th className="px-3 py-2.5 text-center font-bold text-gray-400 w-10">🥈</th>
-                  <th className="px-3 py-2.5 text-center font-bold text-amber-700 w-10">🥉</th>
-                  <th className="px-3 py-2.5 text-center font-bold text-gray-600 w-12">Mata</th>
-                  <th className="px-3 py-2.5 text-left font-bold text-amber-600">Rekod Dipecah</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map((a, i) => {
-                  const rowBg = i === 0 ? 'bg-yellow-50' : i === 1 ? 'bg-gray-50/60' : i === 2 ? 'bg-orange-50' : ''
-                  return (
-                    <tr key={a.noKP} className={`${rowBg} hover:bg-blue-50/40 transition-colors`}>
-                      <td className="px-3 py-3 text-center font-black text-gray-400">
-                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
-                      </td>
-                      <td className="px-3 py-3">
-                        <p className="font-semibold text-gray-900">{a.namaAtlet}</p>
-                        <p className="text-[10px] text-gray-400 font-mono mt-0.5">{a.noKP}</p>
-                      </td>
-                      <td className="px-3 py-3 text-gray-600 max-w-[160px]">
-                        <p className="truncate">{a.namaSekolah}</p>
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        <p className="font-black text-yellow-600">{fmtPingat(a.pingat[1])}</p>
-                        {a.acaraPingat[1].map((n, j) => <p key={j} className="text-[9px] text-yellow-500 leading-tight">{n}</p>)}
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        <p className="font-black text-gray-500">{fmtPingat(a.pingat[2])}</p>
-                        {a.acaraPingat[2].map((n, j) => <p key={j} className="text-[9px] text-gray-400 leading-tight">{n}</p>)}
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        <p className="font-black text-amber-700">{fmtPingat(a.pingat[3])}</p>
-                        {a.acaraPingat[3].map((n, j) => <p key={j} className="text-[9px] text-amber-500 leading-tight">{n}</p>)}
-                      </td>
-                      <td className="px-3 py-3 text-center font-black text-[#003399]">{a.mata || '—'}</td>
-                      <td className="px-3 py-3">
-                        {a.rekodList.length === 0 ? (
-                          <span className="text-gray-300">—</span>
-                        ) : (
-                          <div className="space-y-2">
-                            {a.rekodList.map((r, j) => (
-                              <div key={j} className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                                <p className="font-bold text-amber-800 text-[11px]">🏆 {r.namaAcara}</p>
-                                <p className="text-[10px] text-gray-700 mt-0.5">
-                                  <span className="font-semibold text-green-700">Baru: {fmtPrestasi(r.prestasiBaru, r.unit)}</span>
-                                  {r.prestasiLama != null && (
-                                    <span className="text-gray-500 ml-2">Lama: {fmtPrestasi(r.prestasiLama, r.unit)}</span>
-                                  )}
-                                </p>
-                                {(r.namaLama || r.lokasiLama) && (
-                                  <p className="text-[10px] text-gray-500 mt-0.5">
-                                    {r.namaLama || '—'}
-                                    {r.lokasiLama && <span> · {r.lokasiLama}</span>}
-                                    {r.tahunLama  && <span> ({r.tahunLama})</span>}
+        {/* ── Tab Kategori content ── */}
+        {activeTab !== 'atletTerbaik' && (
+          <div className="overflow-x-auto">
+            {rows.length === 0 ? (
+              <div className="py-10 text-center text-gray-400 text-sm">
+                Tiada atlet dalam kategori {selKatLabel}.
+              </div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="px-3 py-2.5 text-center font-bold text-gray-500 w-10">#</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-gray-500">Nama Atlet</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-gray-500">Sekolah</th>
+                    <th className="px-3 py-2.5 text-center font-bold text-yellow-600 w-16">Emas</th>
+                    <th className="px-3 py-2.5 text-center font-bold text-gray-400 w-16">Perak</th>
+                    <th className="px-3 py-2.5 text-center font-bold text-amber-700 w-16">Gangsa</th>
+                    <th className="px-3 py-2.5 text-center font-bold text-gray-600 w-12">Mata</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-amber-600">Rekod Dipecah</th>
+                    <th className="px-3 py-2.5 text-center font-bold text-gray-400 w-28">Pilih</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {rows.map((a, i) => {
+                    const rowBg = i === 0 ? 'bg-yellow-50' : i === 1 ? 'bg-gray-50/60' : i === 2 ? 'bg-orange-50' : ''
+                    return (
+                      <tr key={a.noKP} className={`${rowBg} hover:bg-blue-50/40 transition-colors`}>
+                        <td className="px-3 py-3 text-center font-black text-gray-400">
+                          {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="font-semibold text-gray-900">{a.namaAtlet}</p>
+                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">{a.noKP}</p>
+                        </td>
+                        <td className="px-3 py-3 text-gray-600 max-w-[160px]">
+                          <p className="truncate">{a.namaSekolah}</p>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <p className="font-black text-yellow-600">{fmtPingat(a.pingat[1])}</p>
+                          {a.acaraPingat[1].map((n, j) => <p key={j} className="text-[9px] text-yellow-500 leading-tight">{n}</p>)}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <p className="font-black text-gray-500">{fmtPingat(a.pingat[2])}</p>
+                          {a.acaraPingat[2].map((n, j) => <p key={j} className="text-[9px] text-gray-400 leading-tight">{n}</p>)}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <p className="font-black text-amber-700">{fmtPingat(a.pingat[3])}</p>
+                          {a.acaraPingat[3].map((n, j) => <p key={j} className="text-[9px] text-amber-500 leading-tight">{n}</p>)}
+                        </td>
+                        <td className="px-3 py-3 text-center font-black text-[#003399]">{a.mata || '—'}</td>
+                        <td className="px-3 py-3">
+                          {a.rekodList.length === 0 ? (
+                            <span className="text-gray-300">—</span>
+                          ) : (
+                            <div className="space-y-2">
+                              {a.rekodList.map((r, j) => (
+                                <div key={j} className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                                  <p className="font-bold text-amber-800 text-[11px]">🏆 {r.namaAcara}</p>
+                                  <p className="text-[10px] text-gray-700 mt-0.5">
+                                    <span className="font-semibold text-green-700">Baru: {fmtPrestasi(r.prestasiBaru, r.unit)}</span>
+                                    {r.prestasiLama != null && <span className="text-gray-500 ml-2">Lama: {fmtPrestasi(r.prestasiLama, r.unit)}</span>}
                                   </p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-gray-200 bg-gray-50">
-                  <td colSpan={3} className="px-3 py-2 text-[10px] text-gray-400 font-semibold">
-                    {rows.length} atlet · {selKatLabel}
-                  </td>
-                  <td className="px-3 py-2 text-center text-[11px] font-black text-yellow-600">
-                    {rows.reduce((s, a) => s + a.pingat[1], 0)}
-                  </td>
-                  <td className="px-3 py-2 text-center text-[11px] font-black text-gray-500">
-                    {rows.reduce((s, a) => s + a.pingat[2], 0)}
-                  </td>
-                  <td className="px-3 py-2 text-center text-[11px] font-black text-amber-700">
-                    {rows.reduce((s, a) => s + a.pingat[3], 0)}
-                  </td>
-                  <td className="px-3 py-2 text-center text-[11px] font-black text-[#003399]">
-                    {rows.reduce((s, a) => s + a.mata, 0)}
-                  </td>
-                  <td className="px-3 py-2 text-[10px] text-gray-400">
-                    {rows.reduce((s, a) => s + a.rekodList.length, 0)} rekod dipecah
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          )}
-        </div>
+                                  {(r.namaLama || r.lokasiLama) && (
+                                    <p className="text-[10px] text-gray-500 mt-0.5">
+                                      {r.namaLama || '—'}
+                                      {r.lokasiLama && <span> · {r.lokasiLama}</span>}
+                                      {r.tahunLama  && <span> ({r.tahunLama})</span>}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        {/* Kolum Pilih — dropdown tajuk */}
+                        <td className="px-3 py-3 text-center">
+                          {tajukList.length === 0 ? (
+                            <span className="text-[10px] text-gray-300">Tiada tajuk</span>
+                          ) : (
+                            <div className="flex flex-col gap-1">
+                              {tajukList.map(t => (
+                                <button key={t.id}
+                                  onClick={() => handlePilihAtlet(t.id, {
+                                    noKP:        a.noKP,
+                                    namaAtlet:   a.namaAtlet,
+                                    namaSekolah: a.namaSekolah,
+                                    pingat:      a.pingat,
+                                    acaraPingat: a.acaraPingat,
+                                    mata:        a.mata,
+                                    rekodList:   a.rekodList,
+                                  })}
+                                  disabled={savingTajuk}
+                                  className={`text-[10px] px-2 py-1 rounded font-semibold border transition-colors ${
+                                    t.atlet?.noKP === a.noKP
+                                      ? 'bg-green-100 border-green-300 text-green-700'
+                                      : 'bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'
+                                  }`}>
+                                  {t.atlet?.noKP === a.noKP ? '✓ ' : ''}{t.namaTajuk}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200 bg-gray-50">
+                    <td colSpan={3} className="px-3 py-2 text-[10px] text-gray-400 font-semibold">
+                      {rows.length} atlet · {selKatLabel}
+                    </td>
+                    <td className="px-3 py-2 text-center text-[11px] font-black text-yellow-600">
+                      {rows.reduce((s, a) => s + a.pingat[1], 0)}
+                    </td>
+                    <td className="px-3 py-2 text-center text-[11px] font-black text-gray-500">
+                      {rows.reduce((s, a) => s + a.pingat[2], 0)}
+                    </td>
+                    <td className="px-3 py-2 text-center text-[11px] font-black text-amber-700">
+                      {rows.reduce((s, a) => s + a.pingat[3], 0)}
+                    </td>
+                    <td className="px-3 py-2 text-center text-[11px] font-black text-[#003399]">
+                      {rows.reduce((s, a) => s + a.mata, 0)}
+                    </td>
+                    <td className="px-3 py-2 text-[10px] text-gray-400">
+                      {rows.reduce((s, a) => s + a.rekodList.length, 0)} rekod dipecah
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab Atlet Terbaik content ── */}
+        {activeTab === 'atletTerbaik' && (
+          <div className="p-4 space-y-4">
+
+            {/* Setup tajuk */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <p className="text-xs font-bold text-gray-700 mb-3">Urus Tajuk Anugerah</p>
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={inputTajuk}
+                  onChange={e => setInputTajuk(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleTambahTajuk()}
+                  placeholder="cth: Atlet Terbaik L12"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+                <button
+                  onClick={handleTambahTajuk}
+                  disabled={!inputTajuk.trim() || savingTajuk}
+                  className="px-4 py-2 bg-[#003399] hover:bg-[#002277] disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors"
+                >
+                  + Tambah
+                </button>
+              </div>
+              {tajukList.length === 0 ? (
+                <p className="text-[11px] text-gray-400 italic">Belum ada tajuk. Tambah tajuk di atas.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {tajukList.map(t => (
+                    <div key={t.id} className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs">
+                      <span className="font-semibold text-gray-700">{t.namaTajuk}</span>
+                      {t.atlet && <span className="text-green-600 font-bold">✓ {t.atlet.namaAtlet.split(' ')[0]}</span>}
+                      <button onClick={() => handlePadamTajuk(t.id)} className="text-red-400 hover:text-red-600 ml-1 font-bold">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Preview */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                <p className="text-xs font-bold text-gray-700">Preview — Senarai Atlet Terbaik</p>
+                <button
+                  onClick={cetakAtletTerbaik}
+                  disabled={cetakTBLoading || tajukList.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#003399] hover:bg-[#002277] disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  {cetakTBLoading ? 'Jana PDF…' : 'Cetak PDF (3 Salinan)'}
+                </button>
+              </div>
+
+              {tajukList.length === 0 ? (
+                <div className="py-10 text-center text-gray-400 text-sm">Tambah tajuk untuk mula.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {tajukList.map(t => {
+                    const a = t.atlet
+                    return (
+                      <div key={t.id} className="p-4">
+                        {/* Tajuk header */}
+                        <div className="bg-[#003399] text-white text-xs font-black px-4 py-2 rounded-t-lg tracking-wide">
+                          {t.namaTajuk}
+                        </div>
+                        <table className="w-full text-xs border border-t-0 border-gray-200 rounded-b-lg overflow-hidden">
+                          <thead>
+                            <tr className="bg-gray-800 text-white">
+                              <th className="px-3 py-2 text-left font-bold w-48">Nama Atlet</th>
+                              <th className="px-3 py-2 text-left font-bold w-52">Sekolah</th>
+                              <th className="px-3 py-2 text-left font-bold">Pingat & Acara</th>
+                              <th className="px-3 py-2 text-left font-bold">Rekod Dipecah</th>
+                              <th className="px-3 py-2 text-center font-bold w-16">Tindakan</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {a ? (
+                              <tr className="bg-white">
+                                <td className="px-3 py-3 font-bold text-gray-900">{a.namaAtlet}</td>
+                                <td className="px-3 py-3 text-gray-600">{a.namaSekolah}</td>
+                                <td className="px-3 py-3">
+                                  {[1,2,3].map(rank => {
+                                    const label = rank === 1 ? 'Emas' : rank === 2 ? 'Perak' : 'Gangsa'
+                                    if (a.pingat[rank] === 0) return null
+                                    return (
+                                      <p key={rank} className="text-[11px] leading-snug">
+                                        <span className="font-semibold">{label} ({a.pingat[rank]}) : </span>
+                                        {a.acaraPingat[rank].join(', ')}
+                                      </p>
+                                    )
+                                  })}
+                                  {a.mata > 0 && <p className="text-[10px] text-[#003399] font-bold mt-1">Jumlah mata: {a.mata}</p>}
+                                </td>
+                                <td className="px-3 py-3">
+                                  {a.rekodList.length === 0 ? (
+                                    <span className="text-gray-300 text-[11px]">—</span>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {a.rekodList.map((r, j) => (
+                                        <div key={j} className="text-[11px]">
+                                          <p className="font-bold text-amber-800">{j + 1}. {r.namaAcara}</p>
+                                          <p className="text-gray-600">
+                                            Baru: <span className="font-semibold text-green-700">{fmtPrestasi(r.prestasiBaru, r.unit)}</span>
+                                            {r.prestasiLama != null && <span className="text-gray-500">  |  Lama: {fmtPrestasi(r.prestasiLama, r.unit)}</span>}
+                                          </p>
+                                          {r.namaLama && <p className="text-gray-500">{r.namaLama}{r.lokasiLama ? ` · ${r.lokasiLama}` : ''}{r.tahunLama ? ` (${r.tahunLama})` : ''}</p>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <button onClick={() => handleBuangAtlet(t.id)}
+                                    className="text-[10px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded font-semibold">
+                                    Buang
+                                  </button>
+                                </td>
+                              </tr>
+                            ) : (
+                              <tr className="bg-gray-50">
+                                <td colSpan={5} className="px-4 py-4 text-center text-[11px] text-gray-400 italic">
+                                  Belum dipilih — pergi ke tab kategori dan klik butang tajuk ini pada row atlet
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ── Modal Confirm Ganti ── */}
+      {confirmGanti && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5">
+            <p className="text-sm font-black text-gray-800 mb-2">Ganti Atlet?</p>
+            <p className="text-xs text-gray-500 mb-1">
+              Tajuk: <span className="font-semibold text-gray-700">{tajukList.find(t => t.id === confirmGanti.tajukId)?.namaTajuk}</span>
+            </p>
+            <p className="text-xs text-gray-500 mb-1">
+              Atlet semasa: <span className="font-semibold text-gray-700">{tajukList.find(t => t.id === confirmGanti.tajukId)?.atlet?.namaAtlet}</span>
+            </p>
+            <p className="text-xs text-gray-500 mb-4">
+              Ganti dengan: <span className="font-semibold text-green-700">{confirmGanti.atlet.namaAtlet}</span>
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmGanti(null)}
+                className="px-4 py-2 text-xs text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                Batal
+              </button>
+              <button onClick={() => doGantiAtlet(confirmGanti.tajukId, confirmGanti.atlet)}
+                className="px-4 py-2 text-xs bg-[#003399] text-white font-bold rounded-lg hover:bg-[#002277]">
+                Ya, Ganti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
