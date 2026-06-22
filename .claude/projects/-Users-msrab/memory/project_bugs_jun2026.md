@@ -250,6 +250,19 @@ metadata:
 - **Fail**: `src/pages/admin/Olahragawan.jsx` — 2 baris
 - **Status**: ✅ Fixed + deployed + pushed (commit 9e3e1cc)
 
+## FIX — Sesi 22 Jun 2026 (commit 94a54fe)
+
+### Cetak PDF Kedudukan Pingat — Home.jsx
+- **Feature**: Butang "Cetak PDF" dalam header panel Kedudukan Pingat
+- **Format**: Landscape A4, SR halaman pertama, SM halaman kedua
+- **Table**: No | Nama Sekolah | Kod | Emas | Perak | Gangsa | Jumlah
+- **Warna**: rank1=kuning, rank2=putih, rank3=oren — tiada gray gelap
+- **Header**: logo kiri+kanan, nama kejohanan, garisan warna ikut jenis sekolah
+- **Baris jumlah**: jumlah keseluruhan di bawah table
+- **State baru**: `cetakPingatLoading`
+- **Fungsi baru**: `handleCetakPingat()`
+- **Fail**: `src/pages/Home.jsx`
+
 ## FIX — Sesi 22 Jun 2026 (commit caf3951)
 
 ### Fix handleTolak — Badge Rekod Tidak Hilang Selepas Tolak
