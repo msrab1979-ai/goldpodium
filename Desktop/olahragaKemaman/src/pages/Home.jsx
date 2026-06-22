@@ -977,6 +977,7 @@ export default function Home() {
   const [medalLoading,        setMedalLoading]        = useState(false)
   const [expandedMedalGroups, setExpandedMedalGroups] = useState(new Set()) // default tutup
   const [expandedKatRows,     setExpandedKatRows]     = useState(new Set()) // sekolah expand kategori
+  const [cetakPingatLoading,  setCetakPingatLoading]  = useState(false)
 
   // Rekod Baru
   const [rekodBaru,    setRekodBaru]    = useState([]) // rekod dari kejohanan semasa
@@ -1244,6 +1245,190 @@ export default function Home() {
 
       setMedalTally(merged)
     } catch { } finally { setMedalLoading(false) }
+  }
+
+  async function handleCetakPingat() {
+    if (medalTally.length === 0) return
+    setCetakPingatLoading(true)
+    try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ])
+
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const W = doc.internal.pageSize.getWidth()   // 297
+      const M = 12
+      const namaKej = kejohanan?.namaKejohanan || cfg?.tajukUtama || 'Kejohanan Olahraga'
+      const tarikhCetak = new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' })
+
+      // ── Helper: imgFmt ──
+      function imgFmt(b64) {
+        if (!b64) return 'PNG'
+        return (b64.startsWith('data:image/jpeg') || b64.startsWith('data:image/jpg')) ? 'JPEG' : 'PNG'
+      }
+
+      // ── Sort + rank (sama seperti paparan skrin) ──
+      function sortAndRankPdf(rows) {
+        const s = [...rows].sort((a, b) => {
+          if ((b.emas||0)   !== (a.emas||0))   return (b.emas||0)   - (a.emas||0)
+          if ((b.perak||0)  !== (a.perak||0))  return (b.perak||0)  - (a.perak||0)
+          if ((b.gangsa||0) !== (a.gangsa||0)) return (b.gangsa||0) - (a.gangsa||0)
+          return (a.namaSekolah||'').localeCompare(b.namaSekolah||'', 'ms')
+        })
+        let curR = 0
+        return s.map((item, i, arr) => {
+          if (i === 0) { curR = 1; return { ...item, rank: 1 } }
+          const prev = arr[i - 1]
+          const tie = ['emas','perak','gangsa'].every(k => (item[k]||0) === (prev[k]||0))
+          if (!tie) curR++
+          return { ...item, rank: curR }
+        })
+      }
+
+      // ── Kumpulan SR dan SM (ikut jenisSekolah dalam medalTally) ──
+      const allJenisSet = [...new Set(medalTally.map(r => r.jenisSekolah || 'SR'))]
+      // Susun: SR dulu, SM kedua, lain-lain ikut abjad
+      const JENIS_ORDER = ['SR', 'SM']
+      const kumpulan = [
+        ...JENIS_ORDER.filter(j => allJenisSet.includes(j)),
+        ...allJenisSet.filter(j => !JENIS_ORDER.includes(j)).sort(),
+      ].map(jenis => ({
+        jenis,
+        label: jenis === 'SR' ? 'Sekolah Rendah (SR)' : jenis === 'SM' ? 'Sekolah Menengah (SM)' : jenis,
+        warna: jenis === 'SR' ? [0, 51, 153] : jenis === 'SM' ? [0, 120, 50] : [80, 80, 80],
+        rows: sortAndRankPdf(medalTally.filter(r => (r.jenisSekolah || 'SR') === jenis)),
+      })).filter(g => g.rows.length > 0)
+
+      let isFirstPage = true
+
+      for (const grp of kumpulan) {
+        if (!isFirstPage) doc.addPage()
+        isFirstPage = false
+
+        let y = 8
+
+        // ── Logo kiri ──
+        if (cfg?.logoKiriBase64) {
+          try { doc.addImage(cfg.logoKiriBase64, imgFmt(cfg.logoKiriBase64), M, y, 16, 16) } catch {}
+        }
+        // ── Logo kanan ──
+        if (cfg?.logoKananBase64) {
+          try { doc.addImage(cfg.logoKananBase64, imgFmt(cfg.logoKananBase64), W - M - 16, y, 16, 16) } catch {}
+        }
+
+        // ── Nama kejohanan ──
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(13)
+        doc.setTextColor(0, 0, 0)
+        doc.text(namaKej.toUpperCase(), W / 2, y + 6, { align: 'center' })
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.setTextColor(80, 80, 80)
+        doc.text('KEDUDUKAN PINGAT', W / 2, y + 12, { align: 'center' })
+
+        // ── Garisan bawah header ──
+        doc.setDrawColor(...grp.warna)
+        doc.setLineWidth(0.8)
+        doc.line(M, y + 16, W - M, y + 16)
+        y += 22
+
+        // ── Label kumpulan ──
+        doc.setFillColor(...grp.warna)
+        doc.rect(M, y, W - M * 2, 8, 'F')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(255, 255, 255)
+        doc.text(grp.label.toUpperCase(), W / 2, y + 5.5, { align: 'center' })
+        y += 11
+
+        // ── Jumlah sekolah ──
+        const totalEmas  = grp.rows.reduce((s, r) => s + (r.emas  || 0), 0)
+        const totalPerak = grp.rows.reduce((s, r) => s + (r.perak || 0), 0)
+        const totalGsa   = grp.rows.reduce((s, r) => s + (r.gangsa|| 0), 0)
+
+        // ── Table ──
+        const tblBody = grp.rows.map(r => [
+          String(r.rank),
+          r.namaSekolah || r.kodSekolah || '—',
+          r.kodSekolah  || '—',
+          String(r.emas   || 0),
+          String(r.perak  || 0),
+          String(r.gangsa || 0),
+          String((r.emas||0) + (r.perak||0) + (r.gangsa||0)),
+        ])
+
+        // ── Baris jumlah ──
+        tblBody.push([
+          '', 'JUMLAH', '',
+          String(totalEmas), String(totalPerak), String(totalGsa),
+          String(totalEmas + totalPerak + totalGsa),
+        ])
+
+        autoTable(doc, {
+          startY: y,
+          head: [['No.', 'Nama Sekolah', 'Kod', '🥇 Emas', '🥈 Perak', '🥉 Gangsa', 'Jumlah']],
+          body: tblBody,
+          styles: {
+            fontSize: 10,
+            cellPadding: { top: 3, bottom: 3, left: 4, right: 4 },
+            valign: 'middle',
+            textColor: [0, 0, 0],
+          },
+          headStyles: {
+            fillColor: grp.warna,
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10,
+            halign: 'center',
+          },
+          columnStyles: {
+            0: { halign: 'center', cellWidth: 12,  fontStyle: 'bold' },
+            1: { halign: 'left',   cellWidth: 'auto' },
+            2: { halign: 'center', cellWidth: 30,  textColor: [120, 120, 120], fontSize: 8 },
+            3: { halign: 'center', cellWidth: 22,  fontStyle: 'bold', textColor: [180, 130, 0] },
+            4: { halign: 'center', cellWidth: 22,  fontStyle: 'bold', textColor: [80, 80, 80]  },
+            5: { halign: 'center', cellWidth: 22,  fontStyle: 'bold', textColor: [160, 90, 20] },
+            6: { halign: 'center', cellWidth: 22,  fontStyle: 'bold', textColor: [0, 51, 153]  },
+          },
+          alternateRowStyles: { fillColor: [245, 248, 255] },
+          margin: { left: M, right: M },
+          didParseCell: (data) => {
+            if (data.section !== 'body') return
+            const rowIdx = data.row.index
+            const rank = grp.rows[rowIdx]?.rank
+            // Baris jumlah (baris terakhir)
+            if (rowIdx === grp.rows.length) {
+              data.cell.styles.fillColor = [230, 240, 255]
+              data.cell.styles.fontStyle = 'bold'
+              data.cell.styles.textColor = [0, 0, 0]
+              return
+            }
+            // Top 3: row highlight
+            if (rank === 1) data.cell.styles.fillColor = [255, 250, 205]
+            else if (rank === 2) data.cell.styles.fillColor = [245, 245, 250]
+            else if (rank === 3) data.cell.styles.fillColor = [255, 245, 230]
+          },
+        })
+
+        // ── Footer ──
+        const footY = doc.internal.pageSize.getHeight() - 10
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7.5)
+        doc.setTextColor(150, 150, 150)
+        doc.text(`Dicetak: ${tarikhCetak}`, M, footY)
+        doc.text(`${grp.rows.length} sekolah`, W / 2, footY, { align: 'center' })
+        doc.text('SULIT — UNTUK KEGUNAAN RASMI SAHAJA', W - M, footY, { align: 'right' })
+      }
+
+      const safeName = namaKej.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)
+      doc.save(`KedudikanPingat_${safeName}.pdf`)
+    } catch (e) {
+      alert('Ralat cetak: ' + e.message)
+    } finally {
+      setCetakPingatLoading(false)
+    }
   }
 
   function buildKatDetailFromTally(kodSekolah) {
@@ -2430,6 +2615,30 @@ export default function Home() {
                 <div className="border-l-4 border-[#003399] pl-3">
                   <h2 className="text-base font-black text-gray-800 leading-tight">Kedudukan Pingat</h2>
                 </div>
+                {medalTally.length > 0 && (
+                  <button
+                    onClick={handleCetakPingat}
+                    disabled={cetakPingatLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#003399] text-white hover:bg-[#002277] disabled:opacity-50 transition-colors"
+                  >
+                    {cetakPingatLoading ? (
+                      <>
+                        <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                        </svg>
+                        Jana PDF…
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        Cetak PDF
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Content */}
