@@ -43,7 +43,7 @@ const LANE_ORDER = [4, 5, 3, 6, 2, 7, 1, 8]
 
 // ─── Input Semua Peserta (semua heat dalam satu table) ───────────────────────
 
-function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap = {} }) {
+function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap = {}, carianBib = '' }) {
   // Gabung semua peserta dari semua heat, tag dengan heatId & noHeat
   const semuaPeserta = useMemo(() => {
     const list = []
@@ -55,11 +55,17 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
     return list
   }, [heats])
 
-  // Sort by masa (auto rank) — peserta tanpa masa ke bawah
+  // Sort: carian BIB naik ke atas, kemudian sort by masa
   const sorted = useMemo(() => {
     return [...semuaPeserta].sort((a, b) => {
       const ka = `${a._heatId}_${a.lorong ?? a.noBib}`
       const kb = `${b._heatId}_${b.lorong ?? b.noBib}`
+      // Carian BIB: match naik ke atas
+      if (carianBib) {
+        const matchA = (a.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchB = (b.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        if (matchA !== matchB) return matchA - matchB
+      }
       const ma = Number(keputusanSemua[ka]?.keputusan) || 0
       const mb = Number(keputusanSemua[kb]?.keputusan) || 0
       if (!ma && !mb) return 0
@@ -67,7 +73,7 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
       if (!mb) return -1
       return ma - mb
     })
-  }, [semuaPeserta, keputusanSemua])
+  }, [semuaPeserta, keputusanSemua, carianBib])
 
   return (
     <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -89,7 +95,9 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
         const rank = idx + 1
         const hasMasa = Number(kp.keputusan) > 0 && !flagged
-        const rowBg = flagged ? 'bg-red-50'
+        const isCarian = carianBib && (p.noBib || '').toUpperCase().includes(carianBib)
+        const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset'
+          : flagged ? 'bg-red-50'
           : hasMasa && rank === 1 ? 'bg-yellow-50'
           : hasMasa && rank === 2 ? 'bg-gray-50'
           : hasMasa && rank === 3 ? 'bg-orange-50'
@@ -1262,21 +1270,6 @@ function fmtJam(d) {
   return d.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 }
 
-// Format countdown mm:ss
-function fmtCountdown(ms) {
-  if (ms <= 0) return '00:00'
-  const m = Math.floor(ms / 60000)
-  const s = Math.floor((ms % 60000) / 1000)
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
-
-// Timestamp Firestore → ms
-function tsToMs(ts) {
-  if (!ts) return 0
-  if (typeof ts.toDate === 'function') return ts.toDate().getTime()
-  if (ts.seconds) return ts.seconds * 1000
-  return 0
-}
 
 export default function InputKeputusan() {
   const { userData } = useAuth()
@@ -1540,43 +1533,8 @@ export default function InputKeputusan() {
   }
 
   async function selectHeat(heat, _acara = null, _allHeats = null) {
-    const acara    = _acara    || selectedAcara
-    const allHeats = _allHeats || heats
-    let h = heat
-
-    // Auto-rasmi: semak jika timer sudah luput
-    // BUG1 FIX: jangan auto-rasmi heat FINAL — biarkan KeputusanRasmi handle (postRasmi perlu jalan)
-    const isFinalHeat = ['final', 'terus_final'].includes(h.fasa) || allHeats.length === 1
-    if (h.statusKeputusan === 'tidak_rasmi' && h.publishedAt && kejohananId && !isFinalHeat) {
-      const timer = acara?.timerAutoRasmi ?? kejohananData?.timerAutoRasmi ?? 15
-      const pubMs = tsToMs(h.publishedAt)
-      const elapsedMin = pubMs > 0 ? (Date.now() - pubMs) / 60000 : 0
-      if (elapsedMin >= timer) {
-        try {
-          const aceraKey = acara.aceraId || acara.acaraId
-          await updateDoc(
-            doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', h.heatId),
-            { statusKeputusan: 'rasmi', autoRasmiAt: serverTimestamp() }
-          )
-          h = { ...h, statusKeputusan: 'rasmi' }
-          const updatedHeats = allHeats.map(x => x.heatId === h.heatId ? { ...x, statusKeputusan: 'rasmi' } : x)
-          setHeats(updatedHeats)
-          // Update statusAcara
-          const finalHeat = updatedHeats.find(x => x.peringkat === 'final' || x.fasa === 'terus_final')
-          let newAcaraStatus
-          if (finalHeat) {
-            newAcaraStatus = finalHeat.statusKeputusan === 'rasmi' ? 'rasmi' : 'tidak_rasmi'
-          } else {
-            newAcaraStatus = updatedHeats.every(x => x.statusKeputusan === 'rasmi') ? 'rasmi' : 'tidak_rasmi'
-          }
-          await updateDoc(
-            doc(db, 'kejohanan', kejohananId, 'acara', aceraKey),
-            { statusAcara: newAcaraStatus }
-          ).catch(() => {})
-        } catch { /* ignore */ }
-      }
-    }
-
+    const acara = _acara || selectedAcara
+    const h = heat
     setSelectedHeat(h)
     setSaved(false)
     setWindSpeed(h.windSpeed != null ? String(h.windSpeed) : '')
@@ -1585,8 +1543,8 @@ export default function InputKeputusan() {
     // setStep handled by caller (selectAcara sets 'input', tab click stays in 'input')
   }
 
-  // ── Fix 1: Real-time listener untuk status heat semasa ───────────────────────
-  // Dengar perubahan statusKeputusan, bantahanDiterima, countdownTamat sahaja.
+  // ── Real-time listener untuk status heat semasa ──────────────────────────────
+  // Dengar perubahan statusKeputusan, bantahanDiterima sahaja.
   // TIDAK update peserta/keputusan — jangan overwrite input user yang sedang taip.
 
   const heatListenerRef = useRef(null)
@@ -1605,8 +1563,6 @@ export default function InputKeputusan() {
         ...prev,
         statusKeputusan:  d.statusKeputusan  ?? prev.statusKeputusan,
         bantahanDiterima: d.bantahanDiterima ?? false,
-        countdownTamat:   d.countdownTamat   ?? prev.countdownTamat,
-        publishedAt:      d.publishedAt      ?? prev.publishedAt,
         postRasmiSelesai: d.postRasmiSelesai ?? prev.postRasmiSelesai,
       } : prev)
       // Sync dalam heats list juga
@@ -1711,7 +1667,7 @@ export default function InputKeputusan() {
     setSaved(false)
   }
 
-  async function handleSaveSemuaPeserta() {
+  async function handleSaveSemuaPeserta({ danHantar = false } = {}) {
     if (!kejohananId || !selectedAcara || heats.length === 0) return
     if (!bolehEdit) return
     setSaving(true); setSaved(false)
@@ -1720,19 +1676,26 @@ export default function InputKeputusan() {
       const jenisAcara = selectedAcara.jenisAcara
       const isPadang = ['padang_lompat', 'padang_balin'].includes(jenisAcara)
 
-      // Kumpul semua entry by heatId
-      const byHeat = {}
-      for (const [slotKey, kp] of Object.entries(keputusanSemua)) {
-        const heatId = kp._heatId
-        if (!heatId) continue
-        if (!byHeat[heatId]) byHeat[heatId] = []
-        byHeat[heatId].push({ slotKey, kp })
+      // Kira config untuk postRasmi (sama seperti handleHantar)
+      const kej = kejohananData || {}
+      const PKOD = { daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
+      const mp = kej.mataPingat || {}
+      const mataPingat = {
+        1: Number(mp[1] ?? mp['1'] ?? 5), 2: Number(mp[2] ?? mp['2'] ?? 3),
+        3: Number(mp[3] ?? mp['3'] ?? 2), 4: Number(mp[4] ?? mp['4'] ?? 1),
+        5: Number(mp[5] ?? mp['5'] ?? 0),
       }
+      const bilanganKedudukan = kej.bilanganKedudukan ?? 8
+      const isRelayAcara = selectedAcara.isRelay || selectedAcara.jenisAcara === 'relay'
+      const isSaringanAcara = (() => {
+        const p = (selectedAcara.peringkat || '').toLowerCase()
+        const n = (selectedAcara.namaAcara  || '').toLowerCase()
+        return p.includes('saringan') || n.includes('saringan')
+      })()
 
-      // Simpan setiap heat berasingan — sama seperti handleSave
+      // Simpan setiap heat berasingan
       for (const h of heats) {
-        const heatEntries = byHeat[h.heatId] || []
-        if (heatEntries.length === 0) continue
         const heatRef = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', h.heatId)
 
         const updatedPeserta = (h.peserta || []).map(p => {
@@ -1762,17 +1725,50 @@ export default function InputKeputusan() {
           return { ...p, rankDalamHeat: autoRankMap.get(rk) ?? null }
         })
 
-        await updateDoc(heatRef, {
-          peserta: finalPeserta,
-          statusKeputusan: 'tidak_rasmi',
-          updatedAt: serverTimestamp(),
-        })
-        // Sync heats state
-        setHeats(prev => prev.map(x => x.heatId === h.heatId ? { ...x, peserta: finalPeserta, statusKeputusan: 'tidak_rasmi' } : x))
+        if (danHantar) {
+          // HANTAR: set diterima + publishedAt
+          const isFinalHeat = ['final', 'terus_final'].includes(h.fasa)
+          const grantMedal = !isSaringanAcara && (isFinalHeat || heats.length === 1)
+          await updateDoc(heatRef, {
+            peserta:          finalPeserta,
+            statusKeputusan:  'diterima',
+            bantahanDiterima: false,
+            updatedAt:        serverTimestamp(),
+          })
+          await updateDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraKey), {
+            statusAcara: 'ada_keputusan', updatedAt: serverTimestamp(),
+          }).catch(() => {})
+
+          // Run postRasmi untuk setiap heat
+          const freshSnap = await getDoc(heatRef)
+          if (freshSnap.exists()) {
+            const freshHeat = { id: h.heatId, ...freshSnap.data() }
+            const acaraDoc  = { id: aceraKey, ...selectedAcara }
+            try {
+              await runPostRasmi(db, freshHeat, acaraDoc, kejohananId, {
+                mataPingat, bilanganKedudukan, peringkatKej,
+                grantMedal,
+                isRelay: isRelayAcara,
+              })
+            } catch (postErr) { console.warn('postRasmi heat', h.heatId, ':', postErr.message) }
+          }
+
+          setHeats(prev => prev.map(x => x.heatId === h.heatId
+            ? { ...x, peserta: finalPeserta, statusKeputusan: 'diterima' } : x))
+        } else {
+          // SIMPAN DRAF sahaja
+          await updateDoc(heatRef, {
+            peserta:    finalPeserta,
+            updatedAt:  serverTimestamp(),
+          })
+          setHeats(prev => prev.map(x => x.heatId === h.heatId
+            ? { ...x, peserta: finalPeserta } : x))
+        }
       }
       setSaved(true)
     } catch (e) {
       console.error('handleSaveSemuaPeserta:', e)
+      alert('Ralat: ' + e.message)
     }
     setSaving(false)
   }
@@ -1885,7 +1881,7 @@ export default function InputKeputusan() {
     }
   }
 
-  // ── HANTAR: simpan data + publish (tidak_rasmi + publishedAt) ──────────────
+  // ── HANTAR: simpan data + set diterima ──────────────────────────────────────
 
   async function handleHantar() {
     if (!kejohananId || !selectedAcara || !selectedHeat || !bolehEdit) return
@@ -1902,7 +1898,6 @@ export default function InputKeputusan() {
       await updateDoc(heatRef, {
         statusKeputusan:  'diterima',
         bantahanDiterima: false,
-        publishedAt:      serverTimestamp(),
         updatedAt:        serverTimestamp(),
       })
       await updateDoc(acaraRef, { statusAcara: 'ada_keputusan', updatedAt: serverTimestamp() }).catch(() => {})
@@ -2828,21 +2823,10 @@ export default function InputKeputusan() {
 
   // ── Guards ─────────────────────────────────────────────────────────────────
 
-  // 'diterima' = status baru (flow mudah), 'rasmi'/'tidak_rasmi' = data lama
-  const isDiterima         = selectedHeat?.statusKeputusan === 'diterima'
-  const isRasmi            = selectedHeat?.statusKeputusan === 'rasmi' || isDiterima
-  const isDalamBantahan    = selectedHeat?.statusKeputusan === 'dalam_bantahan'
-  const isPublished        = selectedHeat?.statusKeputusan === 'tidak_rasmi'
-  const isBantahanDiterima = isPublished && !!selectedHeat?.bantahanDiterima
+  const isDiterima      = selectedHeat?.statusKeputusan === 'diterima'
+  const isRasmi         = selectedHeat?.statusKeputusan === 'rasmi' || isDiterima
+  const isDalamBantahan = selectedHeat?.statusKeputusan === 'dalam_bantahan'
   const bolehInputSekarang = bolehEdit && !isRasmi
-
-  // Timer auto-rasmi countdown
-  const timerMenit = selectedAcara?.timerAutoRasmi ?? kejohananData?.timerAutoRasmi ?? 15
-  const pubMs      = tsToMs(selectedHeat?.publishedAt)
-  const countdownMs = (isPublished && pubMs)
-    ? Math.max(0, timerMenit * 60000 - (now - pubMs))
-    : null
-  const autoRasmiExpired = countdownMs === 0
 
   // ── Loading ────────────────────────────────────────────────────────────────
 
@@ -2899,7 +2883,7 @@ export default function InputKeputusan() {
           {/* Live clock */}
           <span className="text-[10px] font-mono text-gray-400 shrink-0">{fmtJam(new Date(now))}</span>
           {/* Top-bar Simpan Draf (shortcut) */}
-          {step === 'input' && bolehInputSekarang && !isPublished && (
+          {step === 'input' && bolehInputSekarang && (
             <button onClick={handleSave} disabled={saving}
               className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
                 saved ? 'bg-green-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
@@ -3186,24 +3170,97 @@ export default function InputKeputusan() {
           {/* ── Mod Semua Peserta ── */}
           {!heatsLoading && modSemua && heats.length > 0 && (
             <div className="space-y-3">
+              {/* Header info */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
                 <span className="text-xs font-bold text-blue-700">☰ Mod Semua Peserta — {heats.length} heat</span>
                 <span className="text-[10px] text-blue-500">Masa dimasuk → sort auto by masa</span>
               </div>
+
+              {/* Carian BIB (sama seperti dalam heat biasa) */}
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={carianBib}
+                  onChange={e => setCarianBib(e.target.value.toUpperCase())}
+                  placeholder="Cari No BIB…"
+                  className="flex-1 bg-transparent text-sm font-mono font-bold text-gray-800 placeholder-amber-300 focus:outline-none"
+                />
+                {carianBib && (
+                  <button onClick={() => setCarianBib('')} className="text-amber-400 hover:text-amber-600 text-lg leading-none font-bold">✕</button>
+                )}
+              </div>
+
               <InputSemuaPeserta
                 heats={heats}
                 acara={selectedAcara}
                 keputusanSemua={keputusanSemua}
                 onChange={handleChangeSemua}
                 sekolahMap={sekolahMap}
+                carianBib={carianBib}
               />
-              <button
-                onClick={handleSaveSemuaPeserta}
-                disabled={saving || !bolehEdit}
-                className="w-full py-3.5 text-sm font-bold rounded-2xl bg-[#003399] text-white hover:bg-[#002288] disabled:opacity-50 transition-all"
-              >
-                {saving ? 'Menyimpan…' : saved ? '✓ Tersimpan' : 'Simpan Semua'}
-              </button>
+
+              {/* Butang Simpan Draf + HANTAR Semua (sama seperti heat biasa) */}
+              {bolehEdit && (
+                <div className="pt-2 pb-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleSaveSemuaPeserta({ danHantar: false })}
+                      disabled={saving}
+                      className={`py-3.5 text-sm font-bold rounded-2xl border-2 transition-all ${
+                        saved
+                          ? 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      } disabled:opacity-50`}>
+                      {saving ? '…' : saved ? '✓ Tersimpan' : 'Simpan Draf'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!window.confirm(`Hantar keputusan untuk SEMUA ${heats.length} heat?\n\nSelepas HANTAR, sistem akan proses medal tally dan jana senarai finalis.`)) return
+                        handleSaveSemuaPeserta({ danHantar: true })
+                      }}
+                      disabled={saving}
+                      className="py-3.5 text-sm font-bold rounded-2xl bg-[#003399] hover:bg-[#002277] text-white disabled:bg-gray-300 transition-all">
+                      {saving ? 'Menghantar…' : `HANTAR Semua (${heats.length} Heat) ▶`}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 text-center">
+                    Draf = simpan sahaja · HANTAR = hantar semua heat sekaligus untuk disahkan
+                  </p>
+                </div>
+              )}
+
+              {/* Jana Final Panel — muncul bila semua heat saringan selesai (sama seperti heat biasa) */}
+              {janaFinalEligible && janaFinalists.length > 0 && (
+                <div className="pb-4">
+                  <JanaFinalPanel
+                    finalists={janaFinalists}
+                    acara={selectedAcara}
+                    sekolahMap={sekolahMap}
+                    onJana={handleJanaFinal}
+                    loading={janaFinalLoading}
+                    finalSetup={finalSetup}
+                    finalDijanaKe={finalDijanaKe}
+                  />
+                </div>
+              )}
+
+              {/* Final sudah dijana — makluman */}
+              {finalDijanaKe && !janaFinalEligible && (
+                <div className="pb-4">
+                  <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+                    <span className="text-green-500 text-lg">✓</span>
+                    <div>
+                      <p className="text-xs font-black text-green-700">Final Sudah Dijana</p>
+                      <p className="text-[11px] text-green-600 mt-0.5">
+                        Pergi <span className="font-bold">Acara #{finalDijanaKe}</span> untuk masukkan keputusan final
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -3373,7 +3430,7 @@ export default function InputKeputusan() {
               })()}
 
               {/* ── BELUM HANTAR: Simpan Draf + HANTAR ── */}
-              {!isDalamBantahan && !isPublished && (
+              {!isDalamBantahan && (
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-3">
                     <button onClick={handleSave} disabled={saving}
@@ -3390,43 +3447,7 @@ export default function InputKeputusan() {
                     </button>
                   </div>
                   <p className="text-[10px] text-gray-400 text-center">
-                    Draf = simpan lokal · HANTAR = hantar untuk disahkan · auto-Rasmi dalam {timerMenit} min
-                  </p>
-                </div>
-              )}
-
-              {/* ── SUDAH HANTAR (tidak_rasmi): countdown + Simpan sahaja ── */}
-              {isPublished && !isDalamBantahan && (
-                <div className="space-y-2">
-                  {/* Countdown bar */}
-                  <div className={`rounded-2xl px-4 py-3 border flex items-center gap-3 ${
-                    autoRasmiExpired ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
-                  }`}>
-                    <div className="flex-1">
-                      {autoRasmiExpired ? (
-                        <p className="text-sm font-bold text-green-800">Menunggu konfirmasi Rasmi…</p>
-                      ) : (
-                        <>
-                          <p className="text-xs font-bold text-amber-800">Auto-Rasmi dalam</p>
-                          <p className="text-2xl font-black font-mono text-amber-700 leading-tight">
-                            {fmtCountdown(countdownMs)}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-[9px] text-amber-600 font-semibold">Timer: {timerMenit} min</p>
-                      <p className="text-[9px] text-amber-500">Sudah dihantar</p>
-                    </div>
-                  </div>
-                  <button onClick={handleSave} disabled={saving}
-                    className={`w-full py-3 text-sm font-bold rounded-2xl border-2 transition-all ${
-                      saved ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                    } disabled:opacity-50`}>
-                    {saving ? 'Menyimpan…' : saved ? '✓ Data Dikemas Kini' : 'Kemaskini Data'}
-                  </button>
-                  <p className="text-[10px] text-gray-400 text-center">
-                    Keputusan sudah dihantar · kemaskini data tidak akan reset timer
+                    Draf = simpan sahaja · HANTAR = hantar untuk disahkan
                   </p>
                 </div>
               )}
