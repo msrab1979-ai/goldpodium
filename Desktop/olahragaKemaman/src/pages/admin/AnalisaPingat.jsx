@@ -109,9 +109,11 @@ export default function AnalisaPingat() {
                 kodSekolah:  p.kodSekolah  || '',
                 kategoriKod: p.kategoriKod || ad.kategoriKod || '',
                 pingat:      { 1: 0, 2: 0, 3: 0 },
+                acaraPingat: { 1: [], 2: [], 3: [] },
                 mata:        0,
               }
               aMap[p.noKP].pingat[rank]++
+              aMap[p.noKP].acaraPingat[rank].push(ad.namaAcaraPendek || ad.namaAcara || '—')
             }
           }
         }
@@ -138,6 +140,7 @@ export default function AnalisaPingat() {
             namaSekolah: skolMap[data.kodSekolah] || data.namaSekolah || data.kodSekolah || '—',
             kategoriKod: katKod,
             pingat:      { 1: 0, 2: 0, 3: 0 },
+            acaraPingat: { 1: [], 2: [], 3: [] },
             mata:        0,
             rekodList:   tuntutanByNoKP[noKP],
           }
@@ -671,9 +674,18 @@ export default function AnalisaPingat() {
                       <td className="px-3 py-3 text-gray-600 max-w-[160px]">
                         <p className="truncate">{a.namaSekolah}</p>
                       </td>
-                      <td className="px-3 py-3 text-center font-black text-yellow-600">{fmtPingat(a.pingat[1])}</td>
-                      <td className="px-3 py-3 text-center font-black text-gray-500">{fmtPingat(a.pingat[2])}</td>
-                      <td className="px-3 py-3 text-center font-black text-amber-700">{fmtPingat(a.pingat[3])}</td>
+                      <td className="px-3 py-3 text-center">
+                        <p className="font-black text-yellow-600">{fmtPingat(a.pingat[1])}</p>
+                        {a.acaraPingat[1].map((n, j) => <p key={j} className="text-[9px] text-yellow-500 leading-tight">{n}</p>)}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <p className="font-black text-gray-500">{fmtPingat(a.pingat[2])}</p>
+                        {a.acaraPingat[2].map((n, j) => <p key={j} className="text-[9px] text-gray-400 leading-tight">{n}</p>)}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <p className="font-black text-amber-700">{fmtPingat(a.pingat[3])}</p>
+                        {a.acaraPingat[3].map((n, j) => <p key={j} className="text-[9px] text-amber-500 leading-tight">{n}</p>)}
+                      </td>
                       <td className="px-3 py-3 text-center font-black text-[#003399]">{a.mata || '—'}</td>
                       <td className="px-3 py-3">
                         {a.rekodList.length === 0 ? (
