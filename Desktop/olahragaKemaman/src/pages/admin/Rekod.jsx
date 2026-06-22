@@ -919,33 +919,91 @@ export default function Rekod() {
   const [showImport,   setShowImport]   = useState(false)
   const [showCetak,    setShowCetak]    = useState(false)
   const [msg,          setMsg]          = useState(null)
+  const [aktifKejId,   setAktifKejId]   = useState('')
+  const [aktifKejNama, setAktifKejNama] = useState('')
+  const [rekodKejList, setRekodKejList] = useState([])  // rekod dipecah dari mata_olahragawan
 
   // ── Load data ───────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     setLoading(true)
-    try {
-      const [rekodSnap, katSnap] = await Promise.all([
-        getDocs(query(collection(db, 'rekod'), orderBy('updatedAt', 'desc'))),
-        getDocs(query(collection(db, 'kategori'), orderBy('urutan'))),
-      ])
-      const allRekod = rekodSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-      setRekodList(allRekod.filter(r => !r.id.endsWith('_tuntutan') && r.statusRekod !== 'dipecah'))
-      setTuntutanList(allRekod.filter(r => r.id.endsWith('_tuntutan')))
-      setKategoriList(katSnap.docs.map(d => ({ id: d.id, ...d.data() })))
 
-      // Fetch acara dari kejohanan aktif — untuk dropdown nama acara dalam modal
+    // rekod library + kategori + kejohanan aktif (acara sahaja — bukan mata_olahragawan)
+    const [rekodSnap, katSnap] = await Promise.allSettled([
+      getDocs(collection(db, 'rekod')),
+      getDocs(query(collection(db, 'kategori'), orderBy('urutan'))),
+    ])
+    if (rekodSnap.status === 'fulfilled') {
+      const allRekod = rekodSnap.value.docs.map(d => ({ id: d.id, ...d.data() }))
+      const aktif = allRekod.filter(r => !r.id.endsWith('_tuntutan') && r.statusRekod !== 'dipecah')
+      aktif.sort((a, b) => (b.updatedAt?.seconds ?? 0) - (a.updatedAt?.seconds ?? 0))
+      setRekodList(aktif)
+      setTuntutanList(allRekod.filter(r => r.id.endsWith('_tuntutan')))
+    } else {
+      console.error('load rekod gagal:', rekodSnap.reason)
+    }
+    if (katSnap.status === 'fulfilled') {
+      setKategoriList(katSnap.value.docs.map(d => ({ id: d.id, ...d.data() })))
+    } else {
+      console.error('load kategori gagal:', katSnap.reason)
+    }
+
+    try {
       const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
       if (!kejSnap.empty) {
         const kejId = kejSnap.docs[0].id
-        const aSnap = await getDocs(query(collection(db, 'kejohanan', kejId, 'acara'), orderBy('kategoriKod')))
-        setAcaraList(aSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+        setAktifKejId(kejId)
+        setAktifKejNama(kejSnap.docs[0].data().namaKejohanan || kejId)
+        const aSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+        const acaraDocs = aSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        acaraDocs.sort((a, b) => (a.kategoriKod || '').localeCompare(b.kategoriKod || ''))
+        setAcaraList(acaraDocs)
       }
-    } catch (e) { console.error(e) }
-    finally { setLoading(false) }
+    } catch (e) { console.error('load kejohanan:', e) }
+
+    setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Load rekod kejohanan berasingan — bergantung pada aktifKejId
+  // Dipisahkan supaya load() boleh dipanggil semula tanpa reset rekodKejList
+  useEffect(() => {
+    if (!aktifKejId) return
+    let cancelled = false
+    getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', aktifKejId)))
+      .then(snap => {
+        if (cancelled) return
+        const rekodKej = []
+        snap.docs.forEach(d => {
+          const data = d.data()
+          const noKP = data.noKP || d.id.replace(`_${aktifKejId}`, '')
+          Object.entries(data).forEach(([key, val]) => {
+            if (!key.startsWith('rekod_')) return
+            if (!val?.namaAcara) return
+            rekodKej.push({
+              id:           d.id + '_' + key,
+              noKP,
+              namaAtlet:    data.namaAtlet   || '—',
+              namaSekolah:  data.namaSekolah || data.kodSekolah || '—',
+              kodSekolah:   data.kodSekolah  || '',
+              kategoriKod:  val.kategoriKod  || data.kategoriKod || '',
+              jantina:      val.jantina      || data.jantina     || '',
+              namaAcara:    val.namaAcara,
+              prestasi:     val.prestasiBaru ?? null,
+              unit:         val.unit         || 's',
+              prestasiLama: val.prestasiLama ?? null,
+              namaLama:     val.namaLama     || null,
+              lokasiLama:   val.lokasiLama   || null,
+              tahunLama:    val.tahunLama    || null,
+            })
+          })
+        })
+        setRekodKejList(rekodKej)
+      })
+      .catch(e => console.error('load rekodKej:', e))
+    return () => { cancelled = true }
+  }, [aktifKejId])
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -987,7 +1045,8 @@ export default function Rekod() {
       setMsg({ type: 'ok', text: 'Rekod baru disahkan.' })
       load()
     } catch (e) {
-      setMsg({ type: 'err', text: 'Gagal: ' + e.message })
+      console.error('handleSahkan error:', e)
+      setMsg({ type: 'err', text: 'Gagal sahkan: ' + e.message })
     }
   }
 
@@ -1070,6 +1129,208 @@ export default function Rekod() {
     load()
   }
 
+  // ── Audit Rekod Tertinggal ───────────────────────────────────────────────────
+
+  const [auditLoading,  setAuditLoading]  = useState(false)
+  const [auditResult,   setAuditResult]   = useState(null)  // null | { tertinggal[], scanned }
+
+  async function handleAuditRekod() {
+    if (!aktifKejId) return
+    setAuditLoading(true)
+    setAuditResult(null)
+    try {
+      // 1. Ambil semua acara untuk kejohanan aktif
+      const acaraSnap = await getDocs(collection(db, 'kejohanan', aktifKejId, 'acara'))
+      const semuaAcara = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+      // 2. Ambil tuntutan & mata_olahragawan untuk cross-check
+      const [tuntutanSnap, mataSnap] = await Promise.all([
+        getDocs(collection(db, 'rekod')),
+        getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', aktifKejId))),
+      ])
+      const tuntutanSet = new Set(
+        tuntutanSnap.docs.filter(d => d.id.endsWith('_tuntutan')).map(d => d.id.replace('_tuntutan', ''))
+      )
+      const rekodLibSet = new Set(
+        tuntutanSnap.docs.filter(d => !d.id.endsWith('_tuntutan')).map(d => d.id)
+      )
+      // Map: noKP → set of acaraId yang ada rekod_ field
+      const mataRekodMap = {}
+      mataSnap.docs.forEach(d => {
+        const data = d.data()
+        const noKP = data.noKP || d.id.replace(`_${aktifKejId}`, '')
+        Object.keys(data).forEach(k => {
+          if (k.startsWith('rekod_')) {
+            if (!mataRekodMap[noKP]) mataRekodMap[noKP] = new Set()
+            mataRekodMap[noKP].add(k.replace('rekod_', ''))
+          }
+        })
+      })
+
+      const tertinggal = []
+      let scanned = 0
+
+      // 3. Scan setiap acara final/terus_final
+      for (const acara of semuaAcara) {
+        const fasa = acara.fasa || acara.jenisAcara || ''
+        if (acara.parentAcaraId && fasa !== 'final' && fasa !== 'terus_final') continue
+
+        const heatSnap = await getDocs(
+          collection(db, 'kejohanan', aktifKejId, 'acara', acara.id, 'heat')
+        )
+
+        for (const heatDoc of heatSnap.docs) {
+          const heat = heatDoc.data()
+          if (heat.status !== 'diterima') continue
+
+          const peserta = heat.peserta || []
+          const unit = acara.unit || 's'
+
+          for (const p of peserta) {
+            if (!p.keputusan || !p.noKP) continue
+            scanned++
+
+            // Bina rekodKey
+            const rekodNama = acara.namaAcaraPendek || acara.namaAcara
+            const rKey = [rekodNama, acara.jantina, acara.kategoriKod, 'D']
+              .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+
+            // Semak sama ada rekod library wujud
+            const libExists = rekodLibSet.has(rKey)
+            const tuntutanExists = tuntutanSet.has(rKey)
+            const mataExists = mataRekodMap[p.noKP]?.has(acara.id)
+
+            // Jika rekod library ada — semak prestasi lebih baik tak
+            if (libExists) {
+              const libDoc = tuntutanSnap.docs.find(d => d.id === rKey)
+              const libPrestasi = Number(libDoc?.data()?.prestasi ?? 0)
+              const newPrestasi = Number(p.keputusan)
+              const isBetter = unit === 's' ? newPrestasi < libPrestasi : newPrestasi > libPrestasi
+              if (!isBetter) continue // prestasi tak lebih baik — bukan rekod
+            }
+
+            // Prestasi lebih baik dari rekod / rekod tiada — patut ada tuntutan atau mata field
+            if (!tuntutanExists && !mataExists) {
+              tertinggal.push({
+                namaAcara:   acara.namaAcara,
+                kategoriKod: acara.kategoriKod,
+                jantina:     acara.jantina,
+                namaAtlet:   p.namaAtlet || p.nama || '—',
+                noKP:        p.noKP,
+                prestasi:    p.keputusan,
+                unit,
+                heatId:      heatDoc.id,
+                rKey,
+                libExists,
+              })
+            }
+          }
+        }
+      }
+
+      setAuditResult({ tertinggal, scanned })
+    } catch (e) {
+      console.error('auditRekod:', e)
+      setAuditResult({ tertinggal: [], scanned: 0, err: e.message })
+    } finally {
+      setAuditLoading(false)
+    }
+  }
+
+  // ── Cetak PDF Rekod Kejohanan ────────────────────────────────────────────────
+
+  const [cetakKejLoading, setCetakKejLoading] = useState(false)
+
+  async function handleCetakRekodKej() {
+    if (rekodKejList.length === 0) return
+    setCetakKejLoading(true)
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pw = doc.internal.pageSize.getWidth()
+
+      const semua = rekodKejList.slice().sort((a, b) => (a.namaAcara || '').localeCompare(b.namaAcara || ''))
+      const katAdaSet = new Set(semua.map(r => r.kategoriKod).filter(Boolean))
+      const katOrder  = kategoriList.filter(k => katAdaSet.has(k.kod)).map(k => k.kod)
+      katAdaSet.forEach(k => { if (!katOrder.includes(k)) katOrder.push(k) })
+
+      // Header utama
+      doc.setFontSize(13)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0, 51, 153)
+      doc.text('REKOD DIPECAH — KEJOHANAN SEMASA', pw / 2, 14, { align: 'center' })
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(100, 100, 100)
+      doc.text(aktifKejNama || '', pw / 2, 20, { align: 'center' })
+      doc.text(`${semua.length} rekod dipecah`, pw / 2, 25, { align: 'center' })
+
+      let y = 30
+
+      katOrder.forEach(katKod => {
+        const katLabel = kategoriList.find(k => k.kod === katKod)?.label || kategoriList.find(k => k.kod === katKod)?.nama || katKod
+        const rows = semua.filter(r => r.kategoriKod === katKod)
+        if (rows.length === 0) return
+
+        autoTable(doc, {
+          startY: y,
+          head: [[
+            { content: katLabel + ` (${rows.length} rekod)`, colSpan: 8,
+              styles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'left' } }
+          ]],
+          body: rows.map(r => [
+            r.namaAcara || '—',
+            r.jantina === 'L' ? 'L' : 'P',
+            r.namaAtlet || '—',
+            r.namaSekolah || r.kodSekolah || '—',
+            formatPrestasi(r.prestasi, r.unit),
+            r.prestasiLama != null ? formatPrestasi(r.prestasiLama, r.unit) : '—',
+            r.namaLama || '—',
+            r.tahunLama || '—',
+          ]),
+          columns: [
+            { header: 'Nama Acara',    dataKey: 0 },
+            { header: 'Jan.',          dataKey: 1 },
+            { header: 'Atlet Baru',    dataKey: 2 },
+            { header: 'Sekolah',       dataKey: 3 },
+            { header: 'Prestasi Baru', dataKey: 4 },
+            { header: 'Prestasi Lama', dataKey: 5 },
+            { header: 'Pemegang Lama', dataKey: 6 },
+            { header: 'Tahun',         dataKey: 7 },
+          ],
+          headStyles: { fillColor: [240, 240, 250], textColor: [60, 60, 100], fontStyle: 'bold', fontSize: 7.5 },
+          bodyStyles: { fontSize: 7.5, textColor: [40, 40, 40] },
+          columnStyles: {
+            0: { cellWidth: 28 },
+            1: { cellWidth: 8,  halign: 'center' },
+            2: { cellWidth: 32 },
+            3: { cellWidth: 32 },
+            4: { cellWidth: 22, halign: 'right', fontStyle: 'bold', textColor: [0, 120, 60] },
+            5: { cellWidth: 22, halign: 'right', textColor: [130, 130, 130] },
+            6: { cellWidth: 30 },
+            7: { cellWidth: 14, halign: 'center', textColor: [130, 130, 130] },
+          },
+          alternateRowStyles: { fillColor: [250, 252, 255] },
+          margin: { left: 10, right: 10 },
+          didDrawPage: (d) => {
+            const pg = doc.internal.getCurrentPageInfo().pageNumber
+            const tot = doc.internal.getNumberOfPages()
+            doc.setFontSize(7)
+            doc.setTextColor(180, 180, 180)
+            doc.text(`Muka ${pg} / ${tot}`, pw - 10, doc.internal.pageSize.getHeight() - 5, { align: 'right' })
+          },
+        })
+        y = doc.lastAutoTable.finalY + 5
+      })
+
+      const tarikh = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      doc.save(`RekodKejohanan_${tarikh}.pdf`)
+    } catch (e) {
+      console.error('cetakRekodKej:', e)
+    } finally {
+      setCetakKejLoading(false)
+    }
+  }
+
   // ── Refresh Rekod Lama dalam mata_olahragawan ────────────────────────────────
   // Scan semua mata_olahragawan untuk kejohanan aktif
   // Untuk setiap rekod_ field, baca balik rekod library dan kemaskini prestasiLama dll
@@ -1115,10 +1376,11 @@ export default function Rekod() {
           if (samaPrestasi) {
             // Cuba cari rekod_sejarah untuk acara ini
             const sejarahSnap = await getDocs(
-              query(collection(db, 'rekod_sejarah'), where('rekodId', '==', rKey), orderBy('diarchivPada', 'desc'))
+              query(collection(db, 'rekod_sejarah'), where('rekodId', '==', rKey))
             )
             if (!sejarahSnap.empty) {
-              const lama = sejarahSnap.docs[0].data()
+              const sorted = sejarahSnap.docs.slice().sort((a, b) => (b.data().diarchivPada?.seconds ?? 0) - (a.data().diarchivPada?.seconds ?? 0))
+              const lama = sorted[0].data()
               patch[fieldKey] = {
                 ...fieldVal,
                 prestasiLama: lama.prestasi != null ? Number(lama.prestasi) : null,
@@ -1648,9 +1910,10 @@ export default function Rekod() {
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         {[
-          { key: 'semasa',   label: 'Rekod Semasa', show: true },
-          { key: 'tuntutan', label: `Tuntutan${tuntutanList.length ? ` (${tuntutanList.length})` : ''}`, show: canSahkan },
-          { key: 'semak',    label: `Semak Sambungan${semakLemahCount > 0 ? ` · ${semakLemahCount} lemah` : ''}${semakTiadaCount > 0 ? ` · ${semakTiadaCount} tiada` : ''}${semakOrphan.length > 0 ? ` · ${semakOrphan.length} orphan` : ''}`, show: canSahkan },
+          { key: 'semasa',    label: 'Rekod Semasa', show: true },
+          { key: 'tuntutan',  label: `Tuntutan${tuntutanList.length ? ` (${tuntutanList.length})` : ''}`, show: canSahkan },
+          { key: 'kejohanan', label: `Rekod Kejohanan${rekodKejList.length ? ` (${rekodKejList.length})` : ''}`, show: true },
+          { key: 'semak',     label: `Semak Sambungan${semakLemahCount > 0 ? ` · ${semakLemahCount} lemah` : ''}${semakTiadaCount > 0 ? ` · ${semakTiadaCount} tiada` : ''}${semakOrphan.length > 0 ? ` · ${semakOrphan.length} orphan` : ''}`, show: canSahkan },
         ].filter(t => t.show).map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
@@ -1943,6 +2206,172 @@ export default function Rekod() {
           )}
         </div>
       )}
+
+      {/* ── Tab: Rekod Kejohanan ── */}
+      {activeTab === 'kejohanan' && (() => {
+        const semua = rekodKejList.slice().sort((a, b) => (a.namaAcara || '').localeCompare(b.namaAcara || ''))
+        const katAdaSet = new Set(semua.map(r => r.kategoriKod).filter(Boolean))
+        const katOrder  = kategoriList.filter(k => katAdaSet.has(k.kod)).map(k => k.kod)
+        katAdaSet.forEach(k => { if (!katOrder.includes(k)) katOrder.push(k) })
+        return (
+          <div className="space-y-4">
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between shadow-sm">
+              <div>
+                <p className="text-xs font-bold text-gray-700">Rekod Dipecah — Kejohanan Semasa</p>
+                {aktifKejNama && <p className="text-[10px] text-gray-400 mt-0.5">{aktifKejNama}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-700 font-bold text-[10px] px-2 py-0.5 rounded-full">{semua.length} rekod</span>
+                {semua.length > 0 && (
+                  <button
+                    onClick={handleCetakRekodKej}
+                    disabled={cetakKejLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#003399] hover:bg-[#002277] disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                    {cetakKejLoading ? 'Jana…' : 'Cetak PDF'}
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* Panel Audit Rekod Tertinggal */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 flex items-start gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-gray-700">Semak Rekod Tertinggal</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Imbas heat diterima — kesan peserta yang sepatutnya pecah rekod tapi tiada dalam senarai.
+                </p>
+                {auditResult && !auditResult.err && (
+                  <p className={`text-[10px] font-bold mt-1 ${auditResult.tertinggal.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {auditResult.tertinggal.length === 0
+                      ? `✓ Bersih — ${auditResult.scanned} peserta diimbas, tiada rekod tertinggal.`
+                      : `⚠ ${auditResult.tertinggal.length} rekod tertinggal dijumpai daripada ${auditResult.scanned} peserta.`}
+                  </p>
+                )}
+                {auditResult?.err && (
+                  <p className="text-[10px] font-bold text-red-500 mt-1">✗ {auditResult.err}</p>
+                )}
+              </div>
+              <button
+                onClick={handleAuditRekod}
+                disabled={auditLoading || !aktifKejId}
+                className="shrink-0 px-3 py-1.5 bg-gray-700 hover:bg-gray-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                {auditLoading ? '⏳ Mengimbas…' : '🔍 Semak Sekarang'}
+              </button>
+            </div>
+
+            {/* Hasil audit — tertinggal */}
+            {auditResult && auditResult.tertinggal.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-red-600 flex items-center justify-between">
+                  <p className="text-xs font-black text-white">⚠ Rekod Tertinggal — Perlu Perhatian</p>
+                  <span className="text-[10px] font-bold text-white/80">{auditResult.tertinggal.length} kes</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-red-100 border-b border-red-200 text-left">
+                        <th className="px-3 py-2 font-bold text-red-700">Nama Acara</th>
+                        <th className="px-3 py-2 font-bold text-red-700">Kat.</th>
+                        <th className="px-3 py-2 font-bold text-red-700">Jan.</th>
+                        <th className="px-3 py-2 font-bold text-red-700">Atlet</th>
+                        <th className="px-3 py-2 font-bold text-red-700 text-right">Prestasi</th>
+                        <th className="px-3 py-2 font-bold text-red-700">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-red-100">
+                      {auditResult.tertinggal.map((x, i) => (
+                        <tr key={i} className="bg-white hover:bg-red-50/40">
+                          <td className="px-3 py-2.5 font-semibold text-gray-800">{x.namaAcara}</td>
+                          <td className="px-3 py-2.5 text-gray-500">{x.kategoriKod}</td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${x.jantina === 'L' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>{x.jantina}</span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="font-semibold text-gray-800">{x.namaAtlet}</p>
+                            <p className="text-[10px] text-gray-400 font-mono">{x.noKP}</p>
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-black text-red-700">{formatPrestasi(x.prestasi, x.unit)}</td>
+                          <td className="px-3 py-2.5">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${x.libExists ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {x.libExists ? 'Rekod ada, tuntutan tiada' : 'Rekod baru — tiada dalam library'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-4 py-2.5 bg-red-50 border-t border-red-200">
+                  <p className="text-[10px] text-red-600">
+                    Hantar semula keputusan heat berkenaan untuk Jana semula rekod, atau tambah tuntutan secara manual.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {semua.length === 0 ? (
+              <div className="bg-white border border-gray-200 rounded-xl py-12 text-center text-gray-400 text-sm shadow-sm">
+                Tiada rekod dipecah dalam kejohanan ini.
+              </div>
+            ) : (
+              katOrder.map(katKod => {
+                const katLabel = kategoriList.find(k => k.kod === katKod)?.label || kategoriList.find(k => k.kod === katKod)?.nama || katKod
+                const rows     = semua.filter(r => r.kategoriKod === katKod)
+                if (rows.length === 0) return null
+                return (
+                  <div key={katKod} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="px-4 py-2.5 bg-[#003399] flex items-center justify-between">
+                      <p className="text-xs font-black text-white tracking-wide">{katLabel}</p>
+                      <span className="text-[10px] font-bold text-white/70">{rows.length} rekod</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-gray-50 border-b border-gray-100 text-left">
+                            <th className="px-3 py-2 font-bold text-gray-500">Nama Acara</th>
+                            <th className="px-3 py-2 font-bold text-gray-500">Atlet Baru</th>
+                            <th className="px-3 py-2 font-bold text-gray-500">Sekolah</th>
+                            <th className="px-3 py-2 font-bold text-green-700 text-right w-24">Prestasi Baru</th>
+                            <th className="px-3 py-2 font-bold text-gray-400 text-right w-24">Prestasi Lama</th>
+                            <th className="px-3 py-2 font-bold text-gray-500">Pemegang Lama</th>
+                            <th className="px-3 py-2 font-bold text-gray-400 w-14 text-center">Tahun</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {rows.map(r => (
+                            <tr key={r.id} className="hover:bg-blue-50/30">
+                              <td className="px-3 py-2.5">
+                                <p className="font-semibold text-gray-800">{r.namaAcara || '—'}</p>
+                                <p className="text-[10px] text-gray-400">{r.jantina === 'L' ? 'Lelaki' : r.jantina === 'P' ? 'Perempuan' : '—'}</p>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <p className="font-semibold text-gray-800">{r.namaAtlet || '—'}</p>
+                                <p className="text-[10px] text-gray-400 font-mono">{r.noKP || ''}</p>
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-600 max-w-[140px] truncate">{r.namaSekolah || r.kodSekolah || '—'}</td>
+                              <td className="px-3 py-2.5 text-right font-black text-green-700">{formatPrestasi(r.prestasi, r.unit)}</td>
+                              <td className="px-3 py-2.5 text-right text-gray-400">{r.prestasiLama != null ? formatPrestasi(r.prestasiLama, r.unit) : '—'}</td>
+                              <td className="px-3 py-2.5 text-gray-500">
+                                <p>{r.namaLama || '—'}</p>
+                                {r.lokasiLama && <p className="text-[10px] text-gray-400 truncate max-w-[130px]">{r.lokasiLama}</p>}
+                              </td>
+                              <td className="px-3 py-2.5 text-center text-gray-400">{r.tahunLama || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Tab: Semak Sambungan ── */}
       {activeTab === 'semak' && (

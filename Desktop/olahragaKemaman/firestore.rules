@@ -146,6 +146,11 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // collectionGroup query untuk CetakKeputusan (load semua heat sekaligus)
+    match /{path=**}/heat/{heatId} {
+      allow read: if true;
+    }
+
     match /bantahan/{id} {
       allow read:   if true;
       allow create: if true;

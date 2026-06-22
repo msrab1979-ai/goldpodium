@@ -217,6 +217,87 @@ export default function HealthCheck() {
     setBadgeBuang(false)
   }
 
+  // ── Buang SEMUA Badge + Pulih Badge ─────────────────────────────────────────
+  const [buangSemuaRunning, setBuangSemuaRunning] = useState(false)
+  const [buangSemuaDone,    setBuangSemuaDone]    = useState(null)
+  const [pulihRunning,      setPulihRunning]      = useState(false)
+  const [pulihDone,         setPulihDone]         = useState(null)
+
+  async function jalanBuangSemua() {
+    if (!window.confirm('Buang SEMUA badge 🏆 rekod pecah dari Home?\n\nData rekod & tuntutan TIDAK disentuh. Boleh dipulihkan kemudian.')) return
+    setBuangSemuaRunning(true)
+    setBuangSemuaDone(null)
+    try {
+      const kejId = await getKejId()
+      const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+      let heatDikemas = 0
+      for (const aDoc of acaraSnap.docs) {
+        const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', aDoc.id, 'heat'))
+        for (const hDoc of heatSnap.docs) {
+          const peserta = hDoc.data().peserta || []
+          const adaBadge = peserta.some(p => p.pecahRekod || p.samaiRekod)
+          if (!adaBadge) continue
+          const newPeserta = peserta.map(p => {
+            const { pecahRekod, samaiRekod, ...rest } = p
+            return rest
+          })
+          await updateDoc(hDoc.ref, { peserta: newPeserta })
+          heatDikemas++
+        }
+      }
+      setBuangSemuaDone({ ok: true, heat: heatDikemas })
+    } catch (e) {
+      setBuangSemuaDone({ ok: false, error: e.message })
+    }
+    setBuangSemuaRunning(false)
+  }
+
+  async function jalanPulihBadge() {
+    if (!window.confirm('Pulih badge 🏆 rekod pecah berdasarkan data rekod_tuntutan?\n\nIni akan tulis semula pecahRekod pada peserta yang ada tuntutan rekod.')) return
+    setPulihRunning(true)
+    setPulihDone(null)
+    try {
+      const kejId = await getKejId()
+      // Load semua rekod_tuntutan untuk kejohanan ini
+      const tuntSnap = await getDocs(query(collection(db, 'rekod_tuntutan'), where('kejohananId', '==', kejId)))
+      if (tuntSnap.empty) { setPulihDone({ ok: true, heat: 0, nota: 'Tiada rekod_tuntutan dijumpai.' }); setPulihRunning(false); return }
+
+      // Group tuntutan by acaraId+heatId
+      const tuntByHeat = {}
+      for (const tDoc of tuntSnap.docs) {
+        const t = tDoc.data()
+        if (!t.acaraId || !t.heatId || !t.noKP) continue
+        const key = `${t.acaraId}__${t.heatId}`
+        if (!tuntByHeat[key]) tuntByHeat[key] = []
+        tuntByHeat[key].push({ noKP: t.noKP, peringkat: t.peringkat || 'D' })
+      }
+
+      let heatDikemas = 0
+      for (const [key, tuntList] of Object.entries(tuntByHeat)) {
+        const [acaraId, heatId] = key.split('__')
+        const hRef = doc(db, 'kejohanan', kejId, 'acara', acaraId, 'heat', heatId)
+        const hSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat'))
+        const hDoc = hSnap.docs.find(d => d.id === heatId)
+        if (!hDoc) continue
+        const peserta = hDoc.data().peserta || []
+        let ada = false
+        const newPeserta = peserta.map(p => {
+          const match = tuntList.find(t => t.noKP === p.noKP)
+          if (match) { ada = true; return { ...p, pecahRekod: match.peringkat } }
+          return p
+        })
+        if (ada) {
+          await updateDoc(hRef, { peserta: newPeserta })
+          heatDikemas++
+        }
+      }
+      setPulihDone({ ok: true, heat: heatDikemas })
+    } catch (e) {
+      setPulihDone({ ok: false, error: e.message })
+    }
+    setPulihRunning(false)
+  }
+
   // ── Reset Keputusan Acara ─────────────────────────────────────────────────────
   const [resetAcaraId, setResetAcaraId] = useState('')
   const [resetLog, setResetLog]         = useState([])
@@ -1011,6 +1092,41 @@ export default function HealthCheck() {
               </button>
             </div>
           )}
+
+          {/* ── Divider ── */}
+          <div className="border-t border-blue-100 pt-3 space-y-2">
+            <p className="text-[11px] font-bold text-gray-600">Tindakan Terus (tanpa imbas)</p>
+
+            {/* Buang SEMUA badge */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={jalanBuangSemua} disabled={buangSemuaRunning || pulihRunning}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+                {buangSemuaRunning
+                  ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Membuang…</>
+                  : '🗑 Buang SEMUA Badge Rekod'}
+              </button>
+              {buangSemuaDone && (
+                buangSemuaDone.ok
+                  ? <span className="text-[11px] text-green-700 font-semibold">✅ {buangSemuaDone.heat} heat dikemas — badge habis dibuang</span>
+                  : <span className="text-[11px] text-red-600">❌ {buangSemuaDone.error}</span>
+              )}
+            </div>
+
+            {/* Pulih badge dari rekod_tuntutan */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={jalanPulihBadge} disabled={pulihRunning || buangSemuaRunning}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+                {pulihRunning
+                  ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Memulihkan…</>
+                  : '♻ Pulih Badge dari Rekod Tuntutan'}
+              </button>
+              {pulihDone && (
+                pulihDone.ok
+                  ? <span className="text-[11px] text-green-700 font-semibold">✅ {pulihDone.heat} heat dipulihkan{pulihDone.nota ? ` — ${pulihDone.nota}` : ''}</span>
+                  : <span className="text-[11px] text-red-600">❌ {pulihDone.error}</span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

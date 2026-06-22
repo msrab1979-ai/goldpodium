@@ -9,7 +9,7 @@
  * Roles: superadmin, admin, pengurus_teknik, urusetia
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   collection, getDocs, getDoc, doc, query, where, orderBy,
 } from 'firebase/firestore'
@@ -67,6 +67,8 @@ export default function CetakKeputusan() {
   const [msg,         setMsg]         = useState(null)
 
   // Data asas
+  const kejIdRef      = useRef('')  // ref supaya reloadHeats sentiasa baca nilai terkini
+  const jadualIdsRef  = useRef([])  // acara IDs dalam jadual sahaja
   const [cfg,              setCfg]              = useState({})
   const [kejId,            setKejId]            = useState('')
   const [namaKej,          setNamaKej]          = useState('')
@@ -79,8 +81,9 @@ export default function CetakKeputusan() {
   const [tuntutanMap, setTuntutanMap] = useState({})       // rekodKey → rekod data (tuntutan)
 
   // UI state
-  const [selDay,      setSelDay]      = useState('')
-  const [heatCache,   setHeatCache]   = useState({})       // acaraId → final heat | null
+  const [selDay,        setSelDay]        = useState('')
+  const [heatCache,     setHeatCache]     = useState({})   // acaraId → final heat | false
+  const [reloadingHeats, setReloadingHeats] = useState(false)
 
   // ── Init: load data asas sekali ───────────────────────────────────────────
 
@@ -102,7 +105,7 @@ export default function CetakKeputusan() {
 
         const kej   = kejSnap.docs[0]
         const kData = kej.data()
-        setKejId(kej.id)
+        setKejId(kej.id); kejIdRef.current = kej.id
         setNamaKej(kData.namaKejohanan || cfgData.namaKejohanan || 'Kejohanan Olahraga')
         setPeringkatKej({ daerah: 'D', negeri: 'N', kebangsaan: 'K' }[kData.peringkat] || 'D')
         setBilanganKedudukan(kData.bilanganKedudukan ?? 8)
@@ -132,13 +135,15 @@ export default function CetakKeputusan() {
         })
         setTuntutanMap(tMap)
 
-        // Group jadual by day, sort by masaMula client-side
+        // Group jadual by day dulu — supaya kita tahu acara mana yang perlu diload
         const byDay = {}
+        const jadualAcaraIds = new Set()
         jadualSnap.docs.forEach(d => {
           const j = d.data()
           if (j.statusJadual === 'batal' || !j.tarikhAcara) return
           const aId = j.aceraId || j.acaraId
           if (!aId || !aMap[aId]) return
+          jadualAcaraIds.add(aId)
           if (!byDay[j.tarikhAcara]) byDay[j.tarikhAcara] = []
           byDay[j.tarikhAcara].push({
             acara:    aMap[aId],
@@ -146,7 +151,6 @@ export default function CetakKeputusan() {
             lokasi:   j.lokasi   || '',
           })
         })
-        // Sort acara dalam setiap hari by masaMula
         Object.keys(byDay).forEach(day => {
           byDay[day].sort((a, b) => (a.masaMula || '').localeCompare(b.masaMula || ''))
         })
@@ -155,6 +159,29 @@ export default function CetakKeputusan() {
         setDays(sortedDays)
         setAcaraByDay(byDay)
         if (sortedDays.length > 0) setSelDay(sortedDays[0])
+
+        // Load heats — hanya acara dalam jadual sahaja (bukan semua 152)
+        const SELESAI = ['diterima', 'rasmi']
+        const jadualIds = [...jadualAcaraIds]
+        jadualIdsRef.current = jadualIds
+        const heatResults = await Promise.allSettled(
+          jadualIds.map(async aId => {
+            const snap = await getDocs(collection(db, 'kejohanan', kej.id, 'acara', aId, 'heat'))
+            const heats = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            const finalHeat = heats.find(
+              h => ['final', 'terus_final'].includes(h.fasa) && SELESAI.includes(h.statusKeputusan)
+            )
+            if (finalHeat) return { aId, heat: finalHeat }
+            if (heats.length === 1 && SELESAI.includes(heats[0].statusKeputusan))
+              return { aId, heat: heats[0] }
+            return { aId, heat: false }
+          })
+        )
+        const cacheInit = {}
+        heatResults.forEach(r => {
+          if (r.status === 'fulfilled') cacheInit[r.value.aId] = r.value.heat
+        })
+        setHeatCache(cacheInit)
       } catch (e) {
         console.error(e)
         setMsg({ type: 'err', text: 'Ralat muatkan data: ' + e.message })
@@ -163,52 +190,47 @@ export default function CetakKeputusan() {
     init()
   }, [])
 
-  // ── Load heats untuk hari yang dipilih ───────────────────────────────────
+  // ── Muat Semula: reload semua heats via 1 query ───────────────────────────
 
-  useEffect(() => {
-    if (!selDay || !kejId) return
-    const items = acaraByDay[selDay] || []
-    const toLoad = items.filter(({ acara }) => heatCache[acara.id] === undefined)
-    if (toLoad.length === 0) return
-
-    // Mark as loading (null = loading, false = no final heat, object = heat data)
-    setHeatCache(prev => {
-      const next = { ...prev }
-      toLoad.forEach(({ acara }) => { next[acara.id] = 'loading' })
-      return next
-    })
-
-    Promise.all(toLoad.map(async ({ acara }) => {
-      try {
-        const snap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', acara.id, 'heat'))
-        const heats = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        // Guna heat final yang ada keputusan (diterima) — kalau 1 heat guna terus
-        const final =
-          heats.find(h => ['final', 'terus_final'].includes(h.fasa) && h.statusKeputusan === 'diterima') ||
-          heats.find(h => ['final', 'terus_final'].includes(h.fasa)) ||
-          (heats.length === 1 ? heats[0] : null)
-        return { acaraId: acara.id, heat: final || false }
-      } catch {
-        return { acaraId: acara.id, heat: false }
-      }
-    })).then(results => {
-      setHeatCache(prev => {
-        const next = { ...prev }
-        results.forEach(({ acaraId, heat }) => { next[acaraId] = heat })
-        return next
+  async function reloadHeats() {
+    const kId = kejIdRef.current
+    const acaraIds = jadualIdsRef.current
+    if (!kId || !acaraIds.length || reloadingHeats) return
+    setReloadingHeats(true)
+    try {
+      const SELESAI = ['diterima', 'rasmi']
+      const results = await Promise.allSettled(
+        acaraIds.map(async aId => {
+          const snap = await getDocs(collection(db, 'kejohanan', kId, 'acara', aId, 'heat'))
+          const heats = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          const finalHeat = heats.find(
+            h => ['final', 'terus_final'].includes(h.fasa) && SELESAI.includes(h.statusKeputusan)
+          )
+          if (finalHeat) return { aId, heat: finalHeat }
+          if (heats.length === 1 && SELESAI.includes(heats[0].statusKeputusan))
+            return { aId, heat: heats[0] }
+          return { aId, heat: false }
+        })
+      )
+      const newCache = {}
+      results.forEach(r => {
+        if (r.status === 'fulfilled') newCache[r.value.aId] = r.value.heat
       })
-    })
-  }, [selDay, kejId, acaraByDay]) // eslint-disable-line
+      setHeatCache(newCache)
+    } catch (e) {
+      console.error(e)
+    } finally { setReloadingHeats(false) }
+  }
 
   // ── Derived: acara rasmi untuk hari terpilih ──────────────────────────────
 
   const itemsSelDay  = (acaraByDay[selDay] || [])
-  // Acara yang ada heat (rasmi atau draf) — boleh dicetak
+  const STATUS_SELESAI = ['diterima', 'rasmi']
   const rasmiItems   = itemsSelDay.filter(({ acara }) => {
     const h = heatCache[acara.id]
-    return h && h !== 'loading'
+    return h && STATUS_SELESAI.includes(h.statusKeputusan)
   })
-  const loadingHeats = itemsSelDay.some(({ acara }) => heatCache[acara.id] === 'loading')
+  const loadingHeats = reloadingHeats
 
   // ── Cetak PDF ─────────────────────────────────────────────────────────────
 
@@ -637,7 +659,7 @@ export default function CetakKeputusan() {
               const items    = acaraByDay[date] || []
               const nRasmi   = items.filter(({ acara }) => {
                 const h = heatCache[acara.id]
-                return h && h !== 'loading'
+                return h && h !== 'loading' && ['diterima', 'rasmi'].includes(h.statusKeputusan)
               }).length
               const loading  = items.some(({ acara }) => heatCache[acara.id] === 'loading')
               const isActive = date === selDay
@@ -670,13 +692,25 @@ export default function CetakKeputusan() {
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
 
               {/* Header hari */}
-              <div className="px-4 py-3 bg-[#003399] text-white">
-                <p className="text-xs font-bold">
-                  Hari {days.indexOf(selDay) + 1} — {fmtTarikh(selDay)}
-                </p>
-                <p className="text-[10px] text-white/70 mt-0.5">
-                  {rasmiItems.length} acara rasmi daripada {itemsSelDay.length} acara
-                </p>
+              <div className="px-4 py-3 bg-[#003399] text-white flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold">
+                    Hari {days.indexOf(selDay) + 1} — {fmtTarikh(selDay)}
+                  </p>
+                  <p className="text-[10px] text-white/70 mt-0.5">
+                    {rasmiItems.length} acara rasmi daripada {itemsSelDay.length} acara
+                  </p>
+                </div>
+                <button
+                  onClick={reloadHeats}
+                  disabled={reloadingHeats}
+                  className="text-[10px] font-bold px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-white transition-colors flex items-center gap-1 disabled:opacity-60"
+                >
+                  <svg className={`w-3 h-3 ${reloadingHeats ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {reloadingHeats ? 'Memuatkan…' : 'Muat Semula'}
+                </button>
               </div>
 
               {/* Loading heats */}
@@ -699,7 +733,7 @@ export default function CetakKeputusan() {
                 <div className="divide-y divide-gray-50">
                   {itemsSelDay.map(({ acara, masaMula, lokasi }) => {
                     const heat     = heatCache[acara.id]
-                    const isRasmi  = heat && heat !== 'loading'
+                    const isRasmi  = heat && heat !== 'loading' && ['diterima', 'rasmi'].includes(heat.statusKeputusan)
                     const isLoad   = heat === 'loading'
                     const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
                     const isRelay  = acara.jenisAcara === 'relay'

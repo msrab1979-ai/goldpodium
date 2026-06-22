@@ -49,6 +49,7 @@ const NAV_ITEMS = [
       // Paparan data — semua staff boleh lihat kecuali pengurus_pasukan
       { label: 'Rekod Semasa',     path: '/dashboard/rekod',       icon: 'star',        roles: ['superadmin', 'pengurus_teknik', 'admin', 'pencatat', 'viewer'] },
       { label: 'Olahragawan',      path: '/dashboard/olahragawan', icon: 'award',       roles: ['superadmin', 'admin', 'pengurus_teknik', 'pencatat', 'viewer'] },
+      { label: 'Analisa Pingat',   path: '/dashboard/analisapingat', icon: 'medal',    roles: ['superadmin', 'admin', 'pengurus_teknik'] },
       { label: 'Cetak Acara',      path: '/dashboard/cetak',       icon: 'file',        roles: ['superadmin', 'admin', 'pengurus_teknik', 'urusetia', 'pencatat'] },
       { label: 'Buku Kejohanan',   path: '/dashboard/buku',        icon: 'file',        roles: ['superadmin', 'admin', 'pengurus_teknik', 'urusetia'] },
       { label: 'Cetak Keputusan', path: '/dashboard/cetakkeputusan', icon: 'file',     roles: ['superadmin', 'admin', 'pengurus_teknik', 'urusetia'] },

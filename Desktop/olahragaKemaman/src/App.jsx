@@ -20,6 +20,7 @@ import InputKeputusanAdmin from './pages/admin/InputKeputusan'
 import InputKeputusanPencatat from './pages/pencatat/InputKeputusan'
 import CetakanHadiah from './pages/pencatat/CetakanHadiah'
 import Olahragawan from './pages/admin/Olahragawan'
+import AnalisaPingat from './pages/admin/AnalisaPingat'
 import Rekod from './pages/admin/Rekod'
 import CetakAcara from './pages/admin/CetakAcara'
 import BukuKejohanan from './pages/admin/BukuKejohanan'
@@ -165,6 +166,11 @@ function AppRoutes() {
       <Route path="/dashboard/olahragawan" element={
         <ProtectedRoute>
           <DashboardLayout><Olahragawan /></DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/analisapingat" element={
+        <ProtectedRoute>
+          <DashboardLayout><AnalisaPingat /></DashboardLayout>
         </ProtectedRoute>
       } />
       <Route path="/dashboard/cetak" element={
