@@ -268,12 +268,22 @@ metadata:
 - **Fix**: Load `sekolah` collection → bina `skolMap` → guna `getNamaSkol()` dalam PDF + Excel
 - **Fail**: `src/pages/admin/CetakKeputusan.jsx`
 
-### InputKeputusan — Mod Semua Peserta
+### InputKeputusan — Mod Semua Peserta (v2 — carian + hantar)
 - **Feature**: Toggle "☰ Semua Peserta" — semua heat dalam satu table
 - **Kolum**: H | Lrg | BIB | Nama/Sekolah | Masa | Kddk | Catatan
+- **Carian BIB**: box carian kuning, highlight + sort ke atas (sama seperti heat biasa)
 - **Sort**: Auto by masa selepas blur input → kedudukan auto
-- **Save**: Split by heatId, simpan setiap heat berasingan — logik backend tidak berubah
+- **Butang**: "Simpan Draf" (simpan sahaja) + "HANTAR Semua (N Heat) ▶" (simpan + diterima + postRasmi semua heat)
+- **JanaFinalPanel**: muncul dalam panel mod semua bila semua heat eligible
+- **Logik HANTAR**: loop setiap heat → updateDoc(diterima) → runPostRasmi — sama seperti heat biasa
 - **Scope**: Larian lorong + mass_start sahaja, boleh edit sahaja
+- **Fail**: `src/pages/pencatat/InputKeputusan.jsx`
+
+### InputKeputusan — Buang Countdown Auto-Rasmi (22 Jun 2026)
+- **Dibuang**: flow `tidak_rasmi` → countdown timer → auto-rasmi selepas 15 min
+- **Flow baru**: HANTAR → terus `diterima` (tiada countdown, tiada auto-rasmi)
+- **Deep remove**: `fmtCountdown`, `tsToMs`, `timerMenit`, `pubMs`, `countdownMs`, `autoRasmiExpired`, `isPublished`, `isBantahanDiterima`, auto-rasmi logic dalam `selectHeat`, `countdownTamat` dari listener, `publishedAt` dari handleHantar
+- **Kekal**: `tidak_rasmi` dalam display badge + `janaFinalEligible` — untuk backward compat data lama
 - **Fail**: `src/pages/pencatat/InputKeputusan.jsx`
 
 ### HealthCheck — Panel Bersih Badge Rekod (Imbas + Tally)
