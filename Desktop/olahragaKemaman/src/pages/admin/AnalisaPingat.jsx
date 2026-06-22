@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy, doc, getDoc } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -89,11 +89,14 @@ export default function AnalisaPingat() {
         for (const aDoc of acaraSnap.docs) {
           const ad = aDoc.data()
           if (ad.jenisAcara === 'relay') continue
+          // Acara ada parentAcaraId = acara final (walaupun fasa dalam heat null)
+          const isFinalAcara = !!ad.parentAcaraId
 
           const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', aDoc.id, 'heat'))
           for (const hDoc of heatSnap.docs) {
             const hd = hDoc.data()
-            if (!FASA_FINAL.includes(hd.fasa))          continue
+            const fasaOk = FASA_FINAL.includes(hd.fasa) || (isFinalAcara && hd.fasa == null)
+            if (!fasaOk)                                  continue
             if (!STATUS_SAH.includes(hd.statusKeputusan)) continue
 
             for (const p of (hd.peserta || [])) {
@@ -164,7 +167,110 @@ export default function AnalisaPingat() {
       })
   }, [atletMap, selKat])
 
-  const [cetakLoading, setCetakLoading] = useState(false)
+  const [cetakLoading,  setCetakLoading]  = useState(false)
+  const [auditLoading,  setAuditLoading]  = useState(false)
+  const [auditResult,   setAuditResult]   = useState(null)
+  // auditResult: { medalBeza: [], rekodStale: [], rekodPending: [], rekodSah: 0, totalAtlet: 0 }
+
+  async function handleAudit() {
+    setAuditLoading(true)
+    setAuditResult(null)
+    try {
+      // Cari kejohananId semula
+      const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+      if (kejSnap.empty) return
+      const kejId = kejSnap.docs[0].id
+
+      // Load semua mata_olahragawan untuk kejohanan ini
+      const mataSnap = await getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
+
+      // Load rekod library (semua — aktif + tuntutan)
+      const rekodSnap = await getDocs(collection(db, 'rekod'))
+      const rekodLib     = {} // key → data (aktif)
+      const tuntutanLib  = {} // key → data (tuntutan pending)
+      rekodSnap.docs.forEach(d => {
+        if (d.id.endsWith('_tuntutan')) tuntutanLib[d.id.replace('_tuntutan', '')] = d.data()
+        else rekodLib[d.id] = d.data()
+      })
+
+      const medalBeza    = []
+      const rekodStale   = []
+      const rekodPending = []
+      let   rekodSah     = 0
+
+      mataSnap.docs.forEach(d => {
+        const data  = d.data()
+        const noKP  = data.noKP || d.id.replace(`_${kejId}`, '')
+        const nama  = data.namaAtlet  || noKP
+        const skol  = data.namaSekolah || data.kodSekolah || '—'
+        const katKod = data.kategoriKod || ''
+
+        // ── Semakan 1: Medal cross-check ──────────────────────────────────────
+        // Sumber Firestore: pingat_emas / pingat_perak / pingat_gangsa dalam mata_olahragawan
+        const fsEmas   = data.pingat_emas   || 0
+        const fsPerak  = data.pingat_perak  || 0
+        const fsGangsa = data.pingat_gangsa || 0
+        const fsMata   = data.jumlahMata    || 0
+
+        // Sumber dikira semula: dari atletMap (heat final)
+        const atlet = atletMap[noKP]
+        if (atlet) {
+          const kirEmas   = atlet.pingat[1] || 0
+          const kirPerak  = atlet.pingat[2] || 0
+          const kirGangsa = atlet.pingat[3] || 0
+          const kirMata   = atlet.mata       || 0
+
+          if (fsEmas !== kirEmas || fsPerak !== kirPerak || fsGangsa !== kirGangsa) {
+            medalBeza.push({
+              noKP, nama, skol, katKod,
+              fs:  { emas: fsEmas,  perak: fsPerak,  gangsa: fsGangsa,  mata: fsMata  },
+              kir: { emas: kirEmas, perak: kirPerak, gangsa: kirGangsa, mata: kirMata },
+            })
+          }
+        }
+
+        // ── Semakan 2: Rekod cross-check ──────────────────────────────────────
+        Object.entries(data).forEach(([key, val]) => {
+          if (!key.startsWith('rekod_')) return
+          if (!val?.namaAcara) return
+
+          // Bina rekodKey — guna namaAcaraPendek (sama seperti postRasmiUtils)
+          const rekodNama = val.namaAcaraPendek || val.namaAcara || ''
+          const rKey = [rekodNama, val.jantina || data.jantina || '', val.kategoriKod || katKod, val.peringkat || 'D']
+            .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+
+          const inLib      = !!rekodLib[rKey]
+          const inTuntutan = !!tuntutanLib[rKey]
+
+          if (inLib) {
+            // Rekod sudah disahkan dalam library
+            const lib = rekodLib[rKey]
+            const libNoKP = lib.noKP || ''
+            // Semak sama ada atlet dalam library match noKP
+            if (libNoKP && libNoKP !== noKP) {
+              // Rekod disahkan tapi bukan atlet ini — field stale
+              rekodStale.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Rekod disahkan — pemegang lain', libNoKP, libNama: lib.namaAtlet || '—' })
+            } else {
+              rekodSah++
+            }
+          } else if (inTuntutan) {
+            // Tuntutan masih pending
+            rekodPending.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey })
+          } else {
+            // Tiada dalam library dan tiada tuntutan — stale
+            rekodStale.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Tiada dalam library & tiada tuntutan' })
+          }
+        })
+      })
+
+      setAuditResult({ medalBeza, rekodStale, rekodPending, rekodSah, totalAtlet: mataSnap.size })
+    } catch (e) {
+      console.error('audit:', e)
+      setAuditResult({ err: e.message })
+    } finally {
+      setAuditLoading(false)
+    }
+  }
 
   function cetakPDF() {
     setCetakLoading(true)
@@ -328,6 +434,187 @@ export default function AnalisaPingat() {
           </svg>
           {cetakLoading ? 'Jana PDF…' : 'Cetak PDF'}
         </button>
+      </div>
+
+      {/* ── Panel Audit ── */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        {/* Header panel */}
+        <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
+          <div>
+            <p className="text-xs font-bold text-gray-700">Audit Konsistensi Data</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">Cross-check medal & rekod antara Firestore vs kiraan semula dari heat</p>
+          </div>
+          <button
+            onClick={handleAudit}
+            disabled={auditLoading || Object.keys(atletMap).length === 0}
+            className="shrink-0 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors"
+          >
+            {auditLoading ? '⏳ Mengaudit…' : '🔍 Jalankan Audit'}
+          </button>
+        </div>
+
+        {/* Hasil audit */}
+        {auditResult && (
+          auditResult.err ? (
+            <div className="px-4 py-3 text-xs text-red-600">✗ {auditResult.err}</div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+
+              {/* Summary row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100">
+                <div className={`px-4 py-3 text-center ${auditResult.medalBeza.length > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+                  <p className={`text-xl font-black ${auditResult.medalBeza.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {auditResult.medalBeza.length === 0 ? '✓' : auditResult.medalBeza.length}
+                  </p>
+                  <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Medal Berbeza</p>
+                </div>
+                <div className={`px-4 py-3 text-center ${auditResult.rekodStale.length > 0 ? 'bg-amber-50' : 'bg-green-50'}`}>
+                  <p className={`text-xl font-black ${auditResult.rekodStale.length > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                    {auditResult.rekodStale.length === 0 ? '✓' : auditResult.rekodStale.length}
+                  </p>
+                  <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Rekod Stale</p>
+                </div>
+                <div className="px-4 py-3 text-center bg-blue-50">
+                  <p className="text-xl font-black text-blue-600">{auditResult.rekodPending.length}</p>
+                  <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Rekod Pending</p>
+                </div>
+                <div className="px-4 py-3 text-center bg-green-50">
+                  <p className="text-xl font-black text-green-600">{auditResult.rekodSah}</p>
+                  <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Rekod Sah</p>
+                </div>
+              </div>
+
+              {/* Medal berbeza */}
+              {auditResult.medalBeza.length > 0 && (
+                <div>
+                  <div className="px-4 py-2 bg-red-50 border-b border-red-100 flex items-start gap-2 flex-wrap">
+                    <span className="text-[10px] font-black text-red-700 uppercase tracking-wide">⚠ Medal Tidak Konsisten — {auditResult.medalBeza.length} atlet</span>
+                    <span className="text-[9px] text-red-500">FS = nilai dalam Firestore (termasuk data lama saringan) · Kir = dikira semula dari heat final sahaja. Jika FS lebih tinggi = data lama saringan belum dibersihkan — hantar semula heat final untuk betulkan.</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-red-50/60 border-b border-red-100 text-left">
+                          <th className="px-3 py-2 text-red-600 font-bold">Atlet</th>
+                          <th className="px-3 py-2 text-red-600 font-bold">Kat.</th>
+                          <th className="px-3 py-2 text-center text-yellow-600 font-bold">🥇 FS</th>
+                          <th className="px-3 py-2 text-center text-yellow-600 font-bold">🥇 Kir</th>
+                          <th className="px-3 py-2 text-center text-gray-500 font-bold">🥈 FS</th>
+                          <th className="px-3 py-2 text-center text-gray-500 font-bold">🥈 Kir</th>
+                          <th className="px-3 py-2 text-center text-amber-700 font-bold">🥉 FS</th>
+                          <th className="px-3 py-2 text-center text-amber-700 font-bold">🥉 Kir</th>
+                          <th className="px-3 py-2 text-center text-[#003399] font-bold">Mata FS</th>
+                          <th className="px-3 py-2 text-center text-[#003399] font-bold">Mata Kir</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-red-50">
+                        {auditResult.medalBeza.map((x, i) => (
+                          <tr key={i} className="bg-white hover:bg-red-50/30">
+                            <td className="px-3 py-2.5">
+                              <p className="font-semibold text-gray-800">{x.nama}</p>
+                              <p className="text-[10px] text-gray-400">{x.skol}</p>
+                              <p className="text-[9px] text-gray-300 font-mono">{x.noKP}</p>
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-500 text-[10px]">{x.katKod}</td>
+                            {[
+                              [x.fs.emas,   x.kir.emas,   'text-yellow-600'],
+                              [x.fs.perak,  x.kir.perak,  'text-gray-500'],
+                              [x.fs.gangsa, x.kir.gangsa, 'text-amber-700'],
+                            ].map(([fs, kir, cls], j) => (
+                              <>
+                                <td key={`fs${j}`} className={`px-3 py-2.5 text-center font-black ${cls} ${fs !== kir ? 'bg-red-100' : ''}`}>{fs || '—'}</td>
+                                <td key={`kir${j}`} className={`px-3 py-2.5 text-center font-black ${cls} ${fs !== kir ? 'bg-red-100' : ''}`}>{kir || '—'}</td>
+                              </>
+                            ))}
+                            <td className={`px-3 py-2.5 text-center font-black text-[#003399] ${x.fs.mata !== x.kir.mata ? 'bg-red-100' : ''}`}>{x.fs.mata || '—'}</td>
+                            <td className={`px-3 py-2.5 text-center font-black text-[#003399] ${x.fs.mata !== x.kir.mata ? 'bg-red-100' : ''}`}>{x.kir.mata || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Rekod stale */}
+              {auditResult.rekodStale.length > 0 && (
+                <div>
+                  <div className="px-4 py-2 bg-amber-50 border-b border-amber-100">
+                    <span className="text-[10px] font-black text-amber-700 uppercase tracking-wide">⚠ Rekod Stale — {auditResult.rekodStale.length} kes</span>
+                    <span className="text-[9px] text-amber-500 ml-2">Field rekod_ dalam mata_olahragawan tidak selari dengan library</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-amber-50/60 border-b border-amber-100 text-left">
+                          <th className="px-3 py-2 text-amber-700 font-bold">Atlet</th>
+                          <th className="px-3 py-2 text-amber-700 font-bold">Nama Acara</th>
+                          <th className="px-3 py-2 text-amber-700 font-bold">Sebab</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-50">
+                        {auditResult.rekodStale.map((x, i) => (
+                          <tr key={i} className="bg-white hover:bg-amber-50/30">
+                            <td className="px-3 py-2.5">
+                              <p className="font-semibold text-gray-800">{x.nama}</p>
+                              <p className="text-[10px] text-gray-400">{x.skol}</p>
+                            </td>
+                            <td className="px-3 py-2.5 font-semibold text-gray-700">{x.namaAcara}</td>
+                            <td className="px-3 py-2.5">
+                              <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">{x.sebab}</span>
+                              {x.libNama && <p className="text-[10px] text-gray-400 mt-0.5">Pemegang semasa: {x.libNama}</p>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Rekod pending */}
+              {auditResult.rekodPending.length > 0 && (
+                <div>
+                  <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                    <span className="text-[10px] font-black text-blue-700 uppercase tracking-wide">⏳ Rekod Pending Sahkan — {auditResult.rekodPending.length} kes</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-blue-50/60 border-b border-blue-100 text-left">
+                          <th className="px-3 py-2 text-blue-700 font-bold">Atlet</th>
+                          <th className="px-3 py-2 text-blue-700 font-bold">Nama Acara</th>
+                          <th className="px-3 py-2 text-blue-700 font-bold">Rekod Key</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-blue-50">
+                        {auditResult.rekodPending.map((x, i) => (
+                          <tr key={i} className="bg-white hover:bg-blue-50/30">
+                            <td className="px-3 py-2.5">
+                              <p className="font-semibold text-gray-800">{x.nama}</p>
+                              <p className="text-[10px] text-gray-400">{x.skol}</p>
+                            </td>
+                            <td className="px-3 py-2.5 font-semibold text-gray-700">{x.namaAcara}</td>
+                            <td className="px-3 py-2.5 font-mono text-[9px] text-gray-400">{x.rKey}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Semua bersih */}
+              {auditResult.medalBeza.length === 0 && auditResult.rekodStale.length === 0 && (
+                <div className="px-4 py-4 text-center">
+                  <p className="text-sm font-bold text-green-700">✓ Data konsisten — tiada isu dijumpai</p>
+                  <p className="text-[10px] text-gray-400 mt-1">{auditResult.totalAtlet} atlet diaudit · {auditResult.rekodSah} rekod sah · {auditResult.rekodPending.length} rekod pending</p>
+                </div>
+              )}
+
+            </div>
+          )
+        )}
       </div>
 
       {/* Tab kategori */}
