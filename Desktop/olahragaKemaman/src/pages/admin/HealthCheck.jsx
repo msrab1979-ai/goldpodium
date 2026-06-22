@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react'
-import { collection, getDocs, getDocsFromServer, query, where, doc, deleteDoc, updateDoc, writeBatch, serverTimestamp } from 'firebase/firestore'
+import { collection, getDocs, getDocsFromServer, query, where, doc, deleteDoc, updateDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 
@@ -59,6 +59,272 @@ export default function HealthCheck() {
   const [running, setRunning]   = useState(false)
   const [result, setResult]     = useState(null)
   const [progress, setProgress] = useState('')
+
+  // ── Bersih Badge Rekod ────────────────────────────────────────────────────────
+  const [badgeRunning, setBadgeRunning] = useState(false)
+  const [badgeImbas, setBadgeImbas]     = useState(null)
+  const [badgeBuang, setBadgeBuang]     = useState(false)
+  const [badgeDone, setBadgeDone]       = useState(null)
+
+  async function jalanImbas() {
+    setBadgeRunning(true)
+    setBadgeImbas(null)
+    setBadgeDone(null)
+    try {
+      const kejId = await getKejId()
+
+      // Load semua rekod — bina map: jantina_kategoriKod → rekod terbaik { prestasi, unit }
+      // Guna kategoriKod+jantina sahaja — nama acara format berbeza-beza
+      const rekodSnap = await getDocs(collection(db, 'rekod'))
+      const rekodMap = {}
+      for (const r of rekodSnap.docs) {
+        const d = r.data()
+        if (r.id.endsWith('_tuntutan')) continue
+        const k = `${d.jantina||''}_${d.kategoriKod||''}`
+        const unit = d.unit || 's'
+        const prestasi = Number(d.prestasi)
+        if (!rekodMap[k]) {
+          rekodMap[k] = { prestasi, unit }
+        } else {
+          // ambil rekod terbaik: larian = terkecil, padang = terbesar
+          if (unit === 's' && prestasi < rekodMap[k].prestasi) rekodMap[k] = { prestasi, unit }
+          if (unit !== 's' && prestasi > rekodMap[k].prestasi) rekodMap[k] = { prestasi, unit }
+        }
+      }
+
+      // normaliseSaat — sama seperti postRasmiUtils: format lama mm.ss (< 10 minit) → saat tulen
+      function normaliseSaat(val) {
+        const n = Number(val)
+        if (isNaN(n)) return null
+        // format lama: nilai < 10 bermaksud mm.ss (cth 2.58 = 2 min 58s)
+        if (n < 10) {
+          const mm = Math.floor(n)
+          const ss = Math.round((n - mm) * 100)
+          return mm * 60 + ss
+        }
+        // format baru: saat tulen (cth 178.34)
+        // format lama panjang: cth 28.06 = 28 min 6s — nilai > 10 tapi masih mm.ss
+        // detect: bahagian perpuluhan ≤ 0.59 dan nilai keseluruhan boleh jadi minit
+        const fracPart = n - Math.floor(n)
+        if (fracPart <= 0.595 && Math.floor(n) >= 1) {
+          // semak jika ini mungkin mm.ss — jika prestasi > 10 min dalam saat tulen mustahil untuk acara biasa
+          // heuristik: jika nilai < 100 dan ada perpuluhan ≤ 0.59, anggap mm.ss
+          if (n < 100 && fracPart > 0) {
+            const mm = Math.floor(n)
+            const ss = Math.round(fracPart * 100)
+            if (ss < 60) return mm * 60 + ss
+          }
+        }
+        return n
+      }
+
+      const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+      const senarai = []
+      for (const acaraDoc of acaraSnap.docs) {
+        const ad = acaraDoc.data()
+        const rekodKey = `${ad.jantina||''}_${ad.kategoriKod||''}`
+        const rekodSemasa = rekodMap[rekodKey] || null
+
+        const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', acaraDoc.id, 'heat'))
+        for (const hDoc of heatSnap.docs) {
+          const hd = hDoc.data()
+          const peserta = hd.peserta || []
+          const badgePeserta = peserta.filter(p => p.pecahRekod || p.samaiRekod)
+          if (badgePeserta.length === 0) continue
+
+          const pesertaInfo = badgePeserta.map(p => {
+            let statusPrestasi = 'tiada_rekod'
+            let notaTally = ''
+            if (rekodSemasa && p.keputusan != null && p.keputusan !== '') {
+              const prestasiAtlet = Number(p.keputusan)
+              const rekorSaat    = normaliseSaat(rekodSemasa.prestasi)
+              const atletSaat    = prestasiAtlet // data baru sudah saat tulen
+              if (rekodSemasa.unit === 's') {
+                // larian: lebih kecil = lebih baik
+                if (atletSaat <= rekorSaat)      statusPrestasi = 'betul'
+                else                             statusPrestasi = 'salah'
+                notaTally = `atlet=${atletSaat?.toFixed(2)}s rekod=${rekorSaat?.toFixed(2)}s`
+              } else {
+                // padang: lebih besar = lebih baik
+                if (prestasiAtlet >= rekodSemasa.prestasi) statusPrestasi = 'betul'
+                else                                        statusPrestasi = 'salah'
+                notaTally = `atlet=${prestasiAtlet} rekod=${rekodSemasa.prestasi}`
+              }
+            } else if (!rekodSemasa) {
+              statusPrestasi = 'tiada_rekod'
+              notaTally = 'tiada rekod dalam sistem'
+            } else {
+              statusPrestasi = 'tiada_prestasi'
+              notaTally = 'tiada keputusan dalam heat'
+            }
+            return {
+              teks:   `${p.noBib || '—'} ${p.namaAtlet || '—'}`,
+              jenis:  p.pecahRekod ? '🏆 pecah' : '🤝 samai',
+              statusPrestasi,
+              notaTally,
+            }
+          })
+
+          // Heat SAH jika SEMUA badge peserta prestasi betul
+          const adaSalah = pesertaInfo.some(p => p.statusPrestasi === 'salah')
+          const adaTiadaRekod = pesertaInfo.some(p => p.statusPrestasi === 'tiada_rekod')
+          const adaRekod = !adaTiadaRekod && !adaSalah
+
+          senarai.push({
+            acaraId:    acaraDoc.id,
+            heatId:     hDoc.id,
+            label:      `#${ad.noAcara || acaraDoc.id} ${ad.namaAcara || '—'} — Heat ${hd.noHeat || hDoc.id}`,
+            adaRekod,
+            peserta:    pesertaInfo,
+            hRef:       hDoc.ref,
+            allPeserta: peserta,
+          })
+        }
+      }
+      setBadgeImbas({ senarai, kejId })
+    } catch (e) {
+      setBadgeImbas({ senarai: [], error: e.message })
+    }
+    setBadgeRunning(false)
+  }
+
+  async function jalanBuangBadge() {
+    if (!badgeImbas) return
+    // Buang yang tiada rekod ATAU prestasi tidak layak
+    const sasaran = badgeImbas.senarai.filter(item => !item.adaRekod)
+    if (sasaran.length === 0) return
+    if (!window.confirm(`Buang badge TIDAK SAH dari ${sasaran.length} heat?\n\nBadge yang SAH TIDAK akan disentuh.`)) return
+    setBadgeBuang(true)
+    let heatDikemas = 0, pesertaDikemas = 0
+    try {
+      for (const item of sasaran) {
+        const newPeserta = item.allPeserta.map(p => {
+          if (p.pecahRekod || p.samaiRekod) {
+            const { pecahRekod, samaiRekod, ...rest } = p
+            return rest
+          }
+          return p
+        })
+        await updateDoc(item.hRef, { peserta: newPeserta })
+        heatDikemas++
+        pesertaDikemas += item.peserta.length
+      }
+      setBadgeDone({ heat: heatDikemas, badge: pesertaDikemas })
+      setBadgeImbas(null)
+    } catch (e) {
+      setBadgeDone({ error: e.message })
+    }
+    setBadgeBuang(false)
+  }
+
+  // ── Reset Keputusan Acara ─────────────────────────────────────────────────────
+  const [resetAcaraId, setResetAcaraId] = useState('')
+  const [resetLog, setResetLog]         = useState([])
+  const [resetting, setResetting]       = useState(false)
+
+  async function jalanResetAcara() {
+    const acaraId = resetAcaraId.trim()
+    if (!acaraId) { setResetLog(['❌ Masukkan No Acara dahulu.']); return }
+    if (!window.confirm(`Reset SEMUA keputusan dalam acara ${acaraId}?\n\nPeserta dan lorong KEKAL. Hanya keputusan, rankDalamHeat dan status akan dikosongkan.`)) return
+    setResetting(true)
+    setResetLog([`🔍 Mencari acara ${acaraId}...`])
+    try {
+      const kejId = await getKejId()
+      const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat'))
+      if (heatSnap.empty) { setResetLog(l => [...l, '⚠ Tiada heat dijumpai untuk acara ini.']); setResetting(false); return }
+      setResetLog(l => [...l, `✓ Jumpa ${heatSnap.docs.length} heat`])
+      for (const hDoc of heatSnap.docs) {
+        const peserta = hDoc.data().peserta || []
+        const resetPeserta = peserta.map(p => ({
+          ...p,
+          keputusan:     null,
+          rankDalamHeat: null,
+          status:        'belum',
+          cubaan:        p.cubaan ? p.cubaan.map(() => null) : p.cubaan,
+          pecahRekod:    undefined,
+          samaiRekod:    undefined,
+        })).map(p => {
+          const { pecahRekod, samaiRekod, ...rest } = p
+          return rest
+        })
+        await updateDoc(hDoc.ref, {
+          peserta:         resetPeserta,
+          statusKeputusan: 'kosong',
+          postRasmiSelesai: false,
+        })
+        setResetLog(l => [...l, `✓ Heat ${hDoc.id} — ${peserta.length} peserta direset`])
+      }
+      setResetLog(l => [...l, '✅ Selesai. Semua keputusan acara ' + acaraId + ' telah dikosongkan.'])
+    } catch (e) {
+      setResetLog(l => [...l, '❌ Ralat: ' + e.message])
+    }
+    setResetting(false)
+  }
+
+  // ── Pindah Peserta Antara Heat ───────────────────────────────────────────────
+  const [pindahAcaraId, setPindahAcaraId] = useState('')
+  const [pindahNoBib,   setPindahNoBib]   = useState('')
+  const [pindahDariH,   setPindahDariH]   = useState('')
+  const [pindahKeH,     setPindahKeH]     = useState('')
+  const [pindahLorong,  setPindahLorong]  = useState('')
+  const [pindahLog,     setPindahLog]     = useState([])
+  const [pindahing,     setPindahing]     = useState(false)
+
+  async function jalanPindah() {
+    const acaraId = pindahAcaraId.trim()
+    const noBib   = pindahNoBib.trim().toUpperCase()
+    const dariH   = pindahDariH.trim()
+    const keH     = pindahKeH.trim()
+    const lorong  = Number(pindahLorong.trim())
+    if (!acaraId || !noBib || !dariH || !keH || !lorong) {
+      setPindahLog(['❌ Semua field wajib diisi.']); return
+    }
+    if (!window.confirm(`Pindah ${noBib} dari Heat ${dariH} ke Heat ${keH} Lorong ${lorong}?\n\nTindakan ini tidak boleh dibatalkan.`)) return
+    setPindahing(true)
+    setPindahLog([`🔍 Mencari kejohanan aktif...`])
+    try {
+      const kejId = await getKejId()
+      const dariRef = doc(db, 'kejohanan', kejId, 'acara', acaraId, 'heat', `${acaraId}-H${dariH}`)
+      const keRef   = doc(db, 'kejohanan', kejId, 'acara', acaraId, 'heat', `${acaraId}-H${keH}`)
+
+      const dariDoc = await getDocs(query(collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat')))
+      const dariHDoc = dariDoc.docs.find(d => d.id === `${acaraId}-H${dariH}`)
+      const keHDoc   = dariDoc.docs.find(d => d.id === `${acaraId}-H${keH}`)
+
+      if (!dariHDoc) { setPindahLog(l => [...l, `❌ Heat ${dariH} tidak dijumpai.`]); setPindahing(false); return }
+      if (!keHDoc)   { setPindahLog(l => [...l, `❌ Heat ${keH} tidak dijumpai.`]); setPindahing(false); return }
+
+      const dariPeserta = dariHDoc.data().peserta || []
+      const kePeserta   = keHDoc.data().peserta   || []
+
+      // Cari peserta dalam heat asal
+      const targetIdx = dariPeserta.findIndex(p => (p.noBib || '').toUpperCase() === noBib)
+      if (targetIdx === -1) { setPindahLog(l => [...l, `❌ ${noBib} tidak dijumpai dalam Heat ${dariH}.`]); setPindahing(false); return }
+
+      const targetP = { ...dariPeserta[targetIdx], lorong, status: 'belum', keputusan: null, rankDalamHeat: null }
+
+      // Semak lorong destinasi kosong
+      const lorongDuduki = kePeserta.find(p => p.lorong === lorong)
+      if (lorongDuduki) { setPindahLog(l => [...l, `❌ Lorong ${lorong} dalam Heat ${keH} dah ada peserta: ${lorongDuduki.noBib}.`]); setPindahing(false); return }
+
+      // Buang dari heat asal
+      const newDariPeserta = dariPeserta.filter((_, i) => i !== targetIdx)
+      // Tambah ke heat destinasi
+      const newKePeserta = [...kePeserta, targetP].sort((a, b) => (a.lorong || 0) - (b.lorong || 0))
+
+      await updateDoc(dariHDoc.ref, { peserta: newDariPeserta, updatedAt: serverTimestamp() })
+      await updateDoc(keHDoc.ref,   { peserta: newKePeserta,   updatedAt: serverTimestamp() })
+
+      setPindahLog(l => [...l,
+        `✓ ${noBib} dibuang dari Heat ${dariH}`,
+        `✓ ${noBib} ditambah ke Heat ${keH} Lorong ${lorong}`,
+        `✅ Selesai.`
+      ])
+    } catch (e) {
+      setPindahLog(l => [...l, '❌ Ralat: ' + e.message])
+    }
+    setPindahing(false)
+  }
 
   // ── Panel Pembaikan Khas ──────────────────────────────────────────────────────
   const [fixNoKP, setFixNoKP]         = useState('')
@@ -494,6 +760,92 @@ export default function HealthCheck() {
         </div>
       )}
 
+      {/* ── Panel Reset Keputusan Acara ── */}
+      <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+        <div className="px-4 py-3 bg-red-50 border-b border-red-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          <p className="text-xs font-bold text-red-700 uppercase tracking-wide">Pembaikan Khas — Reset Keputusan Acara</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Kosongkan semua keputusan dalam satu acara. Peserta dan lorong <span className="font-semibold">KEKAL</span> — hanya masa, rank dan status dikosongkan.</p>
+          <div>
+            <label className="block text-[10px] font-bold text-gray-500 mb-1">No Acara</label>
+            <input value={resetAcaraId} onChange={e => setResetAcaraId(e.target.value)}
+              placeholder="cth: 215"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-300"/>
+          </div>
+          <button onClick={jalanResetAcara} disabled={resetting || !resetAcaraId.trim()}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+            {resetting ? 'Mereset...' : 'Reset Keputusan Acara Ini'}
+          </button>
+          {resetLog.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {resetLog.map((l, i) => (
+                <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Panel Pindah Peserta ── */}
+      <div className="bg-white rounded-xl border border-purple-200 overflow-hidden">
+        <div className="px-4 py-3 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+          <p className="text-xs font-bold text-purple-700 uppercase tracking-wide">Pembaikan Khas — Pindah Peserta Antara Heat</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Pindah seorang peserta dari satu heat ke heat lain dalam acara yang sama.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">No Acara</label>
+              <input value={pindahAcaraId} onChange={e => setPindahAcaraId(e.target.value)}
+                placeholder="cth: 215"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-300"/>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">No BIB Peserta</label>
+              <input value={pindahNoBib} onChange={e => setPindahNoBib(e.target.value.toUpperCase())}
+                placeholder="cth: L77"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-300"/>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">Dari Heat (no)</label>
+              <input value={pindahDariH} onChange={e => setPindahDariH(e.target.value)}
+                placeholder="cth: 1"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-300"/>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">Ke Heat (no)</label>
+              <input value={pindahKeH} onChange={e => setPindahKeH(e.target.value)}
+                placeholder="cth: 2"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-300"/>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">Lorong dalam Heat Destinasi</label>
+              <input value={pindahLorong} onChange={e => setPindahLorong(e.target.value)}
+                placeholder="cth: 8"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-300"/>
+            </div>
+          </div>
+          <button onClick={jalanPindah} disabled={pindahing || !pindahAcaraId.trim() || !pindahNoBib.trim() || !pindahDariH.trim() || !pindahKeH.trim() || !pindahLorong.trim()}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+            {pindahing ? 'Memindah...' : 'Pindah Peserta'}
+          </button>
+          {pindahLog.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {pindahLog.map((l, i) => (
+                <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Panel Pembaikan Khas ── */}
       <div className="bg-white rounded-xl border border-orange-200 overflow-hidden">
         <div className="px-4 py-3 bg-orange-50 border-b border-orange-100 flex items-center gap-2">
@@ -547,6 +899,116 @@ export default function HealthCheck() {
               {fixLog.map((l, i) => (
                 <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
               ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Panel Bersih Badge Rekod ── */}
+      <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
+        <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+          </svg>
+          <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Pembaikan Khas — Bersih Badge Rekod</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Imbas dahulu untuk lihat heat yang ada badge. Semak, kemudian buang.</p>
+
+          {/* Step 1: Imbas */}
+          {!badgeImbas && !badgeDone && (
+            <button onClick={jalanImbas} disabled={badgeRunning}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+              {badgeRunning ? (
+                <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Mengimbas...</>
+              ) : 'Imbas Badge'}
+            </button>
+          )}
+
+          {/* Step 2: Hasil imbas */}
+          {badgeImbas && (
+            <div className="space-y-3">
+              {badgeImbas.error && (
+                <p className="text-[11px] text-red-600">❌ Ralat: {badgeImbas.error}</p>
+              )}
+              {!badgeImbas.error && badgeImbas.senarai.length === 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-green-700 font-semibold">✅ Tiada badge rekod ditemui — sistem bersih.</p>
+                </div>
+              )}
+              {!badgeImbas.error && badgeImbas.senarai.length > 0 && (() => {
+                const yatim = badgeImbas.senarai.filter(i => !i.adaRekod)
+                const sah   = badgeImbas.senarai.filter(i => i.adaRekod)
+                return (
+                  <>
+                    <div className="flex gap-2 flex-wrap">
+                      <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠ {badgeImbas.senarai.length} heat ada badge</span>
+                      {yatim.length > 0 && <span className="text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">❌ {yatim.length} tidak sah (prestasi/rekod salah)</span>}
+                      {sah.length > 0   && <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">✅ {sah.length} sah (prestasi betul)</span>}
+                    </div>
+                    <div className="space-y-2 max-h-72 overflow-y-auto">
+                      {badgeImbas.senarai.map((item, i) => (
+                        <div key={i} className={`border rounded-lg px-3 py-2 ${item.adaRekod ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold">{item.adaRekod ? '✅ SAH' : '❌ TIDAK SAH'}</span>
+                            <p className="text-[11px] font-semibold text-gray-700">{item.label}</p>
+                          </div>
+                          {item.peserta.map((p, j) => (
+                            <div key={j} className="pl-2 mt-0.5">
+                              <p className="text-[10px] font-mono text-gray-600">{p.teks} — {p.jenis}</p>
+                              {p.notaTally && (
+                                <p className={`text-[10px] font-mono mt-0.5 ${p.statusPrestasi === 'salah' ? 'text-red-500' : p.statusPrestasi === 'betul' ? 'text-green-600' : 'text-gray-400'}`}>
+                                  {p.statusPrestasi === 'salah' ? '✗ ' : p.statusPrestasi === 'betul' ? '✓ ' : '? '}{p.notaTally}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 pt-1 flex-wrap">
+                      {yatim.length > 0 && (
+                        <button onClick={jalanBuangBadge} disabled={badgeBuang}
+                          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+                          {badgeBuang ? 'Membuang...' : `Buang ${yatim.length} Badge Tidak Sah`}
+                        </button>
+                      )}
+                      <button onClick={() => { setBadgeImbas(null); setBadgeDone(null) }} disabled={badgeBuang}
+                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+                        Batal
+                      </button>
+                    </div>
+                    {yatim.length === 0 && (
+                      <p className="text-[11px] text-green-700 font-semibold">✅ Semua badge sah — prestasi atlet lebih baik dari rekod semasa.</p>
+                    )}
+                  </>
+                )
+              })()}
+              {badgeImbas.senarai.length === 0 && (
+                <button onClick={() => setBadgeImbas(null)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg transition-colors">
+                  Imbas Semula
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Selesai */}
+          {badgeDone && (
+            <div className="space-y-2">
+              {badgeDone.error ? (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-red-700">❌ Ralat: {badgeDone.error}</p>
+                </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-green-700 font-semibold">✅ Selesai — {badgeDone.heat} heat dikemas, {badgeDone.badge} badge dibuang.</p>
+                </div>
+              )}
+              <button onClick={() => { setBadgeDone(null); setBadgeImbas(null) }}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg transition-colors">
+                Imbas Semula
+              </button>
             </div>
           )}
         </div>

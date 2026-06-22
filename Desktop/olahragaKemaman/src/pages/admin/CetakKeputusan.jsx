@@ -219,6 +219,12 @@ export default function CetakKeputusan() {
       const { jsPDF }              = await import('jspdf')
       const { default: autoTable } = await import('jspdf-autotable')
 
+      // Load nama sekolah
+      const skolSnap = await getDocs(collection(db, 'sekolah'))
+      const skolMap  = {}
+      skolSnap.docs.forEach(d => { skolMap[d.id] = d.data().namaSekolah || d.id })
+      const getNamaSkol = kod => skolMap[kod] || kod || '—'
+
       const pdf  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const W    = 210
       const M    = 15
@@ -289,8 +295,8 @@ export default function CetakKeputusan() {
           const flagged = ['DNS', 'DNF', 'DQ', 'FS', 'NM'].includes(p.status)
           return [
             p.rankDalamHeat,
-            isRelay ? (p.kodSekolah || '—') : (p.namaAtlet || '—'),
-            isRelay ? '—' : (p.kodSekolah || '—'),
+            isRelay ? getNamaSkol(p.kodSekolah) : (p.namaAtlet || '—'),
+            isRelay ? '—' : getNamaSkol(p.kodSekolah),
             flagged ? p.status : fmtPrestasi(p.keputusan, acara.jenisAcara),
             p.status !== 'selesai' ? p.status : '',
           ]
@@ -472,6 +478,12 @@ export default function CetakKeputusan() {
     try {
       const XLSX = await import('xlsx')
 
+      // Load nama sekolah
+      const skolSnap2 = await getDocs(collection(db, 'sekolah'))
+      const skolMap2  = {}
+      skolSnap2.docs.forEach(d => { skolMap2[d.id] = d.data().namaSekolah || d.id })
+      const getNamaSkol2 = kod => skolMap2[kod] || kod || ''
+
       const rows = []
       // Header besar
       rows.push([namaKej])
@@ -505,8 +517,8 @@ export default function CetakKeputusan() {
             acara.kategoriKod || '',
             acara.jantina === 'L' ? 'Lelaki' : acara.jantina === 'P' ? 'Perempuan' : '',
             p.rankDalamHeat  || '',
-            isRelay ? (p.kodSekolah || '') : (p.namaAtlet || ''),
-            isRelay ? '' : (p.kodSekolah || ''),
+            isRelay ? getNamaSkol2(p.kodSekolah) : (p.namaAtlet || ''),
+            isRelay ? '' : getNamaSkol2(p.kodSekolah),
             flagged ? p.status : fmtPrestasi(p.keputusan, acara.jenisAcara),
             p.status         || '',
             pecah ? 'YA' : '',

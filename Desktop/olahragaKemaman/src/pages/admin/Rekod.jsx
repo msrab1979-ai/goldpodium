@@ -995,6 +995,8 @@ export default function Rekod() {
     if (!confirm('Tolak tuntutan rekod ini?')) return
     try {
       await deleteDoc(doc(db, 'rekod', tuntutan.id))
+      // Bersihkan badge pecahRekod dari heat & field rekod dari mata_olahragawan
+      await autoCleanKesanRekod(tuntutan)
       setMsg({ type: 'ok', text: 'Tuntutan ditolak dan dibuang.' })
       load()
     } catch (e) {

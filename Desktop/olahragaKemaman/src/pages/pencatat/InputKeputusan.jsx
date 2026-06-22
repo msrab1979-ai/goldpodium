@@ -41,6 +41,130 @@ const KAT_ORDER = ['SR', 'SM', 'PPKI']
 // Standard athletics lane assignment: rank1→lane4, rank2→lane5, rank3→lane3, ...
 const LANE_ORDER = [4, 5, 3, 6, 2, 7, 1, 8]
 
+// ─── Input Semua Peserta (semua heat dalam satu table) ───────────────────────
+
+function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap = {} }) {
+  // Gabung semua peserta dari semua heat, tag dengan heatId & noHeat
+  const semuaPeserta = useMemo(() => {
+    const list = []
+    for (const h of heats) {
+      for (const p of (h.peserta || [])) {
+        list.push({ ...p, _heatId: h.heatId, _noHeat: h.noHeat || h.heatId })
+      }
+    }
+    return list
+  }, [heats])
+
+  // Sort by masa (auto rank) — peserta tanpa masa ke bawah
+  const sorted = useMemo(() => {
+    return [...semuaPeserta].sort((a, b) => {
+      const ka = `${a._heatId}_${a.lorong ?? a.noBib}`
+      const kb = `${b._heatId}_${b.lorong ?? b.noBib}`
+      const ma = Number(keputusanSemua[ka]?.keputusan) || 0
+      const mb = Number(keputusanSemua[kb]?.keputusan) || 0
+      if (!ma && !mb) return 0
+      if (!ma) return 1
+      if (!mb) return -1
+      return ma - mb
+    })
+  }, [semuaPeserta, keputusanSemua])
+
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="grid bg-[#003399] text-white text-xs font-bold uppercase tracking-wider"
+        style={{ gridTemplateColumns: '40px 72px 80px 1fr 100px 60px 100px' }}>
+        <div className="px-2 py-3 text-center">H</div>
+        <div className="px-2 py-3 text-center">Lrg</div>
+        <div className="px-2 py-3 text-center">BIB</div>
+        <div className="px-2 py-3">Atlet / Sekolah</div>
+        <div className="px-2 py-3 text-center">Masa</div>
+        <div className="px-2 py-3 text-center">Kddk</div>
+        <div className="px-2 py-3 text-center">Catatan</div>
+      </div>
+
+      {sorted.map((p, idx) => {
+        const slotKey = `${p._heatId}_${p.lorong ?? p.noBib}`
+        const kp = keputusanSemua[slotKey] || {}
+        const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+        const rank = idx + 1
+        const hasMasa = Number(kp.keputusan) > 0 && !flagged
+        const rowBg = flagged ? 'bg-red-50'
+          : hasMasa && rank === 1 ? 'bg-yellow-50'
+          : hasMasa && rank === 2 ? 'bg-gray-50'
+          : hasMasa && rank === 3 ? 'bg-orange-50'
+          : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+
+        return (
+          <div key={slotKey} className={`grid border-t border-gray-100 ${rowBg}`}
+            style={{ gridTemplateColumns: '40px 72px 80px 1fr 100px 60px 100px' }}>
+
+            {/* Heat */}
+            <div className="px-1 py-2 flex items-center justify-center">
+              <span className="text-[10px] font-bold text-[#003399] bg-blue-50 rounded px-1">{p._noHeat}</span>
+            </div>
+
+            {/* Lorong */}
+            <div className="px-1 py-2 flex items-center justify-center">
+              <span className="text-sm font-black text-gray-500">{p.lorong ?? '—'}</span>
+            </div>
+
+            {/* BIB */}
+            <div className="px-1 py-2 flex items-center justify-center">
+              <span className="text-sm font-black text-gray-800">{p.noBib || '—'}</span>
+            </div>
+
+            {/* Nama / Sekolah */}
+            <div className="px-2 py-2 flex flex-col justify-center min-w-0">
+              <span className="text-sm font-bold text-gray-800 truncate leading-tight">{p.namaAtlet || '—'}</span>
+              <span className="text-[10px] text-gray-400 truncate leading-tight">{sekolahMap[p.kodSekolah] || p.kodSekolah || ''}</span>
+            </div>
+
+            {/* Masa input */}
+            <div className="px-1 py-2 flex flex-col items-center justify-center gap-0.5">
+              <input type="text" inputMode="decimal"
+                defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
+                key={`masa-${slotKey}-${kp.keputusan ?? ''}`}
+                onBlur={e => {
+                  const saat = parseMasaInput(e.target.value)
+                  onChange(slotKey, 'keputusan', saat)
+                }}
+                placeholder="m.ss.ms" disabled={flagged}
+                className="w-full border-2 border-gray-300 rounded-lg px-1 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+              {kp.keputusan > 0 && (
+                <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+              )}
+            </div>
+
+            {/* Kedudukan */}
+            <div className="px-1 py-2 flex items-center justify-center">
+              {hasMasa ? (
+                <span className={`text-sm font-black ${rank === 1 ? 'text-yellow-600' : rank === 2 ? 'text-gray-500' : rank === 3 ? 'text-orange-600' : 'text-gray-400'}`}>
+                  {rank}
+                </span>
+              ) : (
+                <span className="text-xs text-gray-300">—</span>
+              )}
+            </div>
+
+            {/* Status / Catatan */}
+            <div className="px-1 py-2 flex items-center justify-center">
+              <select value={kp.status || ''}
+                onChange={e => onChange(slotKey, 'status', e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-1 py-1.5 text-xs font-bold text-center bg-white focus:outline-none focus:border-[#003399]">
+                <option value="">—</option>
+                <option value="DNS">DNS</option>
+                <option value="DNF">DNF</option>
+                <option value="DQ">DQ</option>
+              </select>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Select Finalists ─────────────────────────────────────────────────────────
 
 // selectFinalists + assignLorong diimport dari finalistUtils — guna finalSetup dari state
@@ -1210,6 +1334,10 @@ export default function InputKeputusan() {
   const [janaFinalLoading, setJanaFinalLoading] = useState(false)
   const [carianBib, setCarianBib] = useState('')
 
+  // Mod Semua Peserta
+  const [modSemua, setModSemua]           = useState(false)
+  const [keputusanSemua, setKeputusanSemua] = useState({})
+
   // ── Load data ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -1549,11 +1677,104 @@ export default function InputKeputusan() {
     setKeputusan({})
   }
 
+  // ── Init keputusanSemua bila mod semua dibuka ─────────────────────────────
+
+  function initKeputusanSemua(allHeats) {
+    const kpMap = {}
+    for (const h of allHeats) {
+      for (const p of (h.peserta || [])) {
+        const slotKey = `${h.heatId}_${p.lorong ?? p.noBib}`
+        kpMap[slotKey] = {
+          noBib:      p.noBib      || '',
+          namaAtlet:  p.namaAtlet  || '',
+          kodSekolah: p.kodSekolah || '',
+          keputusan:  p.keputusan  != null ? String(p.keputusan) : '',
+          status:     (p.status && p.status !== 'belum') ? p.status : '',
+          _heatId:    h.heatId,
+          _lorong:    p.lorong,
+          _noBib:     p.noBib,
+        }
+      }
+    }
+    setKeputusanSemua(kpMap)
+  }
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   function handleChange(slot, field, value) {
     setKeputusan(prev => ({ ...prev, [slot]: { ...(prev[slot] || {}), [field]: value } }))
     setSaved(false)
+  }
+
+  function handleChangeSemua(slotKey, field, value) {
+    setKeputusanSemua(prev => ({ ...prev, [slotKey]: { ...(prev[slotKey] || {}), [field]: value } }))
+    setSaved(false)
+  }
+
+  async function handleSaveSemuaPeserta() {
+    if (!kejohananId || !selectedAcara || heats.length === 0) return
+    if (!bolehEdit) return
+    setSaving(true); setSaved(false)
+    try {
+      const aceraKey = selectedAcara.aceraId || selectedAcara.acaraId
+      const jenisAcara = selectedAcara.jenisAcara
+      const isPadang = ['padang_lompat', 'padang_balin'].includes(jenisAcara)
+
+      // Kumpul semua entry by heatId
+      const byHeat = {}
+      for (const [slotKey, kp] of Object.entries(keputusanSemua)) {
+        const heatId = kp._heatId
+        if (!heatId) continue
+        if (!byHeat[heatId]) byHeat[heatId] = []
+        byHeat[heatId].push({ slotKey, kp })
+      }
+
+      // Simpan setiap heat berasingan — sama seperti handleSave
+      for (const h of heats) {
+        const heatEntries = byHeat[h.heatId] || []
+        if (heatEntries.length === 0) continue
+        const heatRef = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', h.heatId)
+
+        const updatedPeserta = (h.peserta || []).map(p => {
+          const slotKey = `${h.heatId}_${p.lorong ?? p.noBib}`
+          const kp = keputusanSemua[slotKey] || {}
+          const val = kp.keputusan !== '' && kp.keputusan !== undefined
+            ? (Number(kp.keputusan) || null) : p.keputusan
+          const rawStatus = kp.status || p.status || 'belum'
+          const isFlagged = ['DNS', 'DNF', 'DQ'].includes(rawStatus)
+          const hasResult = val != null && val !== '' && !isNaN(Number(val)) && Number(val) > 0
+          const finalStatus = isFlagged ? rawStatus : hasResult ? 'selesai' : rawStatus
+          const namaSekolah = p.namaSekolah || sekolahMap[p.kodSekolah] || p.kodSekolah || ''
+          return { ...p, keputusan: val, status: finalStatus, namaSekolah, updatedBy: userData?.uid || '' }
+        })
+
+        // Auto rankDalamHeat dalam heat ini
+        const finishers = [...updatedPeserta]
+          .filter(p => p.status === 'selesai' && p.keputusan != null)
+          .sort((a, b) => isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan)
+        const autoRankMap = new Map()
+        finishers.forEach((p, i) => {
+          const rk = jenisAcara === 'relay' ? p.lorong : p.noBib
+          autoRankMap.set(rk, i + 1)
+        })
+        const finalPeserta = updatedPeserta.map(p => {
+          const rk = jenisAcara === 'relay' ? p.lorong : p.noBib
+          return { ...p, rankDalamHeat: autoRankMap.get(rk) ?? null }
+        })
+
+        await updateDoc(heatRef, {
+          peserta: finalPeserta,
+          statusKeputusan: 'tidak_rasmi',
+          updatedAt: serverTimestamp(),
+        })
+        // Sync heats state
+        setHeats(prev => prev.map(x => x.heatId === h.heatId ? { ...x, peserta: finalPeserta, statusKeputusan: 'tidak_rasmi' } : x))
+      }
+      setSaved(true)
+    } catch (e) {
+      console.error('handleSaveSemuaPeserta:', e)
+    }
+    setSaving(false)
   }
 
   async function handleSave() {
@@ -2918,8 +3139,28 @@ export default function InputKeputusan() {
                 )
               })()}
             </div>
-            {/* Heat tabs — papar jika lebih 1 heat */}
-            <HeatTabBar heats={heats} selectedHeat={selectedHeat} onSelect={selectHeat} />
+            {/* Heat tabs + toggle mod semua */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <HeatTabBar heats={heats} selectedHeat={selectedHeat} onSelect={h => { setModSemua(false); selectHeat(h) }} />
+              {['lorong', 'mass_start'].includes(selectedAcara?.jenisAcara) && heats.length > 0 && bolehEdit && (
+                <button
+                  onClick={() => {
+                    setModSemua(v => {
+                      if (!v) initKeputusanSemua(heats)
+                      return !v
+                    })
+                    setSaved(false)
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                    modSemua
+                      ? 'bg-[#003399] text-white border-[#003399]'
+                      : 'bg-white text-[#003399] border-[#003399] hover:bg-[#003399]/5'
+                  }`}
+                >
+                  {modSemua ? '✕ Tutup Semua' : '☰ Semua Peserta'}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ── Loading heat ── */}
@@ -2939,6 +3180,30 @@ export default function InputKeputusan() {
               <p className="text-2xl mb-2">📋</p>
               <p className="text-sm text-gray-400">Tiada heat untuk acara ini.</p>
               <p className="text-xs text-gray-300 mt-1">Sila jana heat melalui Tetapan Acara.</p>
+            </div>
+          )}
+
+          {/* ── Mod Semua Peserta ── */}
+          {!heatsLoading && modSemua && heats.length > 0 && (
+            <div className="space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                <span className="text-xs font-bold text-blue-700">☰ Mod Semua Peserta — {heats.length} heat</span>
+                <span className="text-[10px] text-blue-500">Masa dimasuk → sort auto by masa</span>
+              </div>
+              <InputSemuaPeserta
+                heats={heats}
+                acara={selectedAcara}
+                keputusanSemua={keputusanSemua}
+                onChange={handleChangeSemua}
+                sekolahMap={sekolahMap}
+              />
+              <button
+                onClick={handleSaveSemuaPeserta}
+                disabled={saving || !bolehEdit}
+                className="w-full py-3.5 text-sm font-bold rounded-2xl bg-[#003399] text-white hover:bg-[#002288] disabled:opacity-50 transition-all"
+              >
+                {saving ? 'Menyimpan…' : saved ? '✓ Tersimpan' : 'Simpan Semua'}
+              </button>
             </div>
           )}
 
