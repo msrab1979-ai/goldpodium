@@ -549,7 +549,46 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
     ['diterima','tidak_rasmi','rasmi'].includes(h.statusKeputusan)
   )
   if (heatsWithResult.length === 0) {
-    return null
+    // Tunjuk start list jika heat final sudah dijana tapi belum berlari
+    const isFinalAcara = !!acara.parentAcaraId
+    if (!isFinalAcara) return null
+    const heatsFinal = heats.filter(h => (h.peserta || []).length > 0)
+    if (heatsFinal.length === 0) return null
+    const allPeserta = heatsFinal.flatMap(h => h.peserta || [])
+    const sorted = [...allPeserta].sort((a, b) => (a.lorong || 99) - (b.lorong || 99))
+    return (
+      <div className="px-3 py-3">
+        <p className="text-[10px] font-bold text-[#003399] uppercase tracking-wide mb-2">
+          📋 Start List Final <span className="text-gray-400 font-normal normal-case ml-1">— belum berlari</span>
+        </p>
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="border-b border-gray-200 text-gray-400 text-left">
+              <th className="pb-1 pr-3 w-8">Lrg</th>
+              {!isRelay && <th className="pb-1 pr-3 w-12">BIB</th>}
+              <th className="pb-1">{isRelay ? 'Pasukan' : 'Nama Atlet / Sekolah'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((p, i) => (
+              <tr key={i} className="border-b border-gray-50">
+                <td className="py-1 pr-3 font-bold text-center text-[#003399]">{p.lorong ?? '—'}</td>
+                {!isRelay && <td className="py-1 pr-3 text-gray-500">{p.noBib || '—'}</td>}
+                <td className="py-1">
+                  {isRelay
+                    ? <span className="font-semibold text-gray-700">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || p.kodSekolah || '—'}</span>
+                    : <span>
+                        <span className="font-semibold text-gray-800">{p.namaAtlet || '—'}</span>
+                        <span className="text-gray-400 ml-1 text-[10px]">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || ''}</span>
+                      </span>
+                  }
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
   }
 
   // Pisah heat final vs saringan
