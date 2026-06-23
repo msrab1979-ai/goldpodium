@@ -131,11 +131,12 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
             {/* Masa input */}
             <div className="px-1 py-2 flex flex-col items-center justify-center gap-0.5">
               <input type="text" inputMode="decimal"
-                defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
-                key={`masa-${slotKey}-${kp.keputusan ?? ''}`}
+                value={kp._raw ?? (kp.keputusan ? fmtMasaDisplay(kp.keputusan) : '')}
+                onChange={e => onChange(slotKey, '_raw', e.target.value)}
                 onBlur={e => {
                   const saat = parseMasaInput(e.target.value)
                   onChange(slotKey, 'keputusan', saat)
+                  onChange(slotKey, '_raw', saat ? fmtMasaDisplay(saat) : e.target.value)
                 }}
                 placeholder="m.ss.ms" disabled={flagged}
                 className="w-full border-2 border-gray-300 rounded-lg px-1 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
@@ -674,11 +675,12 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
               {/* Masa */}
               <div className="px-1 py-2 flex flex-col items-center gap-0.5">
                 <input type="text" inputMode="decimal"
-                  defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
-                  key={`masa-${lorong}-${kp.keputusan ?? ''}`}
+                  value={kp._raw ?? (kp.keputusan ? fmtMasaDisplay(kp.keputusan) : '')}
+                  onChange={e => onChange(lorong, '_raw', e.target.value)}
                   onBlur={e => {
                     const saat = parseMasaInput(e.target.value)
                     onChange(lorong, 'keputusan', saat)
+                    onChange(lorong, '_raw', saat ? fmtMasaDisplay(saat) : e.target.value)
                   }}
                   placeholder="m.ss.ms"
                   disabled={flagged}
@@ -715,7 +717,7 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
                     onClick={() => {
                       const newStatus = kp.status === flag ? '' : flag
                       onChange(lorong, 'status', newStatus)
-                      if (newStatus) onChange(lorong, 'keputusan', '')
+                      if (newStatus) { onChange(lorong, 'keputusan', ''); onChange(lorong, '_raw', '') }
                     }}
                     className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${
                       kp.status === flag
@@ -816,11 +818,12 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
 
             <div className="px-1 py-2 flex flex-col items-center gap-0.5">
               <input type="text" inputMode="decimal"
-                defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
-                key={`masa-${slot}-${kp.keputusan ?? ''}`}
+                value={kp._raw ?? (kp.keputusan ? fmtMasaDisplay(kp.keputusan) : '')}
+                onChange={e => onChange(slot, '_raw', e.target.value)}
                 onBlur={e => {
                   const saat = parseMasaInput(e.target.value)
                   onChange(slot, 'keputusan', saat)
+                  onChange(slot, '_raw', saat ? fmtMasaDisplay(saat) : e.target.value)
                 }}
                 placeholder="m.ss.ms" disabled={flagged}
                 className="w-full border-2 border-gray-300 rounded-lg px-2 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
@@ -851,7 +854,7 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
                   onClick={() => {
                     const n = kp.status === flag ? '' : flag
                     onChange(slot, 'status', n)
-                    if (n) onChange(slot, 'keputusan', '')
+                    if (n) { onChange(slot, 'keputusan', ''); onChange(slot, '_raw', '') }
                   }}
                   className={`flex-1 py-1.5 text-[10px] font-bold rounded transition-colors ${
                     kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-400'
@@ -1138,11 +1141,12 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
 
             <div className="px-1 py-2 flex flex-col items-center gap-0.5">
               <input type="text" inputMode="decimal"
-                defaultValue={kp.keputusan ? fmtMasaDisplay(kp.keputusan) : ''}
-                key={`masa-${lorong}-${kp.keputusan ?? ''}`}
+                value={kp._raw ?? (kp.keputusan ? fmtMasaDisplay(kp.keputusan) : '')}
+                onChange={e => onChange(lorong, '_raw', e.target.value)}
                 onBlur={e => {
                   const saat = parseMasaInput(e.target.value)
                   onChange(lorong, 'keputusan', saat)
+                  onChange(lorong, '_raw', saat ? fmtMasaDisplay(saat) : e.target.value)
                 }}
                 placeholder="m.ss.ms" disabled={flagged}
                 className="w-full border-2 border-gray-300 rounded-lg px-2 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
@@ -1173,7 +1177,7 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
                   onClick={() => {
                     const n = kp.status === flag ? '' : flag
                     onChange(lorong, 'status', n)
-                    if (n) onChange(lorong, 'keputusan', '')
+                    if (n) { onChange(lorong, 'keputusan', ''); onChange(lorong, '_raw', '') }
                   }}
                   className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${
                     kp.status === flag ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-400'
@@ -1466,6 +1470,7 @@ export default function InputKeputusan() {
           namaAtlet:  p.namaAtlet  || '',
           kodSekolah: p.kodSekolah || '',
           keputusan:  p.keputusan  != null ? String(p.keputusan) : '',
+          _raw:       p.keputusan  != null ? fmtMasaDisplay(p.keputusan) : '',
           kedudukan:  p.kedudukan  != null ? p.kedudukan : '',
           status:     (p.status && p.status !== 'belum') ? p.status : '',
         }
@@ -1478,6 +1483,7 @@ export default function InputKeputusan() {
           namaAtlet:  p.namaAtlet  || '',
           kodSekolah: p.kodSekolah || '',
           keputusan:  p.keputusan  != null ? String(p.keputusan) : '',
+          _raw:       p.keputusan  != null ? fmtMasaDisplay(p.keputusan) : '',
           kedudukan:  p.kedudukan  != null ? p.kedudukan : '',
           status:     (p.status && p.status !== 'belum') ? p.status : '',
         }
@@ -1645,6 +1651,7 @@ export default function InputKeputusan() {
           namaAtlet:  p.namaAtlet  || '',
           kodSekolah: p.kodSekolah || '',
           keputusan:  p.keputusan  != null ? String(p.keputusan) : '',
+          _raw:       p.keputusan  != null ? fmtMasaDisplay(p.keputusan) : '',
           status:     (p.status && p.status !== 'belum') ? p.status : '',
           _heatId:    h.heatId,
           _lorong:    p.lorong,
@@ -1857,7 +1864,7 @@ export default function InputKeputusan() {
           : null,
       }))
 
-      const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined))
+      const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([k, v]) => !k.startsWith('_') && v !== undefined))
       const updates = { peserta: pesertaDenganRank.map(stripUndef), updatedAt: serverTimestamp() }
       if (selectedAcara.isWindReading && windSpeed !== '') {
         updates.windSpeed = Number(windSpeed) || null
