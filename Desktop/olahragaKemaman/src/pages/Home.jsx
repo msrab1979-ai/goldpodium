@@ -1002,6 +1002,7 @@ export default function Home() {
   // UI
   const [selected,    setSelected]    = useState(null)
   const [adminModal,  setAdminModal]  = useState(false)
+  const [pwaModal,    setPwaModal]    = useState(false)
   const [staffModal,  setStaffModal]  = useState(false)  // Modal pilih role staff
   const [printingPdf, setPrintingPdf] = useState(false)
 
@@ -2011,6 +2012,7 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
+
         </div>
       </header>
 
@@ -2239,6 +2241,14 @@ export default function Home() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   {jadualLoading ? 'Memuatkan…' : 'Kemaskini'}
+                </button>
+                <button onClick={() => setPwaModal(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-gray-500 hover:text-[#003399] bg-white border border-gray-200 hover:border-[#003399]/30 rounded-xl transition-all shadow-sm"
+                  title="Pasang aplikasi">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Pasang App
                 </button>
               </div>
             </div>
@@ -3135,6 +3145,60 @@ export default function Home() {
       </footer>
 
       {adminModal && <AdminModal onClose={() => setAdminModal(false)} />}
+
+      {/* ── Modal Panduan Install PWA ── */}
+      {pwaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setPwaModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 flex items-center justify-between" style={{ backgroundColor: '#003399' }}>
+              <p className="text-white font-bold text-sm">📲 Pasang Aplikasi</p>
+              <button onClick={() => setPwaModal(false)} className="text-white/70 hover:text-white text-xl leading-none">×</button>
+            </div>
+            <div className="px-5 py-4 space-y-5">
+
+              {/* Android */}
+              <div>
+                <p className="text-xs font-black text-gray-700 uppercase tracking-wide mb-2">🤖 Android (Chrome)</p>
+                <ol className="space-y-2">
+                  {[
+                    'Buka laman web ini dalam Chrome',
+                    'Ketik menu ⋮ (tiga titik) di penjuru kanan atas',
+                    'Pilih "Tambah ke Skrin Utama"',
+                    'Ketik "Tambah" — selesai!',
+                  ].map((step, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 mt-0.5" style={{ backgroundColor: '#003399' }}>{i + 1}</span>
+                      <span className="text-xs text-gray-600">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              <div className="border-t border-gray-100" />
+
+              {/* iOS */}
+              <div>
+                <p className="text-xs font-black text-gray-700 uppercase tracking-wide mb-2">🍎 iPhone / iPad (Safari)</p>
+                <ol className="space-y-2">
+                  {[
+                    'Buka laman web ini dalam Safari',
+                    'Ketik ikon Kongsi □↑ di bahagian bawah skrin',
+                    'Tatal ke bawah, pilih "Tambah ke Skrin Utama"',
+                    'Ketik "Tambah" di penjuru kanan atas — selesai!',
+                  ].map((step, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 mt-0.5" style={{ backgroundColor: '#cc0001' }}>{i + 1}</span>
+                      <span className="text-xs text-gray-600">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              <p className="text-[10px] text-gray-400 text-center">Selepas dipasang, aplikasi akan muncul di skrin utama telefon anda</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal Login Staff ── */}
       {staffModal && (
