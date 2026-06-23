@@ -342,9 +342,7 @@ export default function AnalisaPingat() {
       const pageH = pdf.internal.pageSize.height
       const today = new Date().toLocaleDateString('ms-MY', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
-      pdf.setFillColor(0, 51, 153)
-      pdf.rect(0, 0, pageW, 28, 'F')
-      pdf.setTextColor(255, 255, 255)
+      pdf.setTextColor(0, 0, 0)
       pdf.setFontSize(12)
       pdf.setFont('helvetica', 'bold')
       pdf.text('ANALISA PINGAT — ATLET TERBAIK', pageW / 2, 10, { align: 'center' })
@@ -352,7 +350,6 @@ export default function AnalisaPingat() {
       pdf.setFont('helvetica', 'normal')
       pdf.text('Acara Final sahaja  ·  Emas = 5 mata  ·  Perak = 3 mata  ·  Gangsa = 2 mata', pageW / 2, 17, { align: 'center' })
       pdf.text(`Tarikh Cetak: ${today}`, pageW / 2, 23, { align: 'center' })
-      pdf.setTextColor(0, 0, 0)
 
       let startY  = 32
       let isFirst = true
@@ -371,13 +368,10 @@ export default function AnalisaPingat() {
 
         if (!isFirst) {
           pdf.addPage()
-          pdf.setFillColor(0, 51, 153)
-          pdf.rect(0, 0, pageW, 16, 'F')
-          pdf.setTextColor(255, 255, 255)
+          pdf.setTextColor(0, 0, 0)
           pdf.setFontSize(9)
           pdf.setFont('helvetica', 'bold')
           pdf.text('ANALISA PINGAT — ATLET TERBAIK', pageW / 2, 10, { align: 'center' })
-          pdf.setTextColor(0, 0, 0)
           startY = 20
         }
         isFirst = false
@@ -407,24 +401,24 @@ export default function AnalisaPingat() {
         const totalMata   = katRows.reduce((s, a) => s + a.mata, 0)
         const totalRekod  = katRows.reduce((s, a) => s + a.rekodList.length, 0)
         tableRows.push([
-          { content: `JUMLAH — ${katRows.length} atlet`, colSpan: 3, styles: { fontStyle: 'bold', fillColor: [230, 235, 255] } },
-          { content: totalEmas   || '—', styles: { fontStyle: 'bold', fillColor: [230, 235, 255], halign: 'center' } },
-          { content: totalPerak  || '—', styles: { fontStyle: 'bold', fillColor: [230, 235, 255], halign: 'center' } },
-          { content: totalGangsa || '—', styles: { fontStyle: 'bold', fillColor: [230, 235, 255], halign: 'center' } },
-          { content: totalMata   || '—', styles: { fontStyle: 'bold', fillColor: [230, 235, 255], halign: 'center' } },
-          { content: `${totalRekod} rekod`, styles: { fontStyle: 'bold', fillColor: [230, 235, 255] } },
+          { content: `JUMLAH — ${katRows.length} atlet`, colSpan: 3, styles: { fontStyle: 'bold', fillColor: [255, 255, 255] } },
+          { content: totalEmas   || '—', styles: { fontStyle: 'bold', fillColor: [255, 255, 255], halign: 'center' } },
+          { content: totalPerak  || '—', styles: { fontStyle: 'bold', fillColor: [255, 255, 255], halign: 'center' } },
+          { content: totalGangsa || '—', styles: { fontStyle: 'bold', fillColor: [255, 255, 255], halign: 'center' } },
+          { content: totalMata   || '—', styles: { fontStyle: 'bold', fillColor: [255, 255, 255], halign: 'center' } },
+          { content: `${totalRekod} rekod`, styles: { fontStyle: 'bold', fillColor: [255, 255, 255] } },
         ])
 
         autoTable(pdf, {
           startY,
           head: [
-            [{ content: kat.label, colSpan: 8, styles: { fillColor: [0, 51, 153], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 } }],
+            [{ content: kat.label, colSpan: 8, styles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 } }],
             ['#', 'Nama Atlet', 'Sekolah', 'Emas', 'Perak', 'Gangsa', 'Mata', 'Rekod Dipecah'],
           ],
           body:       tableRows,
           styles:     { fontSize: 7, cellPadding: 1.8 },
-          headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [248, 249, 252] },
+          headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontSize: 7, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [255, 255, 255] },
           columnStyles: {
             0: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
             1: { cellWidth: 50 },
@@ -469,9 +463,7 @@ export default function AnalisaPingat() {
       const today = new Date().toLocaleDateString('ms-MY', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
       function drawPageHeader(salinan) {
-        pdf.setFillColor(0, 51, 153)
-        pdf.rect(0, 0, pageW, 24, 'F')
-        pdf.setTextColor(255, 255, 255)
+        pdf.setTextColor(0, 0, 0)
         pdf.setFontSize(13)
         pdf.setFont('helvetica', 'bold')
         pdf.text('SENARAI ATLET TERBAIK', pageW / 2, 9, { align: 'center' })
@@ -479,12 +471,9 @@ export default function AnalisaPingat() {
         pdf.setFont('helvetica', 'normal')
         pdf.text(namaKej, pageW / 2, 15, { align: 'center' })
         pdf.text(`Tarikh: ${today}`, pageW / 2, 20, { align: 'center' })
-        // Label salinan — hujung kanan
         pdf.setFontSize(7)
         pdf.setFont('helvetica', 'bold')
-        pdf.setTextColor(255, 220, 0)
         pdf.text(`SALINAN: ${salinan}`, pageW - 12, 9, { align: 'right' })
-        pdf.setTextColor(0, 0, 0)
       }
 
       function buildTajukTable(t, startY) {
@@ -533,12 +522,12 @@ export default function AnalisaPingat() {
         autoTable(pdf, {
           startY,
           head: [
-            [{ content: t.namaTajuk, colSpan: 4, styles: { fillColor: [0, 51, 153], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10, halign: 'center' } }],
+            [{ content: t.namaTajuk, colSpan: 4, styles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 10, halign: 'center' } }],
             ['Nama Atlet', 'Sekolah', 'Pingat & Acara', 'Rekod Dipecah'],
           ],
           body: bodyRows,
           styles:     { fontSize: 8, cellPadding: 2.5 },
-          headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+          headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold' },
           columnStyles: {
             0: { cellWidth: 60, fontStyle: 'bold' },
             1: { cellWidth: 65 },
@@ -547,6 +536,7 @@ export default function AnalisaPingat() {
           },
           margin: { left: 12, right: 12 },
           theme:  'grid',
+          pageBreak: 'avoid',
         })
 
         return pdf.lastAutoTable.finalY + 8
