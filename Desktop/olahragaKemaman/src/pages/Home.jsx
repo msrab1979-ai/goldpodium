@@ -549,44 +549,59 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
     ['diterima','tidak_rasmi','rasmi'].includes(h.statusKeputusan)
   )
   if (heatsWithResult.length === 0) {
-    // Tunjuk start list jika heat final sudah dijana tapi belum berlari
-    const isFinalAcara = !!acara.parentAcaraId
-    if (!isFinalAcara) return null
-    const heatsFinal = heats.filter(h => (h.peserta || []).length > 0)
-    if (heatsFinal.length === 0) return null
-    const allPeserta = heatsFinal.flatMap(h => h.peserta || [])
-    const sorted = [...allPeserta].sort((a, b) => (a.lorong || 99) - (b.lorong || 99))
+    // Tunjuk start list — semua acara (final + saringan + padang), heat berasingan
+    const heatsAdaPeserta = heats.filter(h => (h.peserta || []).length > 0)
+    if (heatsAdaPeserta.length === 0) return null
+
+    const colLabel = isPadang ? 'Gil.' : 'Lrg'
+
+    function renderStartListHeat(heat, idx) {
+      const noHeat = heat.noHeat || (idx + 1)
+      const label  = heatsAdaPeserta.length > 1 ? `Heat ${noHeat}` : (acara.parentAcaraId ? 'Final' : 'Heat 1')
+      const sorted = [...(heat.peserta || [])].sort((a, b) => {
+        if (isPadang) return (a.giliran || 99) - (b.giliran || 99)
+        return (a.lorong || 99) - (b.lorong || 99)
+      })
+      return (
+        <div key={heat.heatId || idx} className={idx > 0 ? 'mt-3' : ''}>
+          <p className="text-[10px] font-bold text-[#003399] uppercase tracking-wide mb-1">
+            📋 Start List {label}           </p>
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b border-gray-200 text-gray-400 text-left">
+                <th className="pb-1 pr-3 w-8">{colLabel}</th>
+                {!isRelay && <th className="pb-1 pr-3 w-12">BIB</th>}
+                <th className="pb-1">{isRelay ? 'Pasukan' : 'Nama Atlet / Sekolah'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((p, i) => {
+                const noKolum = isPadang ? (p.giliran ?? i + 1) : (p.lorong ?? '—')
+                return (
+                  <tr key={i} className="border-b border-gray-50">
+                    <td className="py-1 pr-3 font-bold text-center text-[#003399]">{noKolum}</td>
+                    {!isRelay && <td className="py-1 pr-3 text-gray-500">{p.noBib || '—'}</td>}
+                    <td className="py-1">
+                      {isRelay
+                        ? <span className="font-semibold text-gray-700">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || p.kodSekolah || '—'}</span>
+                        : <span>
+                            <span className="font-semibold text-gray-800">{p.namaAtlet || '—'}</span>
+                            <span className="text-gray-400 ml-1 text-[10px]">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || ''}</span>
+                          </span>
+                      }
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
     return (
       <div className="px-3 py-3">
-        <p className="text-[10px] font-bold text-[#003399] uppercase tracking-wide mb-2">
-          📋 Start List Final <span className="text-gray-400 font-normal normal-case ml-1">— belum berlari</span>
-        </p>
-        <table className="w-full text-[11px]">
-          <thead>
-            <tr className="border-b border-gray-200 text-gray-400 text-left">
-              <th className="pb-1 pr-3 w-8">Lrg</th>
-              {!isRelay && <th className="pb-1 pr-3 w-12">BIB</th>}
-              <th className="pb-1">{isRelay ? 'Pasukan' : 'Nama Atlet / Sekolah'}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((p, i) => (
-              <tr key={i} className="border-b border-gray-50">
-                <td className="py-1 pr-3 font-bold text-center text-[#003399]">{p.lorong ?? '—'}</td>
-                {!isRelay && <td className="py-1 pr-3 text-gray-500">{p.noBib || '—'}</td>}
-                <td className="py-1">
-                  {isRelay
-                    ? <span className="font-semibold text-gray-700">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || p.kodSekolah || '—'}</span>
-                    : <span>
-                        <span className="font-semibold text-gray-800">{p.namaAtlet || '—'}</span>
-                        <span className="text-gray-400 ml-1 text-[10px]">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || ''}</span>
-                      </span>
-                  }
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {heatsAdaPeserta.map((heat, idx) => renderStartListHeat(heat, idx))}
       </div>
     )
   }
@@ -1982,6 +1997,18 @@ export default function Home() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+
+          {/* Refresh */}
+          <button
+            onClick={() => window.location.reload()}
+            title="Muat semula"
+            aria-label="Muat semula"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/35 hover:text-white/80 transition-all duration-200 shrink-0 active:scale-95"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         </div>
