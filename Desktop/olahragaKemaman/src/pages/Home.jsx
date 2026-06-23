@@ -1486,28 +1486,48 @@ export default function Home() {
     if (!kejId) return
     setAcaraSekolahLoading(prev => new Set([...prev, kodSekolah]))
     try {
-      const snap = await getDocs(
-        query(collection(db, 'mata_olahragawan'),
-          where('kodSekolah',  '==', kodSekolah),
-          where('kejohananId', '==', kejId)
-        )
-      )
-      // Bina map: `${jantina}_${kategoriKod}_${pingat}` → [namaAcara, ...]
+      // Step 1: ambil medal_tally — contrib_ ada kat+jan+noKP+pingat (ground truth)
+      const tallyRow = medalTally.find(r => r.kodSekolah === kodSekolah)
+      if (!tallyRow) { setAcaraSekolahCache(prev => ({ ...prev, [kodSekolah]: {} })); return }
+
+      // Kumpul noKP unik dari contrib (individu sahaja, skip relay)
+      const noKPSet = new Set()
+      const contribList = [] // { noKP, katKod, jan, pingat }
+      Object.entries(tallyRow).forEach(([k, v]) => {
+        if (!k.startsWith('contrib_') || !v || !v.pingat) return
+        if (v.isRelay === true || (!v.noKP)) return // skip relay
+        if (!['emas','perak','gangsa'].includes(v.pingat)) return
+        contribList.push({ noKP: v.noKP, katKod: v.kategoriKod || '', jan: v.jantina || '', pingat: v.pingat })
+        noKPSet.add(v.noKP)
+      })
+
+      // Step 2: ambil mata_olahragawan untuk noKP yang ada pingat
+      const noKPList = [...noKPSet]
+      const maMap = {} // noKP → data
+      await Promise.all(noKPList.map(async noKP => {
+        try {
+          const snap = await getDoc(doc(db, 'mata_olahragawan', `${noKP}_${kejId}`))
+          if (snap.exists()) maMap[noKP] = snap.data()
+        } catch { }
+      }))
+
+      // Step 3: bina map `${jan}_${katKod}_${pingat}` → [namaAcara]
+      // Untuk setiap contrib, cari namaAcara dari acaraDetail_ dalam mata_olahragawan
       const map = {}
-      snap.docs.forEach(d => {
-        const data = d.data()
-        Object.entries(data).forEach(([k, v]) => {
-          if (!k.startsWith('acaraDetail_') || !v || !v.pingat) return
-          const pingat    = v.pingat  // 'emas'|'perak'|'gangsa'
-          const katKod    = data.kategoriKod || ''
-          const jan       = data.jantina     || ''
-          const nama      = v.namaAcaraPendek || v.namaAcara || ''
-          if (!nama || !pingat || !katKod || !jan) return
+      contribList.forEach(({ noKP, katKod, jan, pingat }) => {
+        const maData = maMap[noKP]
+        if (!maData) return
+        // Cari acaraDetail_ yang matching pingat ini
+        Object.entries(maData).forEach(([k, v]) => {
+          if (!k.startsWith('acaraDetail_') || !v || v.pingat !== pingat) return
+          const nama = v.namaAcaraPendek || v.namaAcara || ''
+          if (!nama) return
           const key = `${jan}_${katKod}_${pingat}`
           if (!map[key]) map[key] = []
           if (!map[key].includes(nama)) map[key].push(nama)
         })
       })
+
       setAcaraSekolahCache(prev => ({ ...prev, [kodSekolah]: map }))
     } catch {
       setAcaraSekolahCache(prev => ({ ...prev, [kodSekolah]: {} }))
