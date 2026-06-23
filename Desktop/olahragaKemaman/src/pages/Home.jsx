@@ -978,6 +978,8 @@ export default function Home() {
   const [expandedMedalGroups, setExpandedMedalGroups] = useState(new Set()) // default tutup
   const [expandedKatRows,     setExpandedKatRows]     = useState(new Set()) // sekolah expand kategori
   const [cetakPingatLoading,  setCetakPingatLoading]  = useState(false)
+  const [acaraSekolahCache,   setAcaraSekolahCache]   = useState({}) // kodSekolah → { katKey → [namaAcara] }
+  const [acaraSekolahLoading, setAcaraSekolahLoading] = useState(new Set())
 
   // Rekod Baru
   const [rekodBaru,    setRekodBaru]    = useState([]) // rekod dari kejohanan semasa
@@ -1475,6 +1477,43 @@ export default function Home() {
     })
 
     return grp
+  }
+
+  async function loadAcaraSekolah(kodSekolah) {
+    if (acaraSekolahCache[kodSekolah] !== undefined) return
+    if (acaraSekolahLoading.has(kodSekolah)) return
+    const kejId = kejohananId
+    if (!kejId) return
+    setAcaraSekolahLoading(prev => new Set([...prev, kodSekolah]))
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'mata_olahragawan'),
+          where('kodSekolah',  '==', kodSekolah),
+          where('kejohananId', '==', kejId)
+        )
+      )
+      // Bina map: `${jantina}_${kategoriKod}_${pingat}` → [namaAcara, ...]
+      const map = {}
+      snap.docs.forEach(d => {
+        const data = d.data()
+        Object.entries(data).forEach(([k, v]) => {
+          if (!k.startsWith('acaraDetail_') || !v || !v.pingat) return
+          const pingat    = v.pingat  // 'emas'|'perak'|'gangsa'
+          const katKod    = data.kategoriKod || ''
+          const jan       = data.jantina     || ''
+          const nama      = v.namaAcaraPendek || v.namaAcara || ''
+          if (!nama || !pingat || !katKod || !jan) return
+          const key = `${jan}_${katKod}_${pingat}`
+          if (!map[key]) map[key] = []
+          if (!map[key].includes(nama)) map[key].push(nama)
+        })
+      })
+      setAcaraSekolahCache(prev => ({ ...prev, [kodSekolah]: map }))
+    } catch {
+      setAcaraSekolahCache(prev => ({ ...prev, [kodSekolah]: {} }))
+    } finally {
+      setAcaraSekolahLoading(prev => { const n = new Set(prev); n.delete(kodSekolah); return n })
+    }
   }
 
   async function loadRekodBaru(kejId) {
@@ -2774,8 +2813,12 @@ export default function Home() {
                                         onClick={() => {
                                           setExpandedKatRows(prev => {
                                             const next = new Set(prev)
-                                            if (next.has(t.kodSekolah)) { next.delete(t.kodSekolah) }
-                                            else { next.add(t.kodSekolah) }
+                                            if (next.has(t.kodSekolah)) {
+                                              next.delete(t.kodSekolah)
+                                            } else {
+                                              next.add(t.kodSekolah)
+                                              loadAcaraSekolah(t.kodSekolah)
+                                            }
                                             return next
                                           })
                                         }}
@@ -2818,6 +2861,9 @@ export default function Home() {
                                   {isKatExp && (
                                     <tr key={`kat_${t.kodSekolah}`} className="bg-blue-50/40 border-b border-blue-100">
                                       <td colSpan={totalCols} className="px-4 py-3">
+                                        {acaraSekolahLoading.has(t.kodSekolah) && (
+                                          <p className="text-[9px] text-blue-400 mb-2 animate-pulse">Memuatkan acara...</p>
+                                        )}
                                         {(
                                           <div className="overflow-x-auto">
                                             <table className="w-full text-[10px]">
@@ -2857,28 +2903,55 @@ export default function Home() {
                                                   const t5    = sumField('tempat5')
                                                   const jum   = emas + perak + gsa
                                                   const ada   = jum > 0 || t4 > 0 || t5 > 0
+
+                                                  // Kumpul nama acara dari acaraSekolahCache
+                                                  const acaraMap  = acaraSekolahCache[t.kodSekolah] || null
+                                                  const isLoading = acaraSekolahLoading.has(t.kodSekolah)
+                                                  const getNamaAcara = (pingat) => {
+                                                    if (!acaraMap) return []
+                                                    return matchingKods.flatMap(k => acaraMap[`${j}_${k}_${pingat}`] || [])
+                                                  }
+                                                  const namaEmas  = getNamaAcara('emas')
+                                                  const namaPerak = getNamaAcara('perak')
+                                                  const namaGsa   = getNamaAcara('gangsa')
+
                                                   return (
                                                     <tr key={`${j}_${umur}`} className={`border-b border-blue-50/50 ${ada ? '' : 'opacity-40'}`}>
-                                                      <td className="py-1 pr-3 font-bold text-gray-600">{label}</td>
-                                                      <td className="py-1 px-2 text-center">
+                                                      <td className="py-1.5 pr-3 font-bold text-gray-600 align-top">{label}</td>
+                                                      <td className="py-1.5 px-2 text-center align-top">
                                                         <span className={`font-black ${emas > 0 ? 'text-yellow-600' : 'text-gray-200'}`}>{emas}</span>
+                                                        {namaEmas.length > 0 && (
+                                                          <div className="mt-0.5 space-y-0.5">
+                                                            {namaEmas.map((n, ni) => <p key={ni} className="text-[8px] text-yellow-700/70 leading-tight">{n}</p>)}
+                                                          </div>
+                                                        )}
                                                       </td>
-                                                      <td className="py-1 px-2 text-center">
+                                                      <td className="py-1.5 px-2 text-center align-top">
                                                         <span className={`font-black ${perak > 0 ? 'text-gray-500' : 'text-gray-200'}`}>{perak}</span>
+                                                        {namaPerak.length > 0 && (
+                                                          <div className="mt-0.5 space-y-0.5">
+                                                            {namaPerak.map((n, ni) => <p key={ni} className="text-[8px] text-gray-400 leading-tight">{n}</p>)}
+                                                          </div>
+                                                        )}
                                                       </td>
-                                                      <td className="py-1 px-2 text-center">
+                                                      <td className="py-1.5 px-2 text-center align-top">
                                                         <span className={`font-black ${gsa > 0 ? 'text-orange-500' : 'text-gray-200'}`}>{gsa}</span>
+                                                        {namaGsa.length > 0 && (
+                                                          <div className="mt-0.5 space-y-0.5">
+                                                            {namaGsa.map((n, ni) => <p key={ni} className="text-[8px] text-orange-400/80 leading-tight">{n}</p>)}
+                                                          </div>
+                                                        )}
                                                       </td>
                                                       {extraCols.map(c => {
                                                         const v = c.key === 'tempat4' ? t4 : t5
                                                         return (
-                                                          <td key={c.key} className="py-1 px-2 text-center">
+                                                          <td key={c.key} className="py-1.5 px-2 text-center align-top">
                                                             <span className={`font-bold ${v > 0 ? 'text-gray-500' : 'text-gray-200'}`}>{v}</span>
                                                           </td>
                                                         )
                                                       })}
                                                       {showJumlahCol && (
-                                                        <td className="py-1 pl-2 text-center">
+                                                        <td className="py-1.5 pl-2 text-center align-top">
                                                           <span className={`font-black ${jum > 0 ? 'text-gray-600' : 'text-gray-200'}`}>{jum}</span>
                                                         </td>
                                                       )}
