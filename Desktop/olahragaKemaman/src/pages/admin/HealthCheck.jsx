@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react'
-import { collection, getDocs, getDocsFromServer, query, where, doc, deleteDoc, updateDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore'
+import { collection, getDocs, getDocsFromServer, query, where, doc, deleteDoc, updateDoc, setDoc, getDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 
@@ -418,6 +418,303 @@ export default function HealthCheck() {
     const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
     if (kejSnap.empty) throw new Error('Tiada kejohanan aktif.')
     return kejSnap.docs[0].id
+  }
+
+  // ── Baiki Rekod ──────────────────────────────────────────────────────────────
+  const [brkNoAcara,     setBrkNoAcara]     = useState('')
+  const [brkSenarai,     setBrkSenarai]     = useState(null)   // senarai rekod untuk noAcara ini
+  const [brkLoading,     setBrkLoading]     = useState(false)
+  const [brkPilihan,     setBrkPilihan]     = useState(null)   // rekod yang dipilih untuk edit
+  const [brkForm,        setBrkForm]        = useState(null)   // nilai baru
+  const [brkPreview,     setBrkPreview]     = useState(false)  // tunjuk before/after
+  const [brkSaving,      setBrkSaving]      = useState(false)
+  const [brkLog,         setBrkLog]         = useState([])
+  // Undo
+  const [brkArkibList,   setBrkArkibList]   = useState(null)   // senarai arkib untuk noAcara
+  const [brkUndoLoading, setBrkUndoLoading] = useState(false)
+  const [brkUndoPilihan, setBrkUndoPilihan] = useState(null)
+
+  function formatPrestasiHC(val, unit) {
+    if (val === null || val === undefined || val === '') return '—'
+    const v = Number(val)
+    if (isNaN(v)) return String(val)
+    if (unit === 's') {
+      if (v >= 60) {
+        const m = Math.floor(v / 60)
+        const s = (v - m * 60).toFixed(2).padStart(5, '0')
+        return `${m}:${s}`
+      }
+      return v.toFixed(2) + 's'
+    }
+    if (unit === 'm') return v.toFixed(2) + 'm'
+    return String(v)
+  }
+
+  async function brkCariRekod() {
+    const noAcara = brkNoAcara.trim()
+    if (!noAcara) return
+    setBrkLoading(true)
+    setBrkSenarai(null)
+    setBrkPilihan(null)
+    setBrkForm(null)
+    setBrkPreview(false)
+    setBrkLog([])
+    setBrkArkibList(null)
+    setBrkUndoPilihan(null)
+    try {
+      const kejId = await getKejId()
+      // Cari acara by noAcara
+      const acaraSnap = await getDocs(query(collection(db, 'kejohanan', kejId, 'acara'), where('noAcara', '==', Number(noAcara))))
+      if (acaraSnap.empty) { setBrkLog([`❌ Acara #${noAcara} tidak dijumpai.`]); setBrkLoading(false); return }
+      const acaraData = { id: acaraSnap.docs[0].id, ...acaraSnap.docs[0].data() }
+
+      // Cari rekod berkaitan: by namaAcara + kategoriKod + jantina
+      const rekodSnap = await getDocs(collection(db, 'rekod'))
+      const namaAcara = acaraData.namaAcara || ''
+      const kategoriKod = acaraData.kategoriKod || ''
+      const jantina = acaraData.jantina || ''
+
+      const senarai = rekodSnap.docs
+        .filter(d => !d.id.endsWith('_tuntutan'))
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(r => {
+          const match =
+            r.namaAcara?.toUpperCase() === namaAcara.toUpperCase() &&
+            r.kategoriKod?.toUpperCase() === kategoriKod.toUpperCase() &&
+            r.jantina === jantina
+          return match
+        })
+
+      if (senarai.length === 0) {
+        setBrkLog([`⚠ Tiada rekod dijumpai untuk Acara #${noAcara} — ${namaAcara} ${jantina} ${kategoriKod}`])
+      } else {
+        setBrkSenarai({ acara: acaraData, list: senarai })
+        setBrkLog([])
+      }
+    } catch (e) {
+      setBrkLog([`❌ Ralat: ${e.message}`])
+    }
+    setBrkLoading(false)
+  }
+
+  function brkPilihRekod(rekod) {
+    setBrkPilihan(rekod)
+    setBrkForm({
+      prestasi:    String(rekod.prestasi ?? ''),
+      prestasiLama: String(rekod.prestasiLama ?? ''),
+      namaAtlet:   rekod.namaAtlet || '',
+      noKP:        rekod.noKP || '',
+      kodSekolah:  rekod.kodSekolah || '',
+      namaSekolah: rekod.namaSekolah || '',
+      tarikhRekod: rekod.tarikhRekod || '',
+      catatanKhas: rekod.catatanKhas || '',
+    })
+    setBrkPreview(false)
+  }
+
+  async function brkSimpan() {
+    if (!brkPilihan || !brkForm) return
+    if (!window.confirm(`Simpan perubahan rekod?\n\nRekod lama akan diarkibkan ke rekod_sejarah sebelum dikemaskini.`)) return
+    setBrkSaving(true)
+    setBrkLog([`🔧 Mengarkibkan rekod lama...`])
+    try {
+      const rKey = brkPilihan.id
+      const rekodRef = doc(db, 'rekod', rKey)
+      const snapSemasa = await getDoc(rekodRef)
+
+      // 1. Arkibkan ke rekod_sejarah
+      if (snapSemasa.exists()) {
+        const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+        await setDoc(sejarahRef, {
+          ...snapSemasa.data(),
+          rekodId:      rKey,
+          diarchivPada: serverTimestamp(),
+          sebab:        'baiki_rekod_healthcheck',
+          diarchivOleh: userData?.uid || null,
+        })
+        setBrkLog(l => [...l, `✓ Rekod lama diarkibkan ke rekod_sejarah`])
+      }
+
+      // 2. Kemaskini rekod utama
+      const patch = {
+        prestasi:    Number(brkForm.prestasi),
+        prestasiLama: brkForm.prestasiLama !== '' ? Number(brkForm.prestasiLama) : null,
+        namaAtlet:   brkForm.namaAtlet.trim(),
+        noKP:        brkForm.noKP.trim(),
+        kodSekolah:  brkForm.kodSekolah.trim().toUpperCase(),
+        namaSekolah: brkForm.namaSekolah.trim(),
+        tarikhRekod: String(brkForm.tarikhRekod).slice(0, 4),
+        catatanKhas: brkForm.catatanKhas.trim(),
+        updatedAt:   serverTimestamp(),
+        dikemasOleh: userData?.uid || null,
+      }
+      await updateDoc(rekodRef, patch)
+      setBrkLog(l => [...l, `✓ Rekod dikemaskini`])
+
+      // 3. Kemaskini mata_olahragawan jika noKP berubah
+      const noKPLama = brkPilihan.noKP
+      const noKPBaru = brkForm.noKP.trim()
+      const acaraId  = brkSenarai?.acara?.id
+      if (acaraId && noKPLama && noKPBaru !== noKPLama) {
+        const mataRefLama = doc(db, 'mata_olahragawan', noKPLama)
+        const mataSnapLama = await getDoc(mataRefLama)
+        if (mataSnapLama.exists()) {
+          const fieldKey = `rekod_${acaraId}`
+          await updateDoc(mataRefLama, { [fieldKey]: deleteField() })
+          setBrkLog(l => [...l, `✓ Rekod dibuang dari mata_olahragawan ${noKPLama}`])
+        }
+        if (noKPBaru) {
+          const mataRefBaru = doc(db, 'mata_olahragawan', noKPBaru)
+          await setDoc(mataRefBaru, {
+            [`rekod_${acaraId}`]: {
+              acaraId,
+              namaAcara:  brkPilihan.namaAcara,
+              kategoriKod: brkPilihan.kategoriKod,
+              jantina:    brkPilihan.jantina,
+              peringkat:  brkPilihan.peringkat,
+              prestasiBaru: Number(brkForm.prestasi),
+              prestasiLama: brkForm.prestasiLama !== '' ? Number(brkForm.prestasiLama) : null,
+            }
+          }, { merge: true })
+          setBrkLog(l => [...l, `✓ Rekod ditambah ke mata_olahragawan ${noKPBaru}`])
+        }
+      } else if (acaraId && noKPBaru) {
+        // Kemaskini nilai dalam mata_olahragawan (noKP sama, prestasi mungkin berubah)
+        const mataRef = doc(db, 'mata_olahragawan', noKPBaru)
+        const mataSnap = await getDoc(mataRef)
+        if (mataSnap.exists() && mataSnap.data()[`rekod_${acaraId}`]) {
+          await updateDoc(mataRef, {
+            [`rekod_${acaraId}.prestasiBaru`]: Number(brkForm.prestasi),
+            [`rekod_${acaraId}.prestasiLama`]: brkForm.prestasiLama !== '' ? Number(brkForm.prestasiLama) : null,
+          })
+          setBrkLog(l => [...l, `✓ mata_olahragawan ${noKPBaru} dikemaskini`])
+        }
+      }
+
+      setBrkLog(l => [...l, `✅ Selesai — rekod berjaya dibaiki.`])
+      setBrkPilihan(null)
+      setBrkForm(null)
+      setBrkPreview(false)
+      // Reload senarai
+      await brkCariRekod()
+    } catch (e) {
+      setBrkLog(l => [...l, `❌ Ralat: ${e.message}`])
+    }
+    setBrkSaving(false)
+  }
+
+  async function brkPadamRekod() {
+    if (!brkPilihan) return
+    if (!window.confirm(`PADAM rekod ini terus?\n\n${brkPilihan.namaAcara} ${brkPilihan.jantina} ${brkPilihan.kategoriKod} (${brkPilihan.peringkat})\n\nRekod akan diarkibkan dahulu sebelum dipadam.`)) return
+    if (!window.confirm(`Pengesahan kedua — PADAM TERUS rekod ini? Tindakan ini kekal.`)) return
+    setBrkSaving(true)
+    setBrkLog([`🗑 Mengarkibkan dan memadam rekod...`])
+    try {
+      const rKey = brkPilihan.id
+      const rekodRef = doc(db, 'rekod', rKey)
+      const snapSemasa = await getDoc(rekodRef)
+      if (snapSemasa.exists()) {
+        const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+        await setDoc(sejarahRef, {
+          ...snapSemasa.data(),
+          rekodId:      rKey,
+          diarchivPada: serverTimestamp(),
+          sebab:        'padam_healthcheck',
+          dipadamOleh:  userData?.uid || null,
+        })
+      }
+      await deleteDoc(rekodRef)
+
+      // Buang dari mata_olahragawan
+      const noKP   = brkPilihan.noKP
+      const acaraId = brkSenarai?.acara?.id
+      if (noKP && acaraId) {
+        const mataRef = doc(db, 'mata_olahragawan', noKP)
+        const mataSnap = await getDoc(mataRef)
+        if (mataSnap.exists()) {
+          await updateDoc(mataRef, { [`rekod_${acaraId}`]: deleteField() })
+          setBrkLog(l => [...l, `✓ Rekod dibuang dari mata_olahragawan`])
+        }
+      }
+
+      setBrkLog(l => [...l, `✅ Rekod dipadam dan diarkibkan.`])
+      setBrkPilihan(null)
+      setBrkForm(null)
+      setBrkPreview(false)
+      setBrkSenarai(null)
+    } catch (e) {
+      setBrkLog(l => [...l, `❌ Ralat: ${e.message}`])
+    }
+    setBrkSaving(false)
+  }
+
+  async function brkMuatArkib() {
+    if (!brkSenarai) return
+    setBrkUndoLoading(true)
+    setBrkArkibList(null)
+    setBrkUndoPilihan(null)
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'rekod_sejarah'),
+        where('rekodId', '==', brkPilihan?.id || '')
+      ))
+      if (snap.empty) {
+        setBrkArkibList([])
+      } else {
+        const list = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.diarchivPada?.seconds ?? 0) - (a.diarchivPada?.seconds ?? 0))
+        setBrkArkibList(list)
+      }
+    } catch (e) {
+      setBrkLog(l => [...l, `❌ Ralat muatkan arkib: ${e.message}`])
+    }
+    setBrkUndoLoading(false)
+  }
+
+  async function brkUndoRekod() {
+    if (!brkUndoPilihan || !brkPilihan) return
+    if (!window.confirm(`Undo: Pulihkan rekod lama ini?\n\nRekod semasa akan diarkibkan dahulu.`)) return
+    setBrkSaving(true)
+    setBrkLog([`♻ Memulihkan rekod dari arkib...`])
+    try {
+      const rKey = brkPilihan.id
+      const rekodRef = doc(db, 'rekod', rKey)
+      const snapSemasa = await getDoc(rekodRef)
+
+      // Arkibkan rekod semasa
+      if (snapSemasa.exists()) {
+        const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+        await setDoc(sejarahRef, {
+          ...snapSemasa.data(),
+          rekodId:      rKey,
+          diarchivPada: serverTimestamp(),
+          sebab:        'undo_ke_arkib',
+          diarchivOleh: userData?.uid || null,
+        })
+        setBrkLog(l => [...l, `✓ Rekod semasa diarkibkan`])
+      }
+
+      // Pulihkan dari arkib yang dipilih
+      const { id: _sejarahId, diarchivPada: _d, sebab: _s, dipecahOleh: _dp, ...dataArkib } = brkUndoPilihan
+      await setDoc(rekodRef, {
+        ...dataArkib,
+        rekodId:   rKey,
+        statusRekod: 'aktif',
+        updatedAt: serverTimestamp(),
+        dipulihkanOleh: userData?.uid || null,
+        dipulihkanDari: brkUndoPilihan.id,
+      })
+      setBrkLog(l => [...l, `✓ Rekod dipulihkan dari arkib`, `✅ Undo berjaya.`])
+      setBrkArkibList(null)
+      setBrkUndoPilihan(null)
+      setBrkPilihan(null)
+      setBrkForm(null)
+      await brkCariRekod()
+    } catch (e) {
+      setBrkLog(l => [...l, `❌ Ralat: ${e.message}`])
+    }
+    setBrkSaving(false)
   }
 
   async function jalanFix() {
@@ -1127,6 +1424,273 @@ export default function HealthCheck() {
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── Panel Baiki Rekod ── */}
+      <div className="bg-white rounded-xl border border-teal-200 overflow-hidden">
+        <div className="px-4 py-3 bg-teal-50 border-b border-teal-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+          <p className="text-xs font-bold text-teal-700 uppercase tracking-wide">Pembaikan Khas — Baiki Rekod</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Baiki rekod yang salah: ubah prestasi, pemegang, sekolah. Rekod lama diarkibkan automatik sebelum disimpan. Sokong undo dan padam.</p>
+
+          {/* Step 1: Cari by No Acara */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">No Acara</label>
+              <input
+                value={brkNoAcara}
+                onChange={e => setBrkNoAcara(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && brkCariRekod()}
+                placeholder="cth: 101"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={brkCariRekod}
+                disabled={brkLoading || !brkNoAcara.trim()}
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors"
+              >
+                {brkLoading ? 'Mencari...' : 'Cari'}
+              </button>
+            </div>
+          </div>
+
+          {/* Log mesej */}
+          {brkLog.length > 0 && (
+            <div className="space-y-1">
+              {brkLog.map((l, i) => (
+                <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Step 2: Senarai rekod dijumpai */}
+          {brkSenarai && !brkPilihan && (
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-gray-700">
+                Acara #{brkSenarai.acara.noAcara} — {brkSenarai.acara.namaAcara} {brkSenarai.acara.jantina} {brkSenarai.acara.kategoriKod}
+              </p>
+              <p className="text-[10px] text-gray-500">{brkSenarai.list.length} rekod dijumpai. Pilih rekod untuk dibaiki:</p>
+              {brkSenarai.list.map(rekod => (
+                <div
+                  key={rekod.id}
+                  onClick={() => brkPilihRekod(rekod)}
+                  className="border border-teal-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-teal-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-bold text-teal-700 uppercase mr-2">{rekod.peringkat === 'D' ? 'Daerah' : rekod.peringkat === 'N' ? 'Negeri' : 'Kebangsaan'}</span>
+                      <span className="text-[11px] font-mono font-semibold text-gray-800">{formatPrestasiHC(rekod.prestasi, rekod.unit)}</span>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${rekod.statusRekod === 'aktif' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {rekod.statusRekod}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-0.5">{rekod.namaAtlet || '—'} · {rekod.namaSekolah || rekod.kodSekolah || '—'} · {rekod.tarikhRekod || '—'}</p>
+                  <p className="text-[10px] text-gray-400 font-mono mt-0.5">{rekod.id}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Step 3: Form edit */}
+          {brkPilihan && brkForm && !brkPreview && (
+            <div className="space-y-3 border border-teal-200 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold text-teal-700">Edit Rekod — {brkPilihan.peringkat === 'D' ? 'Daerah' : brkPilihan.peringkat === 'N' ? 'Negeri' : 'Kebangsaan'}</p>
+                <button onClick={() => { setBrkPilihan(null); setBrkForm(null) }} className="text-[10px] text-gray-400 hover:text-gray-600">✕ Batal</button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Prestasi Baru ({brkPilihan.unit})</label>
+                  <input
+                    value={brkForm.prestasi}
+                    onChange={e => setBrkForm(f => ({ ...f, prestasi: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Prestasi Lama ({brkPilihan.unit})</label>
+                  <input
+                    value={brkForm.prestasiLama}
+                    onChange={e => setBrkForm(f => ({ ...f, prestasiLama: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Nama Atlet</label>
+                  <input
+                    value={brkForm.namaAtlet}
+                    onChange={e => setBrkForm(f => ({ ...f, namaAtlet: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">No KP</label>
+                  <input
+                    value={brkForm.noKP}
+                    onChange={e => setBrkForm(f => ({ ...f, noKP: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Kod Sekolah</label>
+                  <input
+                    value={brkForm.kodSekolah}
+                    onChange={e => setBrkForm(f => ({ ...f, kodSekolah: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Nama Sekolah</label>
+                  <input
+                    value={brkForm.namaSekolah}
+                    onChange={e => setBrkForm(f => ({ ...f, namaSekolah: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Tahun Rekod</label>
+                  <input
+                    value={brkForm.tarikhRekod}
+                    onChange={e => setBrkForm(f => ({ ...f, tarikhRekod: e.target.value }))}
+                    placeholder="cth: 2026"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">Catatan Khas</label>
+                  <input
+                    value={brkForm.catatanKhas}
+                    onChange={e => setBrkForm(f => ({ ...f, catatanKhas: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => setBrkPreview(true)}
+                className="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                Pratonton Before/After →
+              </button>
+            </div>
+          )}
+
+          {/* Step 4: Preview before/after */}
+          {brkPilihan && brkForm && brkPreview && (
+            <div className="space-y-3 border-2 border-teal-400 rounded-lg p-3">
+              <p className="text-[11px] font-bold text-teal-700">Pratonton Perubahan</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-2 space-y-1">
+                  <p className="text-[10px] font-bold text-red-600 uppercase">Sebelum</p>
+                  <p className="text-[10px] text-gray-700">Prestasi: <span className="font-mono font-bold">{formatPrestasiHC(brkPilihan.prestasi, brkPilihan.unit)}</span></p>
+                  <p className="text-[10px] text-gray-700">Prestasi Lama: <span className="font-mono">{formatPrestasiHC(brkPilihan.prestasiLama, brkPilihan.unit)}</span></p>
+                  <p className="text-[10px] text-gray-700">Atlet: {brkPilihan.namaAtlet || '—'}</p>
+                  <p className="text-[10px] text-gray-700">No KP: <span className="font-mono">{brkPilihan.noKP || '—'}</span></p>
+                  <p className="text-[10px] text-gray-700">Sekolah: {brkPilihan.namaSekolah || brkPilihan.kodSekolah || '—'}</p>
+                  <p className="text-[10px] text-gray-700">Tahun: {brkPilihan.tarikhRekod || '—'}</p>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-2 space-y-1">
+                  <p className="text-[10px] font-bold text-green-600 uppercase">Selepas</p>
+                  <p className="text-[10px] text-gray-700">Prestasi: <span className="font-mono font-bold">{formatPrestasiHC(Number(brkForm.prestasi), brkPilihan.unit)}</span></p>
+                  <p className="text-[10px] text-gray-700">Prestasi Lama: <span className="font-mono">{formatPrestasiHC(brkForm.prestasiLama !== '' ? Number(brkForm.prestasiLama) : null, brkPilihan.unit)}</span></p>
+                  <p className="text-[10px] text-gray-700">Atlet: {brkForm.namaAtlet || '—'}</p>
+                  <p className="text-[10px] text-gray-700">No KP: <span className="font-mono">{brkForm.noKP || '—'}</span></p>
+                  <p className="text-[10px] text-gray-700">Sekolah: {brkForm.namaSekolah || brkForm.kodSekolah || '—'}</p>
+                  <p className="text-[10px] text-gray-700">Tahun: {brkForm.tarikhRekod || '—'}</p>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={brkSimpan}
+                  disabled={brkSaving}
+                  className="flex-1 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors"
+                >
+                  {brkSaving ? 'Menyimpan...' : '✓ Simpan Perubahan'}
+                </button>
+                <button
+                  onClick={brkPadamRekod}
+                  disabled={brkSaving}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors"
+                >
+                  🗑 Padam Terus
+                </button>
+                <button
+                  onClick={() => setBrkPreview(false)}
+                  disabled={brkSaving}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg disabled:opacity-40 transition-colors"
+                >
+                  ← Edit Semula
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Undo: Lihat Arkib */}
+          {brkPilihan && !brkPreview && (
+            <div className="border-t border-teal-100 pt-3 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={brkMuatArkib}
+                  disabled={brkUndoLoading}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded-lg disabled:opacity-40 transition-colors"
+                >
+                  {brkUndoLoading ? 'Memuatkan...' : '♻ Lihat Arkib / Undo'}
+                </button>
+                <span className="text-[10px] text-gray-400">Pulihkan rekod lama dari arkib</span>
+              </div>
+
+              {brkArkibList !== null && (
+                <div className="space-y-1">
+                  {brkArkibList.length === 0 ? (
+                    <p className="text-[11px] text-gray-500">Tiada arkib dijumpai untuk rekod ini.</p>
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-bold text-gray-600">{brkArkibList.length} arkib dijumpai — pilih untuk undo:</p>
+                      {brkArkibList.map((arkib, i) => {
+                        const tarikh = arkib.diarchivPada?.seconds
+                          ? new Date(arkib.diarchivPada.seconds * 1000).toLocaleString('ms-MY')
+                          : '—'
+                        const isSelected = brkUndoPilihan?.id === arkib.id
+                        return (
+                          <div
+                            key={arkib.id}
+                            onClick={() => setBrkUndoPilihan(isSelected ? null : arkib)}
+                            className={`border rounded-lg px-3 py-2 cursor-pointer transition-colors ${isSelected ? 'border-amber-400 bg-amber-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-amber-700">Arkib {i + 1}</span>
+                              <span className="text-[10px] text-gray-400">{tarikh}</span>
+                            </div>
+                            <p className="text-[10px] font-mono text-gray-700 mt-0.5">
+                              Prestasi: {formatPrestasiHC(arkib.prestasi, arkib.unit)} · {arkib.namaAtlet || '—'}
+                            </p>
+                            <p className="text-[10px] text-gray-500">{arkib.sebab || 'arkib biasa'}</p>
+                          </div>
+                        )
+                      })}
+                      {brkUndoPilihan && (
+                        <button
+                          onClick={brkUndoRekod}
+                          disabled={brkSaving}
+                          className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors"
+                        >
+                          {brkSaving ? 'Memulihkan...' : `♻ Undo — Pulihkan Arkib Ini`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
 
