@@ -317,6 +317,41 @@ metadata:
 - **Semak**: Lorong destinasi mesti kosong sebelum pindah
 - **Format heatId**: `{acaraId}-H{noHeat}` (cth 215-H1, 215-H2)
 
+## AUDIT DB — 22 Jun 2026
+
+### Acara 113 & 127 — Audit Keputusan Kosong
+- **Acara 113**: 100M L L12 saringan — 6 heat, 47 peserta, `statusKeputusan=diterima` semua heat
+- **Punca kosong**: Hanya 8 atlet ada masa (1-2 terpantas per heat), 39 lain `keputusan=null` — pencatat masukkan separuh masa sahaja sebelum HANTAR
+- **Acara 127**: 100M L L12 final — 1 heat (`final_1782051764680`), 8 finalis betul (lorong 1-8 lengkap), semua `keputusan=null`, `statusKeputusan=belum`
+- **Kesimpulan**: Data tidak hilang — final 127 belum berlari / belum diinput. Saringan 113 lengkap dari segi finalis tapi masa atlet lain tidak dimasukkan.
+- **Tindakan**: Tiada kod diubah — audit read-only sahaja
+
+## FIX — Sesi 23 Jun 2026 (commit 78f47ae)
+
+### Rekod Acara 217 — Firestore Direct Update (tiada kod diubah)
+- **Isu**: Atlet S14 MUHAMMAD SYAMIR IRFFAN (noKP: 120205-06-0223) pecah rekod 110M Lari Berpagar L15 semasa saringan — rekod tidak update di Tab Rekod Kejohanan, AnalisaPingat, dan badge Home
+- **Punca 1**: Rekod library dimasukkan manual dengan key salah `110M_LARI_BERPAGAR_L15_L_E_D` (ada L15 lebih) dan noKP salah `110108-11-0349`
+- **Punca 2**: `pecahRekod` field tiada dalam heat 217-H2 peserta S14
+- **Fix**: 3 update Firestore terus (tiada kod diubah):
+  1. Cipta key betul `rekod/110M_LARI_BERPAGAR_L_E_D` dengan noKP/kodSekolah betul, prestasi 16.16s, prestasiLama 16.65s (pemegang lama: MUHAMMAD AYREEL AL TAFIEY BIN MOHD ZAMRI, SMK SULTAN ISMAIL, 2025)
+  2. Patch heat `217-H2` peserta S14 → tambah `pecahRekod: "D"`
+  3. Padam key salah `110M_LARI_BERPAGAR_L15_L_E_D`
+- **mata_olahragawan**: `rekod_217` sudah ada dan betul — tidak disentuh
+- **Nota penting**: Acara 217 adalah saringan (`fasa: 'heat'`) — `grantMedal=false` betul, tiada pingat. Rekod detection sahaja yang berlaku.
+- **Status**: ✅ Done (23 Jun 2026)
+
+### InputKeputusan — Masa Tidak Hilang Bila Klik Simpan/Hantar Tanpa Blur
+- **Bug**: Pencatat taip masa → terus klik Simpan Draf/HANTAR tanpa blur → masa hilang
+- **Punca**: Input guna `defaultValue` + `key={masa-lorong-${kp.keputusan}}` — React remount input bila state update → nilai dalam DOM hilang sebelum masuk state
+- **Fix**: Tukar ke controlled input `value={kp._raw}` + `onChange` update `_raw` setiap keystroke → `onBlur` parse ke saat tulen + kemaskini `keputusan`
+- **Field `_raw`**: String sementara dalam state sahaja — distrip oleh `stripUndef` (kini strip semua field prefix `_`) sebelum simpan ke Firestore
+- **4 komponen diubah**: InputLorong, InputMassStart, InputRelay, InputSemuaPeserta
+- **3 lokasi DNS/DNF/DQ**: tambah `onChange(slot, '_raw', '')` bila status set
+- **initKeputusanDariPeserta + initKeputusanSemua**: tambah `_raw` init dari `fmtMasaDisplay(p.keputusan)`
+- **stripUndef**: `!k.startsWith('_') && v !== undefined` — buang semua field `_` sebelum Firestore
+- **Fail**: `src/pages/pencatat/InputKeputusan.jsx`
+- **Status**: ✅ Fixed + deployed (23 Jun 2026)
+
 ## PENDING
 
 ### KIV — Semak Kiraan Umur Standard MSSM (14 Jun 2026)
@@ -369,3 +404,132 @@ metadata:
 - **Bug**: Tunjuk ⚠ walaupun override BH/BT betul — punca: guna default kategori bukan override
 - **Fix**: `overrides[a.id]?.bestHeat` dulu sebelum fallback ke default kategori
 - **Status**: ✅ Fixed + deployed
+
+## FIX — Sesi 22 Jun 2026 (commit 7646960)
+
+### Rekod.jsx — Tab Rekod Kejohanan (rebuild)
+- **Bug**: Tab tunjuk data sekejap lepas refresh lepas tu hilang (race condition)
+- **Punca**: `rekodKejList` diload dalam `load()` — dipanggil semula reset ke `[]`
+- **Fix**: Pisahkan ke `useEffect([aktifKejId])` berasingan dengan `cancelled` cleanup
+- **Fail**: `src/pages/admin/Rekod.jsx`
+
+### Rekod.jsx — Fix load() query Firestore index error
+- **Bug**: Page fail load — semua data kosong, button tidak respond
+- **Punca**: `orderBy('updatedAt', 'desc')` pada `rekod` collection + `orderBy('kategoriKod')` pada acara subcollection — Firestore index belum dibina → query rejected → `Promise.allSettled` fulfilled kosong
+- **Fix**: Buang `orderBy` dari Firestore query, sort dalam JS selepas fetch
+- **Fail**: `src/pages/admin/Rekod.jsx` — `load()` function
+
+### Rekod.jsx — Buang panel standalone Rekod Dipecah
+- **Bug**: Panel standalone `showRekodKej=true` by default — mendominasi page, tab hilang dari view
+- **Fix**: Buang keseluruhan panel standalone, data kekal dalam tab "Rekod Kejohanan" sahaja
+- **Fail**: `src/pages/admin/Rekod.jsx`
+
+### Rekod.jsx — Cetak PDF tab Rekod Kejohanan
+- **Feature**: Butang "Cetak PDF" dalam header info bar tab Rekod Kejohanan
+- **Format**: A4 portrait, grouped by kategori (header biru), 8 kolum
+- **Kolum**: Nama Acara | Jan. | Atlet Baru | Sekolah | Prestasi Baru | Prestasi Lama | Pemegang Lama | Tahun
+- **Fail**: `src/pages/admin/Rekod.jsx` — `handleCetakRekodKej()`
+
+### Rekod.jsx — Audit Rekod Tertinggal
+- **Feature**: Panel "Semak Rekod Tertinggal" dalam tab Rekod Kejohanan
+- **Logic**: Imbas heat `diterima` → bandingkan prestasi vs rekod library → kesan peserta yang patut pecah rekod tapi tiada `rekod_` field dalam `mata_olahragawan` DAN tiada tuntutan
+- **Output**: Jadual merah — Nama Acara | Kat | Jan | Atlet | Prestasi | Status (rekod ada tapi tuntutan tiada / rekod baru tiada dalam library)
+- **Fail**: `src/pages/admin/Rekod.jsx` — `handleAuditRekod()`
+
+### AnalisaPingat.jsx — Modul baru
+- **Feature**: Senarai atlet + pingat by kategori, data dari `mata_olahragawan`
+- **Rekod**: Baca `rekod_` fields dari `mata_olahragawan` (bukan `rekod/_tuntutan`)
+- **Cetak PDF**: A4 landscape, semua kategori, kolum: # | Nama Atlet | Sekolah | Emas | Perak | Gangsa | Mata | Rekod Dipecah
+- **Route**: `/dashboard/analisapingat`
+- **Fail**: `src/pages/admin/AnalisaPingat.jsx` (baru), `src/App.jsx`, `src/components/layout/DashboardLayout.jsx`
+
+## FIX — Sesi 22 Jun 2026 (commit 44d59bc)
+
+### AnalisaPingat.jsx — Panel Audit Dual (Medal + Rekod)
+- **Feature**: Panel Audit dalam AnalisaPingat — semak konsistensi medal DAN rekod serentak
+- **Audit 1 — Medal berbeza**: Bandingkan `pingat_emas/perak/gangsa` dalam Firestore vs dikira semula dari heat final — tunjuk beza jika tidak sama
+- **Audit 2 — Rekod stale**: Baca `rekod_` fields dari `mata_olahragawan`, bandingkan `rKey` vs rekod library aktif — kesan fields yang sudah lapuk (rekod dah bertukar tapi field tidak dipadam)
+- **Audit 3 — Rekod pending**: Tuntutan dalam `rekod` collection masih belum disahkan
+- **Fix rKey false stale**: Guna `val.namaAcaraPendek || val.namaAcara` (sebelum: `val.namaAcara` sahaja → 26 false positives kerana nama penuh cth "100m L L12" ≠ kunci "100m")
+- **Fail**: `src/pages/admin/AnalisaPingat.jsx`
+
+### AnalisaPingat — Tab Atlet Terbaik Dinamik + Cetak PDF 3 Salinan (commit 1cac6b0)
+- **Feature**: Tab baru "Atlet Terbaik" (paling kanan) — admin cipta tajuk bebas (cth: Atlet Terbaik L12)
+- **Simpan**: Firestore `tetapan/atletTerbaik` → kekal lepas refresh
+- **Pilih atlet**: Butang per tajuk di hujung kanan setiap row table kategori → confirm modal jika ganti
+- **Preview**: Tab Atlet Terbaik tunjuk semua tajuk bertingkat — table format Nama|Sekolah|Pingat&Acara|Rekod
+- **PDF**: Landscape 3 salinan (JURUHEBAH/HADIAH/PENGURUS PESERTA), header standard nama kejohanan
+- **Format kolum**: Pingat text (Emas(1):100M), Rekod senarai bernombor dengan prestasi baru/lama+nama lama
+- **Fail**: `src/pages/admin/AnalisaPingat.jsx`
+
+### AnalisaPingat — Nama Acara Terus Display dalam Kolum Pingat (commit f585a58)
+- **Feature**: Bawah nombor pingat (🥇/🥈/🥉), nama acara ditunjuk terus — tiada hover
+- **Contoh**: Kolum Emas tunjuk `2` dan bawahnya `100M` + `Lompat Jauh`
+- **Data**: Semasa `load()` loop heat final, `acaraPingat: {1:[],2:[],3:[]}` dikumpul bersama `pingat`
+- **Fail**: `src/pages/admin/AnalisaPingat.jsx`
+
+### Fix L12 Hilang — fasa=null dalam heat acara final
+- **Bug**: Kategori L12 tidak muncul dalam AnalisaPingat — heat final larian L12 ada peserta `diterima` tapi tidak dikira
+- **Punca**: Heat docs untuk acara final larian (acara 231 dll.) ada `fasa=null` — `FASA_FINAL.includes(null)=false` → semua peserta dalam heat ini diskip
+- **Fix A (kod)**: Tambah `isFinalAcara = !!ad.parentAcaraId` → `fasaOk = FASA_FINAL.includes(hd.fasa) || (isFinalAcara && hd.fasa == null)` — terima heat dari acara final walaupun fasa null
+- **Fix B (data)**: Patch Firestore `kejohanan/KOAM-2026-WBRC/acara/231/heat/final_1782098957160` → set `fasa='final'` via REST PATCH
+- **Fail kod**: `src/pages/admin/AnalisaPingat.jsx` — `handleAudit()` + seksyen medal loading
+
+## FIX — Sesi 23 Jun 2026 (Firestore direct, tiada kod diubah)
+
+### Fix mata_olahragawan — Stale Saringan Pingat (Faris, TBA2013)
+- **Bug**: MUHAMMAD FARIS ZULHUSNI (TBA2013) ada `pingat_emas=2`, `jumlahMata=10` — sepatutnya 1 dan 5
+- **Punca**: `acaraDetail_113` (saringan heat 100M L L12) tersimpan `pingat=emas` — bug lama sebelum 21 Jun fix
+- **Fix**: 3 field dalam `mata_olahragawan/140415-11-0215_KOAM-2026-WBRC`:
+  1. `acaraDetail_113` → PADAM
+  2. `pingat_emas`: 2 → 1
+  3. `jumlahMata`: 10 → 5
+- **Skrip**: `fix-faris-mata.cjs`
+- **Status**: ✅ Done (23 Jun 2026)
+
+### Fix medal_tally — Stale Contrib (3 sekolah)
+- **Punca**: Bug saringan lama — contrib dengan heatId `1782051764680` + `1782011521952` tersimpan dari heat saringan sebagai pingat
+- **Pattern stale**: noKP sama ada 2 contrib berbeza heatId dalam 1 sekolah
+
+**TBA2013 SK Kijal:**
+- `contrib_final_1782051764680_140415-11-0215` (emas stale Faris) → PADAM
+- `emas`: 4→3, `jumlahPingat`: 9→8, `kat_A_L_emas`: 3→2
+- Skrip: `fix-kijal-tally.cjs` ✅
+
+**TBA2009 SK Ayer Puteh:**
+- `contrib_final_1782051764680_140623-11-0607` (gangsa stale Izzat) → PADAM
+- `gangsa`: 2→1, `jumlahPingat`: 3→2
+- Skrip: `fix-ayer-puteh-tally.cjs` ✅
+
+**TBA2044 SK Seri Iman:**
+- `contrib_final_1782051764680_141121-11-0695` (perak stale) → PADAM
+- `contrib_final_1782011521952_160111-11-0468` (emas stale) → PADAM
+- `emas`: 2→1, `perak`: 5→4, `jumlahPingat`: 15→13
+- Skrip: `fix-seri-iman-tally.cjs` ✅
+
+### Audit SR Medal Tally — Skrip Dibina
+- **audit-saringan-pingat.cjs**: Cari `acaraDetail_` dengan `pingat` field dalam `mata_olahragawan` — 226 doc disemak, bersih ✅
+- **audit-tally-sr.cjs**: Cross-check `mata_olahragawan` vs `medal_tally contrib` untuk SR (kat A/B/C/D/K/L/M/N) — tapis relay + SM — **kejohanan masih berjalan**, beza MA>Contrib adalah normal
+- **Nota**: Semak semula selepas SEMUA acara selesai untuk audit penuh
+
+## AUDIT — Sesi 23 Jun 2026 (grantMedal flow deep check)
+
+### Audit Flow grantMedal → medal_tally — 100% SELAMAT
+
+**Soalan**: Adakah flow SR/SM → acara final → medal_tally sync dan tepat?
+
+**Dapatan:**
+- 152 acara total: 48 final (parentAcaraId), 48 saringan, 56 terus final
+- **Semua 48 acara saringan** ada perkataan "saringan" dalam `peringkat` atau `namaAcara` → `isSaringanAcara=true` → `grantMedal=false` — tiada risiko salah beri medal dari saringan ✅
+- **SR vs SM** tidak perlu dibeza dalam `grantMedal` — dua-dua layak pingat ikut `fasa='final'`, `medal_tally` doc ID guna `kodSekolah` prefix berbeza (TBA=SR, TEA=SM) ✅
+- Bug lama (Faris, Kijal, Ayer Puteh, Seri Iman) bukan dari bug logik kod — dari bug sebelum 21 Jun (saringan tulis ke mata_olahragawan) yang dah difix
+
+**Logic grantMedal (betul):**
+```js
+isSaringanAcara = peringkat.includes('saringan') || namaAcara.includes('saringan')
+grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
+```
+
+**Risiko teoridikal (tidak berlaku sekarang):** Acara saringan baru tanpa perkataan "saringan" + belum jana heat kedua → `grantMedal=true` secara salah. Mitigasi: semua 48 acara saringan dah ada "saringan" dalam nama.
+
+**Skrip audit**: `/tmp/audit-acara-peringkat.cjs` (read-only, tidak disimpan dalam repo)
