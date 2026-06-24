@@ -712,6 +712,13 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
 
 ## PENDING
 
+### Fix CetakKeputusan — UI tunjuk nama sekolah bukan kod
+- **Bug**: Preview keputusan dalam UI tunjuk `TBA2035` dll — sepatutnya nama penuh
+- **Punca**: `skolMap` hanya wujud dalam scope fungsi PDF — UI tidak ada akses
+- **Fix**: Tambah `skolMap` state + load `sekolah` collection masa init (parallel dengan load lain)
+- **Fail**: `src/pages/admin/CetakKeputusan.jsx`
+- **Commit**: `49bb408` ✅
+
 ### KIV — Padam rekod_sejarah SMK CHUKAI 48.75s
 - Doc ID: `LEavHyMzymxJ2aKSTUVs` dalam collection `rekod_sejarah`
 - Perlu padam manual di Firebase Console (permission denied via skrip)
