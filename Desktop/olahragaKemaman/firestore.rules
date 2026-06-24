@@ -36,22 +36,31 @@ service cloud.firestore {
     }
 
     // ── users ─────────────────────────────────────────────────────
-    // User boleh baca profil sendiri; superadmin boleh baca/tulis semua
+    // Sistem KOAM guna sessionStorage auth (bukan Firebase Auth) —
+    // login perlu query users tanpa Firebase Auth token.
+    // WRITE: hanya superadmin (Firebase Auth) boleh ubah.
     match /users/{uid} {
-      allow read: if isAuth() && (request.auth.uid == uid || isSuperAdmin());
+      allow read: if true;
       allow write: if isSuperAdmin();
     }
 
     // ── sekolah ───────────────────────────────────────────────────
+    // Pengurus pasukan login guna kodSekolah+PIN — perlu baca tanpa auth.
     match /sekolah/{kodSekolah} {
-      allow read: if true;  // awam boleh lihat senarai sekolah
+      allow read: if true;
       allow write: if isSuperAdmin();
     }
 
+    // ── login_attempts ────────────────────────────────────────────
+    // Rate limiting semasa login — perlu baca/tulis tanpa Firebase Auth.
+    match /login_attempts/{docId} {
+      allow read, write: if true;
+    }
+
     // ── atlet ─────────────────────────────────────────────────────
-    // Admin hanya boleh tulis atlet sekolah sendiri
+    // Dashboard, pendaftaran, sijil — semua baca atlet tanpa Firebase Auth
     match /atlet/{noKP} {
-      allow read: if isStaff();
+      allow read: if true;
       allow create: if isAdminOrAbove();
       allow update: if isSuperAdmin() ||
         (isAdmin() && resource.data.kodSekolah ==
@@ -127,7 +136,7 @@ service cloud.firestore {
     // ── mata_olahragawan ─────────────────────────────────────────
     match /mata_olahragawan/{docId} {
       allow read: if true;
-      allow write: if isSuperAdmin();  // dikira oleh Cloud Functions
+      allow write: if isSuperAdmin();
     }
 
     // ── jadual_acara ─────────────────────────────────────────────
@@ -136,21 +145,50 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // ── jadual_khas ───────────────────────────────────────────────
+    match /jadual_khas/{id} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ── medal_tally ───────────────────────────────────────────────
+    match /medal_tally/{id} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || isPencatat();
+    }
+
+    // ── kategori ──────────────────────────────────────────────────
+    match /kategori/{id} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ── tetapan ───────────────────────────────────────────────────
+    match /tetapan/{id} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ── pilihan_olahragawan ───────────────────────────────────────
+    match /pilihan_olahragawan/{id} {
+      allow read: if true;
+      allow write: if isAdminOrAbove();
+    }
+
     // ── notifikasi ───────────────────────────────────────────────
     match /notifikasi/{notifId} {
       allow read: if isAuth() &&
         resource.data.penerimUid == request.auth.uid;
-      allow create: if false;   // tulis oleh Cloud Functions sahaja
+      allow create: if false;
       allow update: if isAuth() &&
-        resource.data.penerimUid == request.auth.uid;  // mark as read
+        resource.data.penerimUid == request.auth.uid;
       allow delete: if false;
     }
 
     // ── audit_log ────────────────────────────────────────────────
-    // KRITIKAL: client TIDAK boleh tulis terus — Cloud Functions sahaja
     match /audit_log/{logId} {
       allow read: if isSuperAdmin();
-      allow write: if false;  // Cloud Functions sahaja
+      allow write: if false;
     }
 
   }
