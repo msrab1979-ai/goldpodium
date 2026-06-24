@@ -79,6 +79,7 @@ export default function CetakKeputusan() {
   const [acaraMap,    setAcaraMap]    = useState({})       // acaraId → acara data
   const [rekodMap,    setRekodMap]    = useState({})       // rekodKey → rekod data (aktif)
   const [tuntutanMap, setTuntutanMap] = useState({})       // rekodKey → rekod data (tuntutan)
+  const [skolMap,     setSkolMap]     = useState({})       // kodSekolah → namaSekolah
 
   // UI state
   const [selDay,        setSelDay]        = useState('')
@@ -111,12 +112,17 @@ export default function CetakKeputusan() {
         setBilanganKedudukan(kData.bilanganKedudukan ?? 8)
 
         // Jadual & acara
-        const [jadualSnap, acaraSnap, rekodSnap, tuntSnap] = await Promise.all([
+        const [jadualSnap, acaraSnap, rekodSnap, tuntSnap, skolSnap] = await Promise.all([
           getDocs(query(collection(db, 'jadual_acara'), where('kejohananId', '==', kej.id))),
           getDocs(query(collection(db, 'kejohanan', kej.id, 'acara'), orderBy('noAcara'))),
           getDocs(query(collection(db, 'rekod'), where('statusRekod', '==', 'aktif'))),
           getDocs(query(collection(db, 'rekod'), where('kejohananId', '==', kej.id))).catch(() => ({ docs: [] })),
+          getDocs(collection(db, 'sekolah')),
         ])
+
+        const sMap = {}
+        skolSnap.docs.forEach(d => { sMap[d.id] = d.data().namaSekolah || d.id })
+        setSkolMap(sMap)
 
         const aMap = {}
         acaraSnap.docs.forEach(d => { aMap[d.id] = { id: d.id, ...d.data() } })
@@ -792,9 +798,9 @@ export default function CetakKeputusan() {
                                     <div key={p.noBib || p.rankDalamHeat} className="flex items-center gap-1.5 text-[10px]">
                                       <span>{PINGAT_UI[p.rankDalamHeat]}</span>
                                       <span className="font-semibold text-gray-700 truncate max-w-[140px]">
-                                        {isRelay ? p.kodSekolah : p.namaAtlet}
+                                        {isRelay ? (skolMap[p.kodSekolah] || p.kodSekolah) : p.namaAtlet}
                                       </span>
-                                      {!isRelay && <span className="text-gray-400">{p.kodSekolah}</span>}
+                                      {!isRelay && <span className="text-gray-400">{skolMap[p.kodSekolah] || p.kodSekolah}</span>}
                                       <span className="font-mono font-bold text-[#003399] ml-auto">
                                         {fmtPrestasi(p.keputusan, acara.jenisAcara)}
                                       </span>
