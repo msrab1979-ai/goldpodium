@@ -11,7 +11,7 @@
  *   7. Keputusan Rasmi (per hari → per acara, top 2)
  *   8. Rekod Semasa (grouped by kategori)
  *   9. Rekod Dipecah (rekod baharu dalam kejohanan ini)
- *  10. Olahragawan & Olahragawati (per kategori)
+ *  10. Atlet Terbaik (dari tetapan/atletTerbaik)
  *
  * Roles: superadmin, admin, pengurus_teknik, urusetia
  */
@@ -226,24 +226,44 @@ export default function BukuKejohanan() {
       const rekodList = rekodSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       const rekodMap  = Object.fromEntries(rekodList.map(r => [r.id, r]))
 
-      // 8. Pilihan olahragawan
-      setProgress('Memuatkan pilihan olahragawan…')
-      const pilSnap = await getDocs(
-        query(collection(db, 'pilihan_olahragawan'), where('kejohananId', '==', kejId))
-      )
-      const pilihan = {}
-      pilSnap.docs.forEach(d => {
-        const r = d.data()
-        pilihan[`${r.kategoriKod}_${r.jantina}`] = r
-      })
-
-      // 9. Mata olahragawan
-      setProgress('Memuatkan mata olahragawan…')
-      const mataSnap = await getDocs(
+      // 7b. Rekod dipecah — dari mata_olahragawan (sama sumber Tab Rekod Kejohanan)
+      setProgress('Memuatkan rekod dipecah…')
+      const rekodDipecahList = []
+      // mataSnap diload kemudian (step 9) — load awal untuk rekod dipecah
+      const mataSnapRekod = await getDocs(
         query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId))
       )
+      mataSnapRekod.docs.forEach(d => {
+        const data = d.data()
+        const noKP = data.noKP || d.id.replace(`_${kejId}`, '')
+        Object.entries(data).forEach(([key, val]) => {
+          if (!key.startsWith('rekod_')) return
+          if (!val?.namaAcara) return
+          rekodDipecahList.push({
+            noKP,
+            namaAtlet:    data.namaAtlet   || '—',
+            namaSekolah:  data.namaSekolah || data.kodSekolah || '—',
+            kategoriKod:  val.kategoriKod  || data.kategoriKod || '',
+            jantina:      val.jantina      || data.jantina     || '',
+            namaAcara:    val.namaAcara    || '—',
+            prestasi:     val.prestasiBaru ?? null,
+            unit:         val.unit         || 's',
+            prestasiLama: val.prestasiLama ?? null,
+            namaLama:     val.namaLama     || '—',
+            lokasiLama:   val.lokasiLama   || '—',
+            tahunLama:    val.tahunLama    || '—',
+          })
+        })
+      })
+
+      // 8. Atlet Terbaik dari tetapan/atletTerbaik (AnalisaPingat)
+      setProgress('Memuatkan atlet terbaik…')
+      const tbSnap = await getDoc(doc(db, 'tetapan', 'atletTerbaik'))
+      const tajukList = tbSnap.exists() ? (tbSnap.data().tajuk || []) : []
+
+      // 9. Mata olahragawan — guna semula mataSnapRekod (dah diload dalam 7b)
       const mataMap = {}
-      mataSnap.docs.forEach(d => {
+      mataSnapRekod.docs.forEach(d => {
         const r = d.data()
         if (r.noKP) mataMap[r.noKP] = { id: d.id, ...r }
       })
@@ -264,17 +284,16 @@ export default function BukuKejohanan() {
         .filter(t => (t.emas || 0) > 0 || (t.perak || 0) > 0 || (t.gangsa || 0) > 0)
 
       // ── Preview ringkasan ──
-      const rekodDipecahCount = rekodList.filter(r => r.kejohananId === kejId).length
       setPreview({
         namaKej,
-        jumlahSekolah:  sekolahList.length,
-        jumlahAcara:    acaraList.length,
-        jumlahRasmi:    Object.keys(finalHeatMap).length,
-        jumlahRekod:    rekodList.length,
-        jumlahRekodPecah: rekodDipecahCount,
-        jumlahPilihan:  Object.keys(pilihan).length,
-        jumlahAtlet:    pendaftaranDocs.length,
-        jumlahTally:    medalTallyDocs.length,
+        jumlahSekolah:      sekolahList.length,
+        jumlahAcara:        acaraList.length,
+        jumlahRasmi:        Object.keys(finalHeatMap).length,
+        jumlahRekod:        rekodList.length,
+        jumlahRekodPecah:   rekodDipecahList.length,
+        jumlahAtletTerbaik: tajukList.filter(t => t.atlet).length,
+        jumlahAtlet:        pendaftaranDocs.length,
+        jumlahTally:        medalTallyDocs.length,
       })
 
       // ── Jana PDF ──
@@ -282,7 +301,7 @@ export default function BukuKejohanan() {
       await janaPDF({
         cfg, kej, kejId, namaKej, peringkatKej,
         sekolahList, jadualList, acaraList, acaraMap,
-        finalHeatMap, allHeatsMap, rekodMap, pilihan, mataMap, katList, pendaftaranDocs,
+        finalHeatMap, allHeatsMap, rekodMap, rekodDipecahList, tajukList, mataMap, katList, pendaftaranDocs,
         medalTallyDocs, bukuCfg, useCustomCover,
       })
 
@@ -425,7 +444,7 @@ export default function BukuKejohanan() {
   async function janaPDF({
     cfg, kej, kejId, namaKej, peringkatKej,
     sekolahList, jadualList, acaraList, acaraMap,
-    finalHeatMap, allHeatsMap = {}, rekodMap, pilihan, mataMap, katList, pendaftaranDocs,
+    finalHeatMap, allHeatsMap = {}, rekodMap, rekodDipecahList = [], tajukList = [], mataMap, katList, pendaftaranDocs,
     medalTallyDocs, bukuCfg = {}, useCustomCover = false,
   }) {
     const { jsPDF }             = await import('jspdf')
@@ -1190,10 +1209,9 @@ export default function BukuKejohanan() {
     }
 
     // ════════════════════════════════════════════════════════════
-    // HALAMAN — REKOD DIPECAH (dalam kejohanan ini)
+    // HALAMAN — REKOD DIPECAH (dari mata_olahragawan — sama Tab Rekod Kejohanan)
     // ════════════════════════════════════════════════════════════
-    const rekodDipecah = rekodList.filter(r => r.kejohananId === kejId)
-    if (rekodDipecah.length > 0) {
+    if (rekodDipecahList.length > 0) {
       pdf.addPage()
       hdrHalaman('Rekod Dipecah', 'REKOD BAHARU DIPECAH DALAM KEJOHANAN INI')
       y = 26
@@ -1201,50 +1219,40 @@ export default function BukuKejohanan() {
       pdf.setFontSize(8)
       pdf.setFont('helvetica', 'italic')
       pdf.setTextColor(80, 80, 80)
-      pdf.text(
-        `${rekodDipecah.length} rekod baharu telah ditetapkan dalam kejohanan ini.`,
-        M, y
-      )
+      pdf.text(`${rekodDipecahList.length} rekod baharu telah ditetapkan dalam kejohanan ini.`, M, y)
       y += 8
 
-      const PERINGKAT2 = { D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
-
-      const rows = rekodDipecah
-        .sort((a, b) => (a.namaAcara || '').localeCompare(b.namaAcara || ''))
+      const rows = rekodDipecahList
+        .slice().sort((a, b) => (a.namaAcara || '').localeCompare(b.namaAcara || ''))
         .map(r => [
-          r.namaAtlet   || r.namaSekolah || '—',
-          r.namaSekolah || r.kodSekolah  || '—',
+          r.namaAtlet   || '—',
+          r.namaSekolah || '—',
           r.namaAcara   || '—',
           katLabel(r.kategoriKod, katList) || '—',
-          fmtPrestasi(r.prestasi, r.unit === 'm' ? 'padang_lompat' : 'lorong'),
-          PERINGKAT2[r.peringkat] || r.peringkat || '—',
-          // Rekod lama (jika ada field)
-          r.namaAtletLama   || '—',
-          r.namaSekolahLama || '—',
-          r.tarikhRekodLama || r.tahunRekodLama || '—',
+          fmtPrestasi(r.prestasi,     r.unit === 'm' ? 'padang_lompat' : 'lorong'),
           r.prestasiLama != null ? fmtPrestasi(r.prestasiLama, r.unit === 'm' ? 'padang_lompat' : 'lorong') : '—',
+          r.namaLama    || '—',
+          r.tahunLama   || '—',
         ])
 
       autoTable(pdf, {
         startY: y,
         head: [[
-          { content: 'REKOD BAHARU', colSpan: 6, styles: { fillColor: BLUE, halign: 'center', fontStyle: 'bold', textColor: [255, 255, 255] } },
-          { content: 'REKOD LAMA', colSpan: 4, styles: { fillColor: [70, 70, 100], halign: 'center', fontStyle: 'bold', textColor: [255, 255, 255] } },
-        ], ['Nama', 'Sekolah', 'Acara', 'Kat', 'Prestasi', 'Peringkat', 'Nama', 'Sekolah', 'Tarikh', 'Prestasi']],
+          { content: 'REKOD BAHARU', colSpan: 5, styles: { fillColor: BLUE, halign: 'center', fontStyle: 'bold', textColor: [255, 255, 255] } },
+          { content: 'REKOD LAMA', colSpan: 3, styles: { fillColor: [70, 70, 100], halign: 'center', fontStyle: 'bold', textColor: [255, 255, 255] } },
+        ], ['Nama Atlet', 'Sekolah', 'Acara', 'Kat', 'Prestasi Baru', 'Prestasi Lama', 'Pemegang Lama', 'Tahun']],
         body: rows,
-        styles:      { fontSize: 6.5, cellPadding: 1.8 },
-        headStyles:  { fillColor: BLUE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.5 },
+        styles:      { fontSize: 7, cellPadding: 2 },
+        headStyles:  { fillColor: BLUE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
         columnStyles: {
-          0: { cellWidth: 30 },
-          1: { cellWidth: 25 },
+          0: { cellWidth: 38 },
+          1: { cellWidth: 28 },
           2: { cellWidth: 'auto' },
           3: { cellWidth: 9,  halign: 'center' },
-          4: { cellWidth: 18, halign: 'right', fontStyle: 'bold', textColor: BLUE },
-          5: { cellWidth: 14, halign: 'center' },
-          6: { cellWidth: 25 },
-          7: { cellWidth: 22 },
-          8: { cellWidth: 14, halign: 'center' },
-          9: { cellWidth: 18, halign: 'right', textColor: [100, 100, 100] },
+          4: { cellWidth: 20, halign: 'right', fontStyle: 'bold', textColor: BLUE },
+          5: { cellWidth: 20, halign: 'right', textColor: [100, 100, 100] },
+          6: { cellWidth: 30 },
+          7: { cellWidth: 14, halign: 'center' },
         },
         theme: 'striped',
       })
@@ -1252,69 +1260,45 @@ export default function BukuKejohanan() {
     }
 
     // ════════════════════════════════════════════════════════════
-    // HALAMAN — OLAHRAGAWAN & OLAHRAGAWATI
+    // HALAMAN — ATLET TERBAIK (dari tetapan/atletTerbaik)
     // ════════════════════════════════════════════════════════════
-    const pilihanKeys = Object.keys(pilihan)
-    if (pilihanKeys.length > 0) {
+    const tajukAda = tajukList.filter(t => t.atlet)
+    if (tajukAda.length > 0) {
       pdf.addPage()
-      hdrHalaman('Olahragawan & Olahragawati', 'OLAHRAGAWAN & OLAHRAGAWATI KEJOHANAN')
+      hdrHalaman('Atlet Terbaik', 'ATLET TERBAIK KEJOHANAN')
       y = 26
 
-      const katMap2 = Object.fromEntries(katList.map(k => [k.kod, k]))
-
-      const katDariPilihan = [...new Set(pilihanKeys.map(k => k.split('_')[0]))]
-        .sort((a, b) => {
-          const au = katMap2[a]?.urutan ?? 99
-          const bu = katMap2[b]?.urutan ?? 99
-          return au - bu || a.localeCompare(b)
-        })
-
-      const rows = []
-      katDariPilihan.forEach(katKod => {
-        const kat      = katMap2[katKod]
-        const katLbl   = kat ? `Kat ${katKod} — ${kat.nama || ''}` : `Kat ${katKod}`
-        ;['L', 'P'].forEach(jantina => {
-          const pil  = pilihan[`${katKod}_${jantina}`]
-          if (!pil) return
-          const live = mataMap[pil.noKP] || {}
-          const E    = live.pingat_emas   || 0
-          const P    = live.pingat_perak  || 0
-          const G    = live.pingat_gangsa || 0
-          const mata = live.jumlahMata    || 0
-          rows.push([
-            katLbl,
-            jantina === 'L' ? 'Olahragawan' : 'Olahragawati',
-            pil.namaAtlet   || '—',
-            pil.namaSekolah || pil.kodSekolah || '—',
-            `E:${E}  P:${P}  G:${G}`,
-            mata + ' mata',
-          ])
-        })
+      const rows = tajukAda.map(t => {
+        const live = mataMap[t.atlet.noKP] || {}
+        const E    = live.pingat_emas   ?? t.atlet.pingat_emas   ?? 0
+        const P    = live.pingat_perak  ?? t.atlet.pingat_perak  ?? 0
+        const G    = live.pingat_gangsa ?? t.atlet.pingat_gangsa ?? 0
+        const mata = live.jumlahMata    ?? t.atlet.jumlahMata    ?? 0
+        return [
+          t.namaTajuk || '—',
+          t.atlet.namaAtlet   || '—',
+          t.atlet.namaSekolah || t.atlet.kodSekolah || '—',
+          `E:${E}  P:${P}  G:${G}`,
+          mata + ' mata',
+        ]
       })
 
-      if (rows.length > 0) {
-        autoTable(pdf, {
-          startY: y,
-          head: [['Kategori', 'Anugerah', 'Nama Atlet', 'Sekolah', 'Pingat', 'Jumlah Mata']],
-          body: rows,
-          styles:      { fontSize: 8.5, cellPadding: 3 },
-          headStyles:  { fillColor: BLUE, fontStyle: 'bold', fontSize: 8 },
-          columnStyles: {
-            0: { cellWidth: 42 },
-            1: { cellWidth: 28 },
-            2: { cellWidth: 'auto' },
-            3: { cellWidth: 40 },
-            4: { cellWidth: 22, halign: 'center' },
-            5: { cellWidth: 22, halign: 'center', fontStyle: 'bold', textColor: BLUE },
-          },
-          theme: 'grid',
-          alternateRowStyles: { fillColor: [245, 247, 255] },
-        })
-      } else {
-        pdf.setFontSize(9)
-        pdf.setTextColor(150)
-        pdf.text('Tiada pilihan olahragawan/wati lagi.', W / 2, y + 10, { align: 'center' })
-      }
+      autoTable(pdf, {
+        startY: y,
+        head: [['Anugerah', 'Nama Atlet', 'Sekolah', 'Pingat', 'Jumlah Mata']],
+        body: rows,
+        styles:      { fontSize: 9, cellPadding: 3.5 },
+        headStyles:  { fillColor: BLUE, fontStyle: 'bold', fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 48 },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 42 },
+          3: { cellWidth: 24, halign: 'center' },
+          4: { cellWidth: 22, halign: 'center', fontStyle: 'bold', textColor: BLUE },
+        },
+        theme: 'grid',
+        alternateRowStyles: { fillColor: [245, 247, 255] },
+      })
     }
 
     // ── Nombor halaman semua halaman (skip muka depan) ──
@@ -1334,7 +1318,7 @@ export default function BukuKejohanan() {
       <div>
         <h1 className="text-base font-bold text-[#003399]">Buku Kejohanan</h1>
         <p className="text-xs text-gray-400 mt-0.5">
-          Jana PDF komprehensif — Muka Depan, Medal Tally, Pendaftaran, Jadual, Keputusan, Rekod, Olahragawan
+          Jana PDF komprehensif — Muka Depan, Medal Tally, Pendaftaran, Jadual, Keputusan, Rekod, Atlet Terbaik
         </p>
       </div>
 
@@ -1461,7 +1445,7 @@ export default function BukuKejohanan() {
             { icon: '🏆', label: 'Keputusan Rasmi', desc: 'Tempat 1–2 per acara RASMI, grouped by hari' },
             { icon: '⭐', label: 'Rekod Semasa', desc: 'Semua rekod aktif, grouped by kategori' },
             { icon: '✨', label: 'Rekod Dipecah', desc: 'Rekod baharu yang ditetapkan dalam kejohanan ini' },
-            { icon: '🎖️', label: 'Olahragawan & Olahragawati', desc: 'Pilihan admin per kategori dengan mata terkini' },
+            { icon: '🎖️', label: 'Atlet Terbaik', desc: 'Senarai atlet terbaik yang ditetapkan dalam tab Atlet Terbaik' },
           ].map(({ icon, label, desc }) => (
             <div key={label} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
               <span className="text-base w-6 text-center shrink-0">{icon}</span>
@@ -1486,8 +1470,8 @@ export default function BukuKejohanan() {
               { label: 'Acara Rasmi',   val: preview.jumlahRasmi },
               { label: 'Rekod Aktif',   val: preview.jumlahRekod },
               { label: 'Rekod Pecah',   val: preview.jumlahRekodPecah },
-              { label: 'Medal Tally',   val: preview.jumlahTally },
-              { label: 'Pilihan Atlet', val: preview.jumlahPilihan },
+              { label: 'Medal Tally',    val: preview.jumlahTally },
+              { label: 'Atlet Terbaik', val: preview.jumlahAtletTerbaik },
             ].map(({ label, val }) => (
               <div key={label} className="bg-white rounded-lg py-2 border border-blue-100">
                 <p className="text-lg font-black text-[#003399]">{val}</p>
