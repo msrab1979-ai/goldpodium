@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Fix scripts — jangan commit (baca dari .env.local)
+fix-*.cjs
+
 # Logs
 logs
 *.log
