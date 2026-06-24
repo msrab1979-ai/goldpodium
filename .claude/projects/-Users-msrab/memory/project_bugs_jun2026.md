@@ -681,6 +681,40 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
   4. Padam rekod_sejarah SMK CHUKAI 48.75s (salah) — GAGAL permission denied, perlu padam manual di Firebase Console (`LEavHyMzymxJ2aKSTUVs`)
 - **Skrip**: `fix-rekod-313-maklarum.cjs` + `fix-badge-328-chukai.cjs` ✅
 - **Status**: ✅ Done (24 Jun 2026)
+
+## FIX — Sesi 24 Jun 2026 (UI + BukuKejohanan)
+
+### Menu: Analisa Pingat → Atlet Terbaik
+- **Tukar**: Label menu sidebar `Analisa Pingat` → `Atlet Terbaik`
+- **Fail**: `src/components/layout/DashboardLayout.jsx`
+- **Commit**: `4256d9f` ✅
+
+### Menu: Olahragawan dibuang dari sidebar
+- **Tindakan**: Buang entry dari `navItems` — route `/dashboard/olahragawan` masih wujud, boleh akses via URL terus
+- **Sebab**: User guna Atlet Terbaik sebagai ganti — Olahragawan tidak diperlukan dalam menu
+- **Fail**: `src/components/layout/DashboardLayout.jsx`
+- **Commit**: `4256d9f` ✅
+
+### BukuKejohanan — Bahagian Atlet Terbaik
+- **Sebelum**: Baca dari `pilihan_olahragawan` (collection menu Olahragawan)
+- **Selepas**: Baca dari `tetapan/atletTerbaik` (setup di tab Atlet Terbaik)
+- **Dinamik**: Ya — setiap jana PDF reflect setup terkini
+- **Fail**: `src/pages/admin/BukuKejohanan.jsx`
+- **Commit**: `fd60dbe` ✅
+
+### BukuKejohanan — Rekod Dipecah dari mata_olahragawan
+- **Sebelum**: Baca dari `rekod` collection (`kejohananId == kejId`) — kurang rekod
+- **Selepas**: Baca dari `mata_olahragawan` field `rekod_*` — **sama sumber Tab Rekod Kejohanan** — 32 rekod
+- **Kolum baru**: Nama Atlet | Sekolah | Acara | Kat | Prestasi Baru | Prestasi Lama | Pemegang Lama | Tahun
+- **Optimasi**: Buang double-load `mata_olahragawan` — guna semula satu query
+- **Fail**: `src/pages/admin/BukuKejohanan.jsx`
+- **Commit**: `fd60dbe` ✅
+
+## PENDING
+
+### KIV — Padam rekod_sejarah SMK CHUKAI 48.75s
+- Doc ID: `LEavHyMzymxJ2aKSTUVs` dalam collection `rekod_sejarah`
+- Perlu padam manual di Firebase Console (permission denied via skrip)
 ```
 
 **Risiko teoridikal (tidak berlaku sekarang):** Acara saringan baru tanpa perkataan "saringan" + belum jana heat kedua → `grantMedal=true` secara salah. Mitigasi: semua 48 acara saringan dah ada "saringan" dalam nama.
