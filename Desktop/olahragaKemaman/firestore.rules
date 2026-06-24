@@ -94,7 +94,7 @@ service cloud.firestore {
 
       // pendaftaran (sub-collection)
       match /pendaftaran/{noBib} {
-        allow read: if isStaff();
+        allow read: if true;
         allow create: if isAdminOrAbove();
         allow update: if isSuperAdmin() ||
           (isAdmin() && resource.data.kodSekolah ==
@@ -104,7 +104,7 @@ service cloud.firestore {
 
       // relay_pasukan (sub-collection)
       match /relay_pasukan/{relayId} {
-        allow read: if isStaff();
+        allow read: if true;
         allow create: if isAdminOrAbove();
         allow update: if isSuperAdmin() ||
           (isAdmin() && resource.data.kodSekolah ==

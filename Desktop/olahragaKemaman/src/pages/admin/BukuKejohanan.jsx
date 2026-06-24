@@ -666,6 +666,10 @@ export default function BukuKejohanan() {
     hdrHalaman('Senarai Sekolah', 'SENARAI SEKOLAH PESERTA')
     y = 26
 
+    const sekolahByKod = Object.fromEntries(
+      sekolahList.map(s => [s.kodSekolah || s.id, s])
+    )
+
     const sklByKat = sekolahList.reduce((acc, s) => {
       const k = s.kategori || 'Lain-lain'
       if (!acc[k]) acc[k] = []
@@ -713,10 +717,6 @@ export default function BukuKejohanan() {
       hdrHalaman('Medal Tally', 'KEDUDUKAN PINGAT')
       y = 26
 
-      // Enrich with jenisSekolah
-      const sekolahByKod = Object.fromEntries(
-        sekolahList.map(s => [s.kodSekolah || s.id, s])
-      )
       const tallyEnriched = medalTallyDocs.map(t => {
         const skl = sekolahByKod[t.kodSekolah] || {}
         return {
@@ -1077,8 +1077,9 @@ export default function BukuKejohanan() {
               const status = flagged ? p.status : (isFinal ? (MEDAL_MAP[p.rankDalamHeat] || '') : '')
               const prestasi = flagged ? '—' : fmtPrestasi(p.keputusan, acara.jenisAcara)
               const ked = flagged ? '—' : String(p.rankDalamHeat || '')
-              if (isRelay) return [ked, p.kodSekolah || '—', p.noBib || '—', prestasi, status]
-              return [ked, p.noBib || '—', p.namaAtlet || '—', p.kodSekolah || '—', prestasi, status]
+              const namaSkol = sekolahByKod[p.kodSekolah]?.namaSekolah || p.kodSekolah || '—'
+              if (isRelay) return [ked, namaSkol, p.noBib || '—', prestasi, status]
+              return [ked, p.noBib || '—', p.namaAtlet || '—', namaSkol, prestasi, status]
             })
 
             if (y > 255) { pdf.addPage(); hdrHalaman('Keputusan', ''); y = 16 }
