@@ -512,6 +512,100 @@ metadata:
 - **audit-tally-sr.cjs**: Cross-check `mata_olahragawan` vs `medal_tally contrib` untuk SR (kat A/B/C/D/K/L/M/N) — tapis relay + SM — **kejohanan masih berjalan**, beza MA>Contrib adalah normal
 - **Nota**: Semak semula selepas SEMUA acara selesai untuk audit penuh
 
+## FIX — Sesi 23 Jun 2026 (Firestore direct, lanjutan)
+
+### Fix mata_olahragawan + medal_tally — NUR ATIQA ZAHRA (TBA2044 SK Seri Iman)
+- **Bug**: `pingat_emas=3`, `jumlahMata=15` — sepatutnya 2 dan 10
+- **Punca**: `acaraDetail_108` (saringan 100M P P10) tersimpan `pingat=emas` — stale dari bug lama
+- **Punca 2**: `emas` counter dalam medal_tally TBA2044 = 1 selepas fix stale, tapi NUR ATIQA menang 2 final (acara 122 + 232) → counter under-count
+- **Fix mata_olahragawan** (`160111-11-0468_KOAM-2026-WBRC`):
+  1. `acaraDetail_108` → PADAM
+  2. `pingat_emas`: 3 → 2
+  3. `jumlahMata`: 15 → 10
+- **Fix medal_tally** (`TBA2044_KOAM-2026-WBRC`):
+  1. `emas`: 1 → 2 (NUR ATIQA 2 final menang: acara 122 + 232)
+  2. `jumlahPingat`: 13 → 14
+  3. `kat_D_P_emas`: kekal 2 (sudah betul)
+- **Skrip**: `fix-seri-iman-atiqa.cjs` ✅
+- **Status final TBA2044**: E=2 P=4 G=2 jumlah=14 ✅
+
+## FIX — Sesi 23 Jun 2026 (Home.jsx expand medal tally)
+
+### Medal Tally Expand — Nama Acara Per Kategori
+- **Feature**: Klik nama sekolah dalam Kedudukan Pingat → expand → tunjuk nama acara yang dimenangi per kategori
+- **State baru**: `acaraSekolahCache` (kodSekolah → map) + `acaraSekolahLoading`
+- **Fungsi**: `loadAcaraSekolah(kodSekolah)` — baca contrib_ fields (ground truth kat/jan/pingat) + getDoc mata_olahragawan per noKP untuk namaAcara
+- **Display**: Bawah nombor E/P/G dalam expand row, nama acara pendek dalam teks kecil
+- **Relay**: Skip dalam loadAcaraSekolah (noKP=null) — relay row tunjuk bilangan sahaja
+- **Bug fix**: Awal guna `data.kategoriKod` (kat atlet) → salah. Fix: guna contrib_ sebagai ground truth untuk kat+jan+pingat
+- **Fail**: `src/pages/Home.jsx`
+
+## FIX — Sesi 23 Jun 2026 (PWA + button refresh + start list semua acara)
+
+### Panduan Install PWA — Modal + Button "Pasang App"
+- **Feature**: Button "Pasang App" bersebelahan "Kemaskini" dalam panel jadual
+- **Modal**: Panduan langkah demi langkah — Android (Chrome) + iOS (Safari)
+- **Android**: 4 langkah, nombor biru #003399
+- **iOS**: 4 langkah, nombor merah #cc0001
+- **Logo icon**: background biru #003399 ditambah via Python Pillow — iOS tidak lagi tunjuk kotak putih
+- **Fail**: `src/pages/Home.jsx`
+
+### PWA — Install pada Homescreen
+- **Feature**: App boleh install pada homescreen Android + iOS
+- **Fail baru**: `public/manifest.json`, `public/logo.png` (2048x2048), `public/logo192.png`, `public/logo512.png`
+- **index.html**: tambah `<link rel="manifest">`, `apple-touch-icon`, `theme-color`, `apple-mobile-web-app-*`
+- **Nama app**: "Olahraga Kemaman", theme `#003399`
+- **Scope**: homescreen install sahaja — tiada service worker, tiada offline cache
+- **Android**: Chrome → menu ⋮ → Add to Home Screen
+- **iOS**: Safari → Share → Add to Home Screen
+
+### Button Refresh — Header Home
+- **Feature**: Button 🔄 dalam header Home (sebelah gear icon)
+- **Fungsi**: `window.location.reload()`
+- **Tujuan**: Guna untuk PWA (tiada browser bar) + user mudah refresh
+- **Fail**: `src/pages/Home.jsx`
+
+### Start List — Semua Acara (saringan + final + padang)
+- **Update**: Dari final sahaja → semua acara (buang syarat `isFinalAcara`)
+- **Heat berasingan**: "Heat 1", "Heat 2" dll — bukan gabungan
+- **Padang**: guna field `giliran` (bukan `lorong`)
+- **Label**: "📋 Start List Heat 1" — tiada teks "belum mula"
+- **Fail**: `src/pages/Home.jsx`
+
+## FIX — Sesi 23 Jun 2026 (Home.jsx start list final)
+
+### Start List Final — Home Expand Acara
+- **Feature**: Acara final (ada `parentAcaraId`) belum berlari → tunjuk start list peserta
+- **Trigger**: `heatsWithResult.length === 0` + `isFinalAcara=true` + heat ada `peserta[]`
+- **Display**: Sort ikut lorong, kolum Lrg | BIB | Nama Atlet / Sekolah
+- **Relay**: Lrg | Nama Sekolah (guna `sekolahMap[kodSekolah]` — string terus, bukan `.namaSekolah`)
+- **Effect bila keputusan ada**: start list hilang auto, keputusan papar seperti biasa
+- **Saringan**: KIV — skip (return null)
+- **Fail**: `src/pages/Home.jsx` — dalam `KeputusanExpanded`, blok `heatsWithResult.length === 0`
+
+## FIX — Sesi 23 Jun 2026 (AnalisaPingat PDF — buang semua warna)
+
+### AnalisaPingat PDF — Hitam Putih Sepenuhnya
+- **Bug**: Header biru gelap + teks putih/kuning dalam semua PDF cetak
+- **Fix**: Buang semua `fillColor` biru + `setFillColor(0,51,153)` → putih/tiada
+- **Scope**: 3 fungsi PDF — Analisa Pingat, Atlet Terbaik (drawPageHeader + buildTajukTable)
+- **Termasuk**: header rect biru, headStyles table, alternateRowStyles, jumlah row, label SALINAN
+- **Fail**: `src/pages/admin/AnalisaPingat.jsx`
+
+## FIX — Sesi 23 Jun 2026 (HealthCheck — Baiki Rekod)
+
+### HealthCheck — Panel Baiki Rekod (Baru)
+- **Feature**: Panel baharu teal dalam `/dashboard/healthcheck` — baiki rekod yang salah semasa kejohanan
+- **Flow**: Masuk No Acara → cari rekod (match by namaAcara+kategoriKod+jantina) → pilih rekod → form edit → pratonton Before/After → simpan/padam
+- **Arkib automatik**: Setiap perubahan arkibkan rekod lama ke `rekod_sejarah` dengan `sebab: 'baiki_rekod_healthcheck'` sebelum simpan
+- **Field yang boleh diubah**: prestasi, prestasiLama, namaAtlet, noKP, kodSekolah, namaSekolah, tarikhRekod, catatanKhas
+- **mata_olahragawan**: Kemaskini jika noKP berubah (padam dari lama, tambah ke baru)
+- **Padam Terus**: Double confirm → arkib → padam rekod + buang rekod_ dari mata_olahragawan
+- **Undo**: Butang "Lihat Arkib" → senarai rekod_sejarah → pilih → pulihkan bila-bila masa
+- **Tidak disentuh**: heat badge `pecahRekod`, `medal_tally`, `pendaftaran`
+- **Fail**: `src/pages/admin/HealthCheck.jsx`
+- **Status**: ✅ Built + deployed (23 Jun 2026)
+
 ## AUDIT — Sesi 23 Jun 2026 (grantMedal flow deep check)
 
 ### Audit Flow grantMedal → medal_tally — 100% SELAMAT
@@ -528,6 +622,65 @@ metadata:
 ```js
 isSaringanAcara = peringkat.includes('saringan') || namaAcara.includes('saringan')
 grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
+
+## FIX — Sesi 24 Jun 2026 (Firestore direct, tiada kod diubah)
+
+### Fix Timezone — isToday (Home.jsx)
+- **Bug**: "HARI INI" highlight pada hari salah selepas tengah malam (tunjuk semalam)
+- **Punca**: `new Date().toISOString().slice(0,10)` guna UTC — pada pukul 12AM-8AM Malaysia, UTC masih hari sebelum
+- **Fix**: `new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Kuala_Lumpur' })` — return YYYY-MM-DD dalam GMT+8
+- **Fail**: `src/pages/Home.jsx` line 1672
+- **Status**: ✅ Fixed + deployed (24 Jun 2026)
+
+### Fix Rekod Acara 109 — RIFQY XX63 (100M L L10)
+- **Bug**: Rekod library `100M_L_C_D` masih tunjuk HARRAZ 14.54s — sepatutnya RIFQY 14.48s
+- **Punca**: Tiada tuntutan dicipta — rekod library tidak auto-kemaskini
+- **Fix**:
+  1. Rekod library `100M_L_C_D` → RIFQY 14.48s (HARRAZ diarkibkan ke rekod_sejarah)
+  2. Badge `pecahRekod: "D"` ditambah pada XX63 dalam heat 109-H4
+- **mata_olahragawan** RIFQY `rekod_109` sudah betul — tidak disentuh
+- **Skrip**: `fix-rekod-109-rifqy.cjs` ✅
+
+### Fix Rekod Acara 101 — AUNI U72 (3000M OPENSM-P)
+- **Bug**: Rekod library `3000M_P_J_D` masih tunjuk DAYANA 13.18s — sepatutnya AUNI 13.14s
+- **Punca**: Rekod lama dimasukkan manual tanpa noKP — sistem gagal buat tuntutan
+- **Fix**:
+  1. Rekod library `3000M_P_J_D` → AUNI 13.14s (DAYANA diarkibkan)
+  2. Badge `pecahRekod: "D"` ditambah pada U72 dalam heat 101-F1
+- **mata_olahragawan** AUNI `rekod_101` sudah betul — tidak disentuh
+- **Skrip**: `fix-rekod-101-auni.cjs` ✅
+
+### Fix HARRAZ Stale — mata_olahragawan (100M L L10)
+- **Bug**: HARRAZ ada `rekod_109`, `acaraDetail_109 (pingat:emas)`, `pingat_emas:1`, `jumlahMata:8` — semua salah
+- **Punca**: Bug lama — saringan tulis ke mata_olahragawan sebelum fix 21 Jun. HARRAZ rank 1 dalam heat saringan 109-H5 (14.54s) tapi RIFQY lebih laju (14.48s) dalam heat lain
+- **Betul**: HARRAZ hanya dapat perak dalam final acara 123 (15.43s, rank 2)
+- **medal_tally TBA2009**: sudah betul (perak:1, tiada emas) — tidak disentuh
+- **Fix** (4 field dalam mata_olahragawan HARRAZ):
+  1. Padam `rekod_109`
+  2. Padam `acaraDetail_109`
+  3. Padam `pingat_emas`
+  4. `jumlahMata`: 8 → 3
+- **Skrip**: `fix-harraz-stale-rekod.cjs` ✅
+
+### Security — API Key Exposed in GitHub (24 Jun 2026)
+- **Isu**: GitHub Secret Scanning alert — `AIzaSyC6sHvn5JUkstFBzPpyGcENDmPAWCMBBk0` hardcoded dalam 3 .cjs scripts (commit ce78b16)
+- **Fix**:
+  1. Tukar hardcoded key → `require('dotenv').config({ path: '.env.local' })` + `process.env.VITE_FIREBASE_API_KEY`
+  2. `git rm --cached` ketiga-tiga .cjs dari tracking
+  3. `.gitignore`: tambah `fix-*.cjs`
+- **Commit**: `ba2b197` ✅
+- **Nota**: Key lama masih dalam git history — tidak kritikal (Firebase web key dilindungi Firestore Rules)
+
+### Fix Rekod Acara 313 — SMK MAK LAGAM 48.30s (4x100M L15)
+- **Bug**: Rekod library `4X100M_L_E_D` tersalah tunjuk SMK CHUKAI 48.4s (2026). Badge `pecahRekod:"D"` ada pada SMK CHUKAI 48.75s dalam heat 313-H1 DAN final 328 48.4s
+- **Rekod betul**: SMK MAK LAGAM 48.30s (2020), `kodSekolah: TEA2032`
+- **Fix**:
+  1. Restore library → SMK MAK LAGAM 48.30s (arkib SMK CHUKAI 48.4s ke rekod_sejarah)
+  2. Padam `pecahRekod:"D"` dari SMK CHUKAI 48.75s dalam heat 313-H1
+  3. Padam `pecahRekod:"D"` dari SMK CHUKAI 48.4s dalam final 328
+  4. Padam rekod_sejarah SMK CHUKAI 48.75s (salah) — GAGAL permission denied, perlu padam manual di Firebase Console (`LEavHyMzymxJ2aKSTUVs`)
+- **Skrip**: `fix-rekod-313-maklarum.cjs` + `fix-badge-328-chukai.cjs` ✅
+- **Status**: ✅ Done (24 Jun 2026)
 ```
 
 **Risiko teoridikal (tidak berlaku sekarang):** Acara saringan baru tanpa perkataan "saringan" + belum jana heat kedua → `grantMedal=true` secara salah. Mitigasi: semua 48 acara saringan dah ada "saringan" dalam nama.
