@@ -1669,7 +1669,7 @@ export default function Home() {
     })
   }
 
-  const isToday    = d => d === new Date().toISOString().slice(0, 10)
+  const isToday    = d => d === new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Kuala_Lumpur' })
   const activeRole = ROLES.find(r => r.id === selected)
 
   // ── Keputusan items (hoisted for print + display) ──────────────────────────
