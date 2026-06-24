@@ -719,6 +719,19 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
 - **Fail**: `src/pages/admin/CetakKeputusan.jsx`
 - **Commit**: `49bb408` ✅
 
+### KRITIKAL: Deploy Firestore Rules Betul (24 Jun 2026)
+- **Bug**: Rules live = longgar — semua collection boleh dibaca tanpa auth (termasuk `atlet` noKP, `users` hash)
+- **Punca**: `firestore.rules` root ada rules expired Mac 2026. Rules betul ada dalam `src/firebase/rules/firestore.rules` tapi tidak pernah di-deploy
+- **Fix**: `cp src/firebase/rules/firestore.rules firestore.rules` → `firebase deploy --only firestore:rules`
+- **Verify**: `atlet`, `users`, `rekod_sejarah`, `medal_tally` → 🔒 ditolak tanpa auth ✅
+- **Awam kekal**: `rekod`, `sekolah`, `kejohanan`, `mata_olahragawan` → ✅ boleh baca (Home page perlukan)
+- **Commit**: `db93025` ✅
+
+### Repo GitHub Baru (24 Jun 2026)
+- **Sebab**: Repo lama `msddOlahragaKemaman` ada API key dalam git history (commit ce78b16)
+- **Repo baru**: `msrab1979-ai/olahragaKemaman` — private, history bersih
+- **Remote**: `git remote set-url origin https://github.com/msrab1979-ai/olahragaKemaman.git`
+
 ### KIV — Padam rekod_sejarah SMK CHUKAI 48.75s
 - Doc ID: `LEavHyMzymxJ2aKSTUVs` dalam collection `rekod_sejarah`
 - Perlu padam manual di Firebase Console (permission denied via skrip)
