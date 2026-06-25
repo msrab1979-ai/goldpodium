@@ -79,14 +79,15 @@ service cloud.firestore {
         allow write: if isSuperAdmin();
 
         // heat (sub-collection)
+        // Pencatat guna sessionStorage (bukan Firebase Auth) — allow write terus
         match /heat/{heatId} {
           allow read: if true;
-          allow write: if isSuperAdmin() || isPencatat();
+          allow write: if true;
 
           // keputusan (sub-collection)
           match /keputusan/{keputusanId} {
             allow read: if true;
-            allow create, update: if isSuperAdmin() || isPencatat();
+            allow create, update: if true;
             allow delete: if isSuperAdmin();
           }
         }
@@ -116,13 +117,13 @@ service cloud.firestore {
     // ── rekod ─────────────────────────────────────────────────────
     match /rekod/{rekodId} {
       allow read: if true;
-      allow write: if isSuperAdmin() || isPengurusTeknik();
+      allow write: if true;
     }
 
     // ── rekod_sejarah ─────────────────────────────────────────────
     match /rekod_sejarah/{sejarahId} {
-      allow read: if isStaff();
-      allow write: if isSuperAdmin() || isPengurusTeknik();
+      allow read: if true;
+      allow write: if true;
     }
 
     // ── bantahan ─────────────────────────────────────────────────
@@ -136,7 +137,7 @@ service cloud.firestore {
     // ── mata_olahragawan ─────────────────────────────────────────
     match /mata_olahragawan/{docId} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── jadual_acara ─────────────────────────────────────────────
@@ -154,7 +155,7 @@ service cloud.firestore {
     // ── medal_tally ───────────────────────────────────────────────
     match /medal_tally/{id} {
       allow read: if true;
-      allow write: if isSuperAdmin() || isPencatat();
+      allow write: if true;
     }
 
     // ── kategori ──────────────────────────────────────────────────
