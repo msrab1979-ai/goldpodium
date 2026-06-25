@@ -389,6 +389,21 @@ metadata:
 - **Plan**: Fasa 1 (selamat, tanpa serpentine) → Fasa 2 (WA strict serpentine)
 - **Memory**: Disimpan dalam `project_suku_separuh_akhir.md`
 
+## FIX — Sesi 26 Jun 2026 (Suku/Separuh Akhir Fasa 1 + Tetapan Final)
+
+### Fasa 1 — Suku Akhir + Separuh Akhir (commit `1e1ff99`)
+- **AcaraSetup**: dropdown + modal tambah `suku_akhir`/`separuh_akhir`, `adaHeat=true`, badge teal/indigo, filter bar, `getPeringkat()` dikemaskini
+- **InputKeputusan**: `isSaringanAcara` + `isSaringanLocal` + `janaFinalEligible` — tambah suku_akhir/separuh_akhir → `grantMedal=false` untuk kedua-dua
+- **StartList**: `FASA_LABEL` + `FasaBadge` + `buatHeatId` (QF/SF) + `fasaStr` dalam 4 PDF fungsi
+- **startListPdfUtils**: fasaStr "SUKU AKHIR 1/3" / "SEPARUH AKHIR 1/2"
+- **BukuKejohanan**: heatLabel dalam PDF keputusan
+
+### Tetapan Final Suku Akhir + Fix B3/B4 (commit `9109bf0`)
+- **KategoriSetup**: kolum baru `BH→SF` + `BT→SF` (teal) hanya untuk acara `suku_akhir`, state `sukuOv` berasingan, simpan ke `sukuKeSeparuhByAcara`, `setDoc merge:true` (fix overwrite risiko)
+- **finalistUtils**: `getFinalistSetup` + `selectFinalists` terima param `fasa` — `'sukuKeSeparuh'` baca `sukuKeSeparuhByAcara`, `'toFinal'` kekal `overrideByAcara`
+- **StartList JanaFinalModal**: detect `peringkat === 'suku_akhir'` → `fasaJana='sukuKeSeparuh'` → baca sifir betul (B4) + jana heat `fasa:'heat'` bukan `fasa:'final'` (B3)
+- **Data lama**: zero sentuh ✅
+
 ## FIX — Sesi 25 Jun 2026 (Gate 3, Start List, Analytics, Security)
 
 ### Gate 3 Kelayakan Umur — By Tarikh (cut-off 2 Januari MSSM)
