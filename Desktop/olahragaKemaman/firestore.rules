@@ -167,7 +167,7 @@ service cloud.firestore {
     // ── tetapan ───────────────────────────────────────────────────
     match /tetapan/{id} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if isAdminOrAbove();
     }
 
     // ── pilihan_olahragawan ───────────────────────────────────────

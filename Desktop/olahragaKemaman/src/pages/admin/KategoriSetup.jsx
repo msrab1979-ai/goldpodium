@@ -49,9 +49,15 @@ const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
 function tahunLahirLabel(umurHad, umurMin, tahun) {
   if (!umurHad) return '—'
   const t = tahun || new Date().getFullYear()
-  const tMax = t - umurHad      // born this year or later
-  const tMin = umurMin ? t - umurMin : null
-  return tMin ? `Lahir ${tMax} – ${tMin}` : `Lahir ≥ ${tMax}`
+  // MSSM standard cut-off 2 Januari (sama logik dengan gate3_kelayakanUmur):
+  //   paling tua layak  = 2 Jan (t - umurHad)
+  //   paling muda layak = tarikhTerkini - 1 hari = 31 Dis (t - umurMin)
+  const fmt = d => d.toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+  const terawal = fmt(new Date(`${t - Number(umurHad)}-01-02`))
+  if (!umurMin) return `≥ ${terawal}`
+  const terkiniExcl = new Date(`${t - Number(umurMin) + 1}-01-01`)
+  const terkini = fmt(new Date(terkiniExcl.getTime() - 86400000))
+  return `${terawal} – ${terkini}`
 }
 
 const FormField = ({ label, hint, children, required }) => (
@@ -438,11 +444,11 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
                 </svg>
                 <div>
                   <p className={`text-[9px] font-bold ${form.isTerbuka ? 'text-amber-400' : 'text-indigo-400'}`}>
-                    {form.isTerbuka ? 'JULAT TERBUKA — TAHUN' : 'KELAYAKAN TAHUN'} {tahun}
+                    {form.isTerbuka ? 'JULAT TERBUKA — TARIKH (cut-off 2 Jan)' : 'KELAYAKAN TARIKH (cut-off 2 Jan)'} {tahun}
                   </p>
                   <p className={`text-xs font-bold ${form.isTerbuka ? 'text-amber-700' : 'text-indigo-700'}`}>
                     {form.isTerbuka
-                      ? `Umur ${form.umurMin || '?'} – ${form.umurHad} tahun (lahir ${tahun - Number(form.umurHad)} – ${form.umurMin ? tahun - Number(form.umurMin) : '...'})`
+                      ? `Umur ${form.umurMin || '?'} – ${form.umurHad} tahun · ${tahunLahirLabel(form.umurHad, form.umurMin, tahun)}`
                       : previewTahun
                     }
                   </p>

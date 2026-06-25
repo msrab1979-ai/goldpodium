@@ -176,9 +176,10 @@ export function buatStartListPDFUnified({
         ? (a.giliran ?? 99) - (b.giliran ?? 99)
         : (a.lorong  ?? 99) - (b.lorong  ?? 99)
     )
+    const jumlahHeat = heats.filter(h => h.fasa !== 'final').length
     const fasaStr = heat.fasa === 'final'    ? 'FINAL'
                   : heat.fasa === 'saringan' ? 'SARINGAN'
-                  : `HEAT ${heat.noHeat}`
+                  : `HEAT ${heat.noHeat}/${jumlahHeat}`
 
     for (const sal of SALINAN) {
       const isTeknikal = sal.id === 'teknikal'

@@ -424,10 +424,16 @@ export default function ManualPendaftaran() {
                     <p className="text-[10px] text-gray-400 mt-0.5">
                       {isPPKI
                         ? 'Pendidikan Khas'
-                        : `Lahir ${kat.umurMin != null && kat.umurHad != null
-                            ? `${tahunKej - kat.umurHad}–${tahunKej - kat.umurMin}`
-                            : '—'
-                          }`
+                        : kat.umurHad != null
+                          ? (() => {
+                              const fmt = d => d.toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+                              const terawal = fmt(new Date(`${tahunKej - Number(kat.umurHad)}-01-02`))
+                              if (!kat.umurMin) return `Lahir ≥ ${terawal}`
+                              const terkiniExcl = new Date(`${tahunKej - Number(kat.umurMin) + 1}-01-01`)
+                              const terkini = fmt(new Date(terkiniExcl.getTime() - 86400000))
+                              return `Lahir ${terawal} – ${terkini}`
+                            })()
+                          : '—'
                       }
                     </p>
                   </div>

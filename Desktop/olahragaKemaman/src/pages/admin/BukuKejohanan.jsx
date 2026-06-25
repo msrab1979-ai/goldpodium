@@ -18,7 +18,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  collection, getDocs, getDoc, setDoc, doc, query, where, orderBy, serverTimestamp,
+  collection, getDocs, getDocsFromServer, getDoc, setDoc, doc, query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 
@@ -230,7 +230,7 @@ export default function BukuKejohanan() {
       setProgress('Memuatkan rekod dipecah…')
       const rekodDipecahList = []
       // mataSnap diload kemudian (step 9) — load awal untuk rekod dipecah
-      const mataSnapRekod = await getDocs(
+      const mataSnapRekod = await getDocsFromServer(
         query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId))
       )
       mataSnapRekod.docs.forEach(d => {
@@ -1271,31 +1271,39 @@ export default function BukuKejohanan() {
 
       const rows = tajukAda.map(t => {
         const live = mataMap[t.atlet.noKP] || {}
-        const E    = live.pingat_emas   ?? t.atlet.pingat_emas   ?? 0
-        const P    = live.pingat_perak  ?? t.atlet.pingat_perak  ?? 0
-        const G    = live.pingat_gangsa ?? t.atlet.pingat_gangsa ?? 0
-        const mata = live.jumlahMata    ?? t.atlet.jumlahMata    ?? 0
+        // pingat_emas/perak/gangsa dari live (mata_olahragawan) — fallback ke snapshot pingat{}
+        const E    = live.pingat_emas   ?? t.atlet.pingat?.['1'] ?? 0
+        const P    = live.pingat_perak  ?? t.atlet.pingat?.['2'] ?? 0
+        const G    = live.pingat_gangsa ?? t.atlet.pingat?.['3'] ?? 0
+        const mata = live.jumlahMata    ?? t.atlet.mata           ?? 0
+        // Rekod dari live (mata_olahragawan rekod_ fields)
+        const rekodLive = Object.entries(live)
+          .filter(([k]) => k.startsWith('rekod_'))
+          .map(([, v]) => `${v.namaAcaraPendek || v.namaAcara} ${v.prestasiBaru}${v.unit}`)
+          .join(', ') || '—'
         return [
           t.namaTajuk || '—',
           t.atlet.namaAtlet   || '—',
           t.atlet.namaSekolah || t.atlet.kodSekolah || '—',
           `E:${E}  P:${P}  G:${G}`,
           mata + ' mata',
+          rekodLive,
         ]
       })
 
       autoTable(pdf, {
         startY: y,
-        head: [['Anugerah', 'Nama Atlet', 'Sekolah', 'Pingat', 'Jumlah Mata']],
+        head: [['Anugerah', 'Nama Atlet', 'Sekolah', 'Pingat', 'Mata', 'Rekod Dipecah']],
         body: rows,
-        styles:      { fontSize: 9, cellPadding: 3.5 },
-        headStyles:  { fillColor: BLUE, fontStyle: 'bold', fontSize: 8 },
+        styles:      { fontSize: 8, cellPadding: 3 },
+        headStyles:  { fillColor: BLUE, fontStyle: 'bold', fontSize: 7.5 },
         columnStyles: {
-          0: { cellWidth: 48 },
-          1: { cellWidth: 'auto' },
-          2: { cellWidth: 42 },
-          3: { cellWidth: 24, halign: 'center' },
-          4: { cellWidth: 22, halign: 'center', fontStyle: 'bold', textColor: BLUE },
+          0: { cellWidth: 35 },
+          1: { cellWidth: 38 },
+          2: { cellWidth: 32 },
+          3: { cellWidth: 22, halign: 'center' },
+          4: { cellWidth: 16, halign: 'center', fontStyle: 'bold', textColor: BLUE },
+          5: { cellWidth: 'auto' },
         },
         theme: 'grid',
         alternateRowStyles: { fillColor: [245, 247, 255] },

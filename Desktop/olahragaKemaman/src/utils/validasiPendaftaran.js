@@ -179,13 +179,13 @@ async function gate2_hadAtletSekolah(kodSekolah, aceraId, kejohananId) {
 // ─── GATE 3 — Kelayakan Umur (WA Standard) ────────────────────────────────────
 //
 // KategoriSetup simpan: umurMin (cth: 9) + umurHad (cth: 10) — nilai UMUR
-// Gate ini tukar kepada tahun lahir ikut tahunKejohanan:
-//   tahunLahirMin = tahunKejohanan - umurHad  ← lahir paling awal (paling tua)
-//   tahunLahirMax = tahunKejohanan - umurMin  ← lahir paling lewat (paling muda)
-// Contoh: Kat A (umurMin=9, umurHad=10), tahun 2026:
-//   tahunLahirMin = 2026 - 10 = 2016
-//   tahunLahirMax = 2026 - 9  = 2017
-//   → atlet lahir 2016 atau 2017 sahaja layak
+// Gate ini semak kelayakan ikut tarikh lahir penuh (MSSM standard — cut-off 2 Januari):
+//   tarikhTerawal = 2 Jan (tahunKejohanan - umurHad)  ← paling tua yang layak
+//   tarikhTerkini = 1 Jan (tahunKejohanan - umurMin + 1)  ← paling muda yang layak
+// Contoh: Kat B (umurMin=10, umurHad=12), tahun 2026:
+//   tarikhTerawal = 2 Jan (2026-12) = 2 Jan 2014
+//   tarikhTerkini = 1 Jan (2026-10+1) = 1 Jan 2017  [exclusive → paling muda = 31 Dis 2016]
+//   → atlet lahir 2 Jan 2014 hingga 31 Dis 2016 sahaja layak
 
 async function gate3_kelayakanUmur(tarikhLahir, kategoriId, tahunKejohanan) {
   // Baca had LIVE dari Firestore — kategori/{kategoriId}
@@ -199,26 +199,37 @@ async function gate3_kelayakanUmur(tarikhLahir, kategoriId, tahunKejohanan) {
   // Tiada had umur dikonfigurasi → lulus
   if (!umurHad) return { valid: true }
 
-  // Kira julat tahun lahir dari tahunKejohanan (WA standard — ikut TAHUN bukan tarikh)
-  const tKej         = tahunKejohanan || new Date().getFullYear()
-  const tahunLahirMin = tKej - Number(umurHad)           // paling awal (paling tua)
-  const tahunLahirMax = umurMin ? tKej - Number(umurMin) : tKej  // paling lewat (paling muda)
+  const tKej = tahunKejohanan || new Date().getFullYear()
 
-  const tahunLahir = new Date(tarikhLahir).getFullYear()
+  // MSSM standard: cut-off 2 Januari
+  // Paling tua yang layak: lahir pada atau selepas 2 Jan (tKej - umurHad)
+  const tarikhTerawal = new Date(`${tKej - Number(umurHad)}-01-02`)
+  // Paling muda yang layak: lahir pada atau sebelum 1 Jan (tKej - umurMin + 1)
+  // Jika tiada umurMin → lahir sebelum atau pada 1 Jan tahun depan (iaitu semua dari tarikhTerawal)
+  const tarikhTerkini = umurMin
+    ? new Date(`${tKej - Number(umurMin) + 1}-01-01`)
+    : new Date(`${tKej + 1}-01-01`)
 
-  if (tahunLahir < tahunLahirMin || tahunLahir > tahunLahirMax) {
+  const tLahir = new Date(tarikhLahir)
+
+  // Label mesej
+  const fmtTarikhLabel = d =>
+    d.toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' })
+  const labelTerawal = fmtTarikhLabel(tarikhTerawal)
+  const labelTerkini = fmtTarikhLabel(new Date(tarikhTerkini.getTime() - 86400000)) // tolak 1 hari untuk label
+
+  if (tLahir < tarikhTerawal || tLahir >= tarikhTerkini) {
     return {
       valid: false,
       gate: 'GATE3',
       mesej: `Atlet tidak layak mengikut umur untuk kategori ${kategoriId}. ` +
-             `Lahir ${tahunLahir} — mestilah antara ${tahunLahirMin}–${tahunLahirMax} ` +
-             `(umur ${umurMin ?? '?'}–${umurHad} tahun pada ${tKej}).`,
-      had: tahunLahirMax,
-      semasa: tahunLahir,
+             `Lahir ${tarikhLahir} — mestilah antara ${labelTerawal} hingga ${labelTerkini}.`,
+      had: tarikhTerkini.toISOString().slice(0, 10),
+      semasa: tarikhLahir,
     }
   }
 
-  return { valid: true, had: tahunLahirMax, semasa: tahunLahir }
+  return { valid: true, had: tarikhTerkini.toISOString().slice(0, 10), semasa: tarikhLahir }
 }
 
 // ─── GATE 4 — Jantina ─────────────────────────────────────────────────────────
