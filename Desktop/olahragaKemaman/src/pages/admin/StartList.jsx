@@ -49,9 +49,12 @@ let LORONG_KUMPULAN    = { ...WA_LORONG_KUMPULAN_DEFAULT }   // final — kumpul
 let LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }        // heat  — lorong dikosongkan
 
 const FASA_LABEL = {
-  heat:     'Heat / Saringan',
-  final:    'Final',
-  saringan: 'Saringan',
+  heat:          'Heat / Saringan',
+  final:         'Final',
+  saringan:      'Saringan',
+  suku_akhir:    'Suku Akhir',
+  separuh_akhir: 'Separuh Akhir',
+  terus_final:   'Terus Final',
 }
 
 const STATUS_HEAT = {
@@ -158,7 +161,10 @@ function assignGiliran(peserta) {
 }
 
 function buatHeatId(aceraId, fasa, noHeat) {
-  const fasaKod = fasa === 'final' ? 'F' : fasa === 'saringan' ? 'S' : 'H'
+  const fasaKod = fasa === 'final'          ? 'F'
+                : fasa === 'suku_akhir'    ? 'QF'
+                : fasa === 'separuh_akhir' ? 'SF'
+                : fasa === 'saringan'       ? 'S' : 'H'
   return `${aceraId}-${fasaKod}${noHeat}`
 }
 
@@ -275,7 +281,14 @@ function StatusBadge({ status }) {
 }
 
 function FasaBadge({ fasa }) {
-  const colors = { heat:'bg-blue-100 text-blue-700', final:'bg-purple-100 text-purple-700', saringan:'bg-orange-100 text-orange-700' }
+  const colors = {
+    heat:          'bg-blue-100 text-blue-700',
+    final:         'bg-purple-100 text-purple-700',
+    saringan:      'bg-orange-100 text-orange-700',
+    suku_akhir:    'bg-teal-100 text-teal-700',
+    separuh_akhir: 'bg-indigo-100 text-indigo-700',
+    terus_final:   'bg-green-100 text-green-700',
+  }
   return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colors[fasa]||'bg-gray-100 text-gray-500'}`}>{FASA_LABEL[fasa]||fasa}</span>
 }
 
@@ -2137,7 +2150,7 @@ export default function StartList() {
           pdf.setFont('helvetica', 'bold')
           pdf.setFontSize(8)
           pdf.setTextColor(0, 51, 153)
-          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : `HEAT ${heat.noHeat}`
+          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
           pdf.text(fasaStr, M + 3, curY + 4.5)
           pdf.setTextColor(0, 0, 0)
           curY += 7
@@ -2637,7 +2650,7 @@ export default function StartList() {
           pdf.setFillColor(230, 235, 255)
           pdf.rect(M, curY, W - M * 2, 6.5, 'F')
           pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(0, 51, 153)
-          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : `HEAT ${heat.noHeat}`
+          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
           pdf.text(fasaStr, M + 3, curY + 4.5)
           pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7)
           pdf.text(`${pesertaHeat.length} peserta`, W - M - 3, curY + 4.5, { align: 'right' })
@@ -2752,7 +2765,7 @@ export default function StartList() {
           pdf.setFillColor(230, 235, 255)
           pdf.rect(M, curY, W - M * 2, 6.5, 'F')
           pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(0, 51, 153)
-          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : `HEAT ${heat.noHeat}`
+          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
           pdf.text(fasaStr, M + 3, curY + 4.5)
           pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7)
           pdf.text(`${pesertaHeat.length} peserta`, W - M - 3, curY + 4.5, { align: 'right' })

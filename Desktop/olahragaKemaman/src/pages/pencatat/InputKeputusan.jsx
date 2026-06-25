@@ -1698,7 +1698,7 @@ export default function InputKeputusan() {
       const isSaringanAcara = (() => {
         const p = (selectedAcara.peringkat || '').toLowerCase()
         const n = (selectedAcara.namaAcara  || '').toLowerCase()
-        return p.includes('saringan') || n.includes('saringan')
+        return ['saringan', 'suku_akhir', 'separuh_akhir'].includes(p) || n.includes('saringan')
       })()
 
       // Simpan setiap heat berasingan
@@ -1929,7 +1929,7 @@ export default function InputKeputusan() {
       const isSaringanLocal   = (() => {
         const p = (selectedAcara.peringkat || '').toLowerCase()
         const n = (selectedAcara.namaAcara  || '').toLowerCase()
-        return p.includes('saringan') || n.includes('saringan')
+        return ['saringan', 'suku_akhir', 'separuh_akhir'].includes(p) || n.includes('saringan')
       })()
       const fasa            = selectedHeat.fasa
       const grantMedalLocal = !isSaringanLocal && (
@@ -2770,7 +2770,7 @@ export default function InputKeputusan() {
     // Hanya acara saringan yang perlu jana final
     const p = (selectedAcara.peringkat || '').toLowerCase()
     const n = (selectedAcara.namaAcara  || '').toLowerCase()
-    const isSaringan = p.includes('saringan') || n.includes('saringan')
+    const isSaringan = ['saringan', 'suku_akhir', 'separuh_akhir'].includes(p) || n.includes('saringan')
     if (!isSaringan) return false
     const nonFinal = heats.filter(h => h.peringkat !== 'final')
     if (nonFinal.length === 0) return false

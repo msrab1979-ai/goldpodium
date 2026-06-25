@@ -1061,7 +1061,10 @@ export default function BukuKejohanan() {
           // Loop heat
           sortedHeats.forEach(heat => {
             const isFinal = ['final', 'terus_final'].includes(heat.fasa) || heat.peringkat === 'final'
-            const heatLabel = isFinal ? 'FINAL' : `HEAT ${heat.noHeat || ''}`.trim()
+            const heatLabel = isFinal ? 'FINAL'
+              : heat.fasa === 'suku_akhir'    ? `SUKU AKHIR ${heat.noHeat || ''}`.trim()
+              : heat.fasa === 'separuh_akhir' ? `SEPARUH AKHIR ${heat.noHeat || ''}`.trim()
+              : `HEAT ${heat.noHeat || ''}`.trim()
 
             const peserta = (heat.peserta || [])
               .filter(p => p.rankDalamHeat || p.keputusan != null)

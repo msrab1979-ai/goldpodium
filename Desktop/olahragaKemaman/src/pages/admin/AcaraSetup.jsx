@@ -228,7 +228,9 @@ function HariHeader({ hIdx, tarikh, hariLabel, count, onTukar }) {
 // ─── EditAcaraRow — inline edit untuk baris sedia ada ────────────────────────
 
 function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, onCancel }) {
-  const peringkatMode0 = acara.peringkat === 'saringan' ? 'saringan'
+  const peringkatMode0 = acara.peringkat === 'saringan'       ? 'saringan'
+    : acara.peringkat === 'suku_akhir'    ? 'suku_akhir'
+    : acara.peringkat === 'separuh_akhir' ? 'separuh_akhir'
     : acara.parentAcaraId ? 'final_p' : 'akhir'
 
   const [form, setForm] = useState({
@@ -259,7 +261,8 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
     : form.jantina
   const namaFull    = `${form.namaAcaraPendek} ${kelas}`.trim()
   const isPadang    = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
-  const peringkat   = form.peringkatMode === 'saringan' ? 'saringan' : 'akhir'
+  const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
+  const peringkat   = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
   const parentId    = form.peringkatMode === 'final_p' ? form.parentAcaraId.trim() : ''
   const saringanList = acaraList.filter(a => a.peringkat === 'saringan' && String(a.noAcara) !== String(acara.noAcara))
 
@@ -319,7 +322,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
         lokasi:            form.lokasi,
         peringkat,
         parentAcaraId:     parentId || null,
-        adaHeat:           peringkat === 'saringan',
+        adaHeat:           PERINGKAT_DENGAN_HEAT.includes(peringkat),
         isWindReading:     detectWindFromNama(form.namaAcaraPendek),
         unitUkuran:        isPadang ? 'm' : 's',
         hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
@@ -541,7 +544,8 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
     : form.jantina
   const namaFull     = `${form.namaAcaraPendek} ${kelas}`.trim()
   const isPadang     = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
-  const peringkat    = form.peringkatMode === 'saringan' ? 'saringan' : 'akhir'
+  const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
+  const peringkat    = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
   const parentId     = form.peringkatMode === 'final_p' ? form.parentAcaraId.trim() : ''
 
   // Cadangan no acara saringan yang ada dalam sistem
@@ -602,7 +606,7 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
       jenisAcara: form.jenisAcara,
       tarikhAcara, masa: form.masa, lokasi: form.lokasi, sesi: 'Pagi',
       peringkat, parentAcaraId: parentId || null,
-      adaHeat: peringkat === 'saringan',
+      adaHeat: PERINGKAT_DENGAN_HEAT.includes(peringkat),
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
       unitUkuran: isPadang ? 'm' : 's',
       bilanganLorong: isPadang ? null : 8,
@@ -807,6 +811,8 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
           <select value={form.peringkatMode} onChange={e => set('peringkatMode', e.target.value)} className={ic}>
             <option value="akhir">Terus Final</option>
             <option value="saringan">Saringan</option>
+            <option value="suku_akhir">Suku Akhir</option>
+            <option value="separuh_akhir">Separuh Akhir</option>
             <option value="final_p">Final ←</option>
           </select>
           {form.peringkatMode === 'final_p' && (
@@ -1461,7 +1467,8 @@ function AcaraModal({ mode, initial, kejohananId, onClose, onSaved, kategoriList
     ? (selectedKat?.label || (selectedKat?.umurHad ? `${form.jantina} Bwh ${selectedKat.umurHad}` : `${form.jantina} ${form.kategoriKod}`))
     : form.jantina
   const namaAcaraFull = `${form.namaAcaraPendek} ${kelas}`.trim()
-  const adaHeat       = form.peringkat === 'saringan'
+  const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
+  const adaHeat       = PERINGKAT_DENGAN_HEAT.includes(form.peringkat)
   const isPadang      = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
   const isLorong      = ['lorong', 'relay'].includes(form.jenisAcara)
   const jInfo         = JENIS_ACARA.find(j => j.value === form.jenisAcara)
@@ -1509,7 +1516,7 @@ function AcaraModal({ mode, initial, kejohananId, onClose, onSaved, kategoriList
         sesi:              form.sesi,
         peringkat:         form.peringkat,
         parentAcaraId:     form.parentAcaraId.trim() || null,
-        adaHeat:           form.peringkat === 'saringan',
+        adaHeat:           PERINGKAT_DENGAN_HEAT.includes(form.peringkat),
         isWindReading:     !!form.isWindReading,
         unitUkuran:        isPadang ? 'm' : 's',
         bilanganLorong:    isLorong ? Number(form.bilanganLorong) : null,
@@ -1659,9 +1666,11 @@ function AcaraModal({ mode, initial, kejohananId, onClose, onSaved, kategoriList
             <p className="text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Peringkat <span className="text-red-400">*</span></p>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { v:'akhir',    l:'Terus Final', d:'Final sahaja, tiada heat saringan' },
-                { v:'saringan', l:'Saringan',    d:'Heat saringan — final dibuat berasingan' },
-                { v:'akhir_p',  l:'Final',       d:'Final selepas saringan (ada No Acara Saringan)' },
+                { v:'akhir',         l:'Terus Final',   d:'Final sahaja, tiada heat saringan' },
+                { v:'saringan',      l:'Saringan',      d:'Heat saringan — final dibuat berasingan' },
+                { v:'akhir_p',       l:'Final',         d:'Final selepas saringan (ada No Acara Saringan)' },
+                { v:'suku_akhir',    l:'Suku Akhir',    d:'Heat suku akhir (QF) — ada heat, bukan final' },
+                { v:'separuh_akhir', l:'Separuh Akhir', d:'Heat separuh akhir (SF) — ada heat, bukan final' },
               ].map(o => (
                 <button key={o.v} type="button"
                   onClick={() => {
@@ -2060,8 +2069,10 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
   //   'akhir' + parentAcaraId → Final (perlawanan akhir linked ke saringan)
   //   'akhir' + tiada parentAcaraId → Akhir (standalone, tiada final)
   function getPeringkat(a) {
-    if (a.peringkat === 'saringan') return 'saringan'
-    if (a.parentAcaraId)           return 'final'
+    if (a.peringkat === 'saringan')       return 'saringan'
+    if (a.peringkat === 'suku_akhir')    return 'suku_akhir'
+    if (a.peringkat === 'separuh_akhir') return 'separuh_akhir'
+    if (a.parentAcaraId)                  return 'final'
     return 'akhir'
   }
 
@@ -2103,8 +2114,8 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
   }
 
   const JENIS_SHORT = { lorong:'Lorong', mass_start:'Mass Start', padang_lompat:'Lompat', padang_balin:'Balin', relay:'Relay' }
-  const P_BADGE     = { saringan:'bg-blue-100 text-blue-700', final:'bg-amber-100 text-amber-700', akhir:'bg-green-100 text-green-700' }
-  const P_LABEL     = { saringan:'Saringan', final:'Final', akhir:'Akhir' }
+  const P_BADGE     = { saringan:'bg-blue-100 text-blue-700', final:'bg-amber-100 text-amber-700', akhir:'bg-green-100 text-green-700', suku_akhir:'bg-teal-100 text-teal-700', separuh_akhir:'bg-indigo-100 text-indigo-700' }
+  const P_LABEL     = { saringan:'Saringan', final:'Final', akhir:'Akhir', suku_akhir:'Suku Akhir', separuh_akhir:'Separuh Akhir' }
 
   // ── Cetak PDF ───────────────────────────────────────────────────────────────
   function cetakPDF() {
@@ -2307,7 +2318,7 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
         </div>
 
         <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
-          {[['semua','Semua'],['saringan','Saringan'],['akhir','Akhir'],['final','Final']].map(([v,l]) => (
+          {[['semua','Semua'],['saringan','Saringan'],['suku_akhir','Suku Akhir'],['separuh_akhir','Separuh Akhir'],['akhir','Akhir'],['final','Final']].map(([v,l]) => (
             <button key={v} onClick={() => setFPeringkat(v)}
               className={`px-3 py-1.5 font-bold transition-colors border-r border-gray-100 last:border-r-0 ${fPeringkat===v?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
               {l}

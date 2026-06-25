@@ -177,8 +177,10 @@ export function buatStartListPDFUnified({
         : (a.lorong  ?? 99) - (b.lorong  ?? 99)
     )
     const jumlahHeat = jumlahHeatTotal ?? heats.filter(h => h.fasa !== 'final').length
-    const fasaStr = heat.fasa === 'final'    ? 'FINAL'
-                  : heat.fasa === 'saringan' ? 'SARINGAN'
+    const fasaStr = heat.fasa === 'final'          ? 'FINAL'
+                  : heat.fasa === 'saringan'       ? 'SARINGAN'
+                  : heat.fasa === 'suku_akhir'    ? `SUKU AKHIR ${heat.noHeat}/${jumlahHeat}`
+                  : heat.fasa === 'separuh_akhir' ? `SEPARUH AKHIR ${heat.noHeat}/${jumlahHeat}`
                   : `HEAT ${heat.noHeat}/${jumlahHeat}`
 
     for (const sal of SALINAN) {
