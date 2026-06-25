@@ -699,6 +699,7 @@ function TetapanFinal({ kategoriList }) {
   const [heatCountMap, setHeatCountMap] = useState({})
   const [pesertaMap,   setPesertaMap]   = useState({})
   const [overrides,    setOverrides]    = useState({})   // aceraId → { bestHeat, bestTime }
+  const [sukuOv,       setSukuOv]       = useState({})   // aceraId → { bestHeat, bestTime } untuk suku→SF
   const [filterKat,    setFilterKat]    = useState('semua')
   const [expandedKat,  setExpandedKat]  = useState({})
 
@@ -709,7 +710,10 @@ function TetapanFinal({ kategoriList }) {
       try {
         // Load override yang tersimpan
         const snap = await getDoc(doc(db, 'tetapan', 'finalSetup'))
-        if (snap.exists()) setOverrides(snap.data().overrideByAcara || {})
+        if (snap.exists()) {
+          setOverrides(snap.data().overrideByAcara || {})
+          setSukuOv(snap.data().sukuKeSeparuhByAcara || {})
+        }
 
         // Kejohanan aktif
         const kejSnap = await getDocs(query(
@@ -761,6 +765,14 @@ function TetapanFinal({ kategoriList }) {
     setDirty(true); setSaved(false)
   }
 
+  function setSukuOvField(aceraId, field, val) {
+    setSukuOv(prev => ({
+      ...prev,
+      [aceraId]: { ...(prev[aceraId] || { bestHeat: 0, bestTime: 0 }), [field]: val === '' ? '' : Number(val) }
+    }))
+    setDirty(true); setSaved(false)
+  }
+
   async function handleSave() {
     setSaving(true)
     try {
@@ -768,10 +780,16 @@ function TetapanFinal({ kategoriList }) {
       Object.entries(overrides).forEach(([id, v]) => {
         clean[id] = { bestHeat: Number(v.bestHeat) || 0, bestTime: Number(v.bestTime) || 0 }
       })
+      const cleanSuku = {}
+      Object.entries(sukuOv).forEach(([id, v]) => {
+        if (Number(v.bestHeat) > 0 || Number(v.bestTime) > 0)
+          cleanSuku[id] = { bestHeat: Number(v.bestHeat) || 0, bestTime: Number(v.bestTime) || 0 }
+      })
       await setDoc(doc(db, 'tetapan', 'finalSetup'), {
         overrideByAcara: clean,
+        sukuKeSeparuhByAcara: cleanSuku,
         updatedAt: serverTimestamp(),
-      })
+      }, { merge: true })
       setDirty(false); setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e) { alert('Ralat simpan: ' + e.message) }
@@ -900,9 +918,11 @@ function TetapanFinal({ kategoriList }) {
                       <th className="px-4 py-2 text-left">Acara</th>
                       <th className="px-3 py-2 text-center">Heat</th>
                       <th className="px-3 py-2 text-center">Atlet</th>
-                      <th className="px-3 py-2 text-center">BH/heat</th>
-                      <th className="px-3 py-2 text-center">BT</th>
+                      <th className="px-3 py-2 text-center">BH→Akhir</th>
+                      <th className="px-3 py-2 text-center">BT→Akhir</th>
                       <th className="px-3 py-2 text-center">= Final</th>
+                      <th className="px-3 py-2 text-center bg-teal-50 text-teal-600">BH→SF</th>
+                      <th className="px-3 py-2 text-center bg-teal-50 text-teal-600">BT→SF</th>
                       <th className="px-3 py-2 text-center">Status</th>
                     </tr>
                   </thead>
@@ -919,11 +939,18 @@ function TetapanFinal({ kategoriList }) {
                       const ok      = total === 8
                       const stdRow  = SIFIR_STANDARD.find(r => r.heat === n)
 
+                      const sukuOvRow   = sukuOv[a.id] || {}
+                      const sukuBH      = sukuOvRow.bestHeat !== undefined ? Number(sukuOvRow.bestHeat) : ''
+                      const sukuBT      = sukuOvRow.bestTime !== undefined ? Number(sukuOvRow.bestTime) : ''
+                      const isSukuSet   = !!(sukuOv[a.id])
+                      const isSukuAcara = a.peringkat === 'suku_akhir'
+
                       return (
                         <tr key={a.id} className={`border-b border-gray-50 last:border-0 ${i%2===0?'':'bg-gray-50/30'}`}>
                           <td className="px-4 py-2.5">
                             <p className="font-semibold text-gray-700 text-[11px]">{a.namaAcara}</p>
                             {a.jenisAcara === 'relay' && <span className="text-[8px] text-purple-500 font-bold">RELAY</span>}
+                            {isSukuAcara && <span className="text-[8px] text-teal-600 font-bold">SUKU AKHIR</span>}
                           </td>
 
                           <td className="px-3 py-2.5 text-center">
@@ -956,6 +983,26 @@ function TetapanFinal({ kategoriList }) {
                             {total !== null
                               ? <span className={`font-black text-sm ${ok ? 'text-green-600' : 'text-amber-500'}`}>{total}</span>
                               : <span className="text-[11px] text-gray-300">belum jana</span>}
+                          </td>
+
+                          <td className="px-3 py-2.5 text-center bg-teal-50/40">
+                            {isSukuAcara
+                              ? <input type="number" min={0} max={99}
+                                  value={sukuBH}
+                                  placeholder="—"
+                                  onChange={e => setSukuOvField(a.id, 'bestHeat', e.target.value)}
+                                  className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
+                              : <span className="text-[10px] text-gray-300">—</span>}
+                          </td>
+
+                          <td className="px-3 py-2.5 text-center bg-teal-50/40">
+                            {isSukuAcara
+                              ? <input type="number" min={0} max={99}
+                                  value={sukuBT}
+                                  placeholder="—"
+                                  onChange={e => setSukuOvField(a.id, 'bestTime', e.target.value)}
+                                  className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
+                              : <span className="text-[10px] text-gray-300">—</span>}
                           </td>
 
                           <td className="px-3 py-2.5 text-center text-[10px]">

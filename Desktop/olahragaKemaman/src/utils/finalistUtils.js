@@ -23,13 +23,25 @@ export function getJenisTab(acara) {
 /**
  * Dapatkan {bestHeat, bestTime} untuk satu acara.
  * Priority: override per aceraId > default per kategori > fallback (1, 3)
+ *
+ * @param {string} fasa - 'toFinal' (default) atau 'sukuKeSeparuh'
  */
-export function getFinalistSetup(acara, finalSetup) {
+export function getFinalistSetup(acara, finalSetup, fasa = 'toFinal') {
   const FALLBACK = { bestHeat: 1, bestTime: 3 }
   if (!finalSetup) return FALLBACK
 
-  // 1. Override per acara
   const aceraId = String(acara.noAcara || acara.acaraId || acara.aceraId || acara.id || '')
+
+  // Suku akhir → separuh akhir: baca field berasingan
+  if (fasa === 'sukuKeSeparuh') {
+    const ovr = finalSetup.sukuKeSeparuhByAcara?.[aceraId]
+    if (ovr && (ovr.bestHeat != null || ovr.bestTime != null)) {
+      return { bestHeat: ovr.bestHeat ?? 1, bestTime: ovr.bestTime ?? 0 }
+    }
+    return FALLBACK
+  }
+
+  // 1. Override per acara (→ akhir)
   const ovr = finalSetup.overrideByAcara?.[aceraId]
   if (ovr && (ovr.bestHeat != null || ovr.bestTime != null)) {
     return { bestHeat: ovr.bestHeat ?? 1, bestTime: ovr.bestTime ?? 3 }
@@ -58,8 +70,8 @@ export function getFinalistSetup(acara, finalSetup) {
  * @param {Object} finalSetup  - dari Firestore tetapan/finalSetup (boleh null → guna fallback)
  * @returns {Array} senarai atlet layak { noBib, namaAtlet, kodSekolah, noKP, keputusan, heatId, noHeat }
  */
-export function selectFinalists(heats, acara, finalSetup) {
-  const { bestHeat, bestTime } = getFinalistSetup(acara, finalSetup)
+export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
+  const { bestHeat, bestTime } = getFinalistSetup(acara, finalSetup, fasa)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isRelay  = acara.jenisAcara === 'relay'
 

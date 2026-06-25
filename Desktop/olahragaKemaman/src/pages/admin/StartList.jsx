@@ -1063,6 +1063,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   const isRelay  = acara.jenisAcara === 'relay'
 
   const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan')
+  const fasaJana = acara.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
 
   const [finalis,        setFinalis]        = useState([])
   const [finalSetup,     setFinalSetup]     = useState(null)
@@ -1078,11 +1079,9 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       getDoc(doc(db, 'wa_config', kejohananId)),
     ])
       .then(([fsSnap, waSnap]) => {
-        // finalSetup
         const fs = fsSnap.exists() ? fsSnap.data() : null
         setFinalSetup(fs)
-        setFinalis(selectFinalists(heatPhaseHeats, acara, fs))
-        // wa_config → lorongKumpulan
+        setFinalis(selectFinalists(heatPhaseHeats, acara, fs, fasaJana))
         if (waSnap.exists() && waSnap.data().lorongKumpulan) {
           const raw = waSnap.data().lorongKumpulan
           const parsed = {}
@@ -1095,14 +1094,14 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         }
       })
       .catch(() => {
-        setFinalis(selectFinalists(heatPhaseHeats, acara, null))
+        setFinalis(selectFinalists(heatPhaseHeats, acara, null, fasaJana))
       })
       .finally(() => setLoadingSetup(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ambil gate semasa untuk paparan info
   const { bestHeat, bestTime } = finalSetup
-    ? getFinalistSetup(acara, finalSetup)
+    ? getFinalistSetup(acara, finalSetup, fasaJana)
     : { bestHeat: 1, bestTime: 3 }
 
   function fmtPrestasi(val) {
@@ -1129,7 +1128,8 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       const targetAcara = finalAcaraLinked || acara
       const targetKey   = targetAcara.aceraId || targetAcara.id
 
-      const heatId = buatHeatId(targetKey, 'final', 1)
+      const fasaHeat = fasaJana === 'sukuKeSeparuh' ? 'heat' : 'final'
+      const heatId = buatHeatId(targetKey, fasaHeat, 1)
       const ref    = doc(db, 'kejohanan', kejohananId, 'acara', targetKey, 'heat', heatId)
 
       // Sort ikut prestasi terbaik sebelum assign lorong (WA standard)
@@ -1137,7 +1137,6 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         ? [...finalis].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999))
         : finalis
 
-      // Final: guna kumpulan lorong WA dari state (dimuatkan terus dari Firestore)
       const jenisLorong = detectJenisLorong(acara)
       const pesertaAssigned = isPadang || isMass
         ? assignGiliran(finalis)
@@ -1147,7 +1146,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         heatId,
         aceraId:     targetKey,
         kejohananId,
-        fasa:        'final',
+        fasa:        fasaHeat,
         noHeat:      1,
         status:      'belum_mula',
         windSpeed:   null,
