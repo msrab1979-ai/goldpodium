@@ -112,6 +112,12 @@ service cloud.firestore {
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
         allow delete: if isSuperAdmin();
       }
+
+      // pengesahan (sub-collection)
+      match /pengesahan/{pengesahanId} {
+        allow read: if true;
+        allow write: if isSuperAdmin();
+      }
     }
 
     // ── rekod ─────────────────────────────────────────────────────
@@ -128,7 +134,7 @@ service cloud.firestore {
 
     // ── bantahan ─────────────────────────────────────────────────
     match /bantahan/{bantahanId} {
-      allow read: if isStaff();
+      allow read: if true;
       allow create: if isAdmin();
       allow update: if isSuperAdmin();
       allow delete: if isSuperAdmin();
@@ -184,6 +190,30 @@ service cloud.firestore {
       allow update: if isAuth() &&
         resource.data.penerimUid == request.auth.uid;
       allow delete: if false;
+    }
+
+    // ── medal_tally_kat ───────────────────────────────────────────
+    match /medal_tally_kat/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── rekod_tuntutan ────────────────────────────────────────────
+    match /rekod_tuntutan/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── wa_config ─────────────────────────────────────────────────
+    match /wa_config/{id} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ── anugerah_custom ───────────────────────────────────────────
+    match /anugerah_custom/{id} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
     }
 
     // ── audit_log ────────────────────────────────────────────────
