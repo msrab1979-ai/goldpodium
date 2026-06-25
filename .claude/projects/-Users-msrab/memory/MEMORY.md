@@ -1,0 +1,32 @@
+# Memory Index
+
+- [KOAM Project](project_koam.md) — React+Firebase kejohanan olahraga sistem, mssdkemaman-olahraga, status semasa & folder structure
+- [KOAM No Acara](project_koam_noAcara.md) — No Acara = primary key seluruh sistem: jadual, keputusan, start list PDF, final, home view. 152 acara (101-517), 5 hari
+- [Deploy Firebase live](feedback_deploy.md) — selalu `npm run build && firebase deploy --only hosting`, bukan localhost
+- [TODO selepas audit pendaftaran](project_todo_post_pendaftaran.md) — analisa PDF, borang, race condition noBib, pencatat semak
+- [Audit Sistem KOAM](project_audit_sistem.md) — dapatan audit April 2026: detectKatKod bug, hardcode mappings, status tiap modul
+- [KOAM Roadmap](project_roadmap.md) — keutamaan fix: Fasa 1 (kategoriKod kritikal) → Fasa 2 (olahragawan kat, rekod badge) → Fasa 3 (analisa, noBib, home)
+- [Rekod Study Kes](project_rekod_studykes.md) — format rekod dalam start list PDF, badge rekod baru dalam keputusan, rekod pecah dalam olahragawan
+- [Cetak Admin Menu](project_cetak_admin.md) — 3 feature cetakan (semua draf siap, belum bina): Buku Kejohanan, Keputusan by Day, Slip Hadiah+Juruhebah
+- [Audit Flow Sistem](project_audit_flow.md) — gates KUAT, noKP=primary key sebenar, noBib selamat (SR/SM kategori lain=heat lain), flow startlist→pencatat→medal tally faham, 4 isu heat/rekod pending
+- [Priority Fix List](project_priority_fix.md) — mulakan apabila user kata "let go": P1-P3 kritikal, P4-P6 sederhana, P7-P8 kecil, F1-F3 feature cetakan
+- [Kategori V2.0 Plan](project_kategori_v2.md) — jenisSekolah dinamik ditangguh ke v2.0: 4 fail mesti diubah serentak (KategoriSetup, SekolahSetup, Home, BukuKejohanan)
+- [Acara+Jadual V2](project_acara_jadual_v2.md) — merged page, parentAcaraId saringan→final, tetapan/finalSetup bestHeat+bestTime by kategori, start fresh
+- [Bug Log Mei 2026](project_bugs_mei2026.md) — 15 bug fix ✅ (rekod sync bug postRasmiUtils, Semak Sambungan tab + connection indicator kuat/lemah/tiada) + 1 pending
+- [Bug Log Jun 2026](project_bugs_jun2026.md) — UX InputKeputusan, format masa mm.ss.ms, mata olahragawan hanya final, tab label L12/P12, atlet rekod tanpa pingat kini muncul (21 Jun)
+- [Rekod Pecah Flow](project_rekod_pecah_flow.md) — trigger, badge Home 🏆, Olahragawan, PDF mana kena ada, bug primary key fix
+- [PBD Firebase Sistem](project_pbd_firebase.md) — Sistem Rekod PBD SK Sultan Ismail: vanilla HTML/JS+Firestore, hipersispbd, collections, bugs B1-B9 (Firestore rules kritikal)
+- [Jangan usik fail lain](feedback_jangan_usik_fail_lain.md) — hanya sentuh fail yang diminta, tanya dulu jika perlu ubah fail lain
+- [Ignore bantahan + rasmi flow](feedback_ignore_bantahan.md) — dead code, jangan sebut/debug/cadang buang: bantahan, rasmi, tidak_rasmi, bantahanDiterima
+- [PendaftaranSetup dua lokasi](feedback_pendaftaran_dua_lokasi.md) — TabPendaftaran + TabPP mesti difix serentak — jangan fix satu lokasi sahaja
+- [Flow Keputusan — Terus Publish](feedback_flow_keputusan.md) — ada_keputusan = PUBLISHED, bukan draf. Sistem dah x guna rasmi/tidak_rasmi flow.
+- [SKGS PWA Sistem](project_skgs_pwa.md) — Kehadiran+eGerak SK Sultan Ismail, thumbin-9a08d, single-file index.html, GAS hanya saveSelfie, semua lain Firestore
+- [Homestay Kemaman](project_homestay.md) — homestaykemaman-dbdcc, vanilla HTML+Firebase, admin panel gear⚙️, pass msrab1979, 019-976 1693, GitHub: msrab1979-ai/homestaykemaman
+- [Merentas Desa Sistem](project_mssd_merentasdesa.md) — mssdkemaman-merentasdesa, NO Firebase Auth, sessionStorage, pasukan login=kodSekolah+PIN, lupa PIN self-service, `/pasukan/{kodSekolah}` doc ID
+- [Merentas Desa Format Keputusan](project_merentasdesa_format_keputusan.md) — format PDF+Buku Kejohanan: individu(KED|BIB|NAMA|PASUKAN|MASA), berpasukan(KED|PASUKAN|MATA+senarai atlet), pungutan mata(SK:L12+P12 berasingan SM:L15+P15+L18+P18)
+- [Sukan Tahunan SK Sultan Ismail](project_sukanYusman.md) — GAS+Google Sheets (bukan Firebase), 7 fail, 14k baris, pendaftaran 6 gates, auto-derive KP, jana acara per kategori
+- [Sijil Pencapaian + Buku Kongsi](project_sijil_pencapaian_buku.md) — Jun 2026: 4 fail baru, drag-drop 6 item, sokong relay, toggle ON/OFF, Google Drive URL share max 10
+- [Pra-Sekolah KIV](project_prasekolah_kiv.md) — Cadang repo+Firebase project asing dari KOAM. Belum mula — user KIV.
+- [Analisa Pingat KIV](project_analisa_pingat_kiv.md) — Menu baru admin: senarai atlet+pingat by kategori, data dari mata_olahragawan, draf UI siap, tunggu "bina semula analisa pingat"
+- [Gate 3 Umur — Pending](project_gate3_tarikh.md) — tukar kelayakan umur dari by-tahun ke by-tarikh (MSSM 2 Jan cut-off), 3 fail, data ZERO sentuh, belum bina — tanya cut-off date dulu
+- [Suku/Separuh Akhir Upgrade](project_suku_separuh_akhir.md) — tambah peringkat QF/SF, 4 masalah kod, sifir WA sedia ada JANGAN ROSAK, Fasa 1 selamat Fasa 2 serpentine WA TR20

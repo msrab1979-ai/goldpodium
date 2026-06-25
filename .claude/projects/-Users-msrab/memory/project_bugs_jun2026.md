@@ -352,6 +352,73 @@ metadata:
 - **Fail**: `src/pages/pencatat/InputKeputusan.jsx`
 - **Status**: ✅ Fixed + deployed (23 Jun 2026)
 
+## FIX — Sesi 25 Jun 2026 (Backup + Rules + Start List PDF + Fasa 1 Plan)
+
+### Backup — Ralat Missing Permissions (Firestore rules tidak lengkap)
+- **Bug**: Backup fail dengan `Missing or insufficient permissions` pada beberapa collection
+- **Punca 1**: Collection `medal_tally_kat`, `rekod_tuntutan`, `wa_config`, `anugerah_custom`, `pengesahan` tiada dalam `firestore.rules` → Firestore deny by default
+- **Punca 2**: `bantahan` guna `allow read: if isStaff()` → panggil `getRole()` → extra Firestore read → gagal dalam sessionStorage auth context
+- **Fix**: Tambah semua collection yang tiada dalam rules, tukar `bantahan` read ke `if true`
+- **Sub-collection baru**: `pengesahan` ditambah di bawah `kejohanan`
+- **Debug method**: Per-collection try-catch dengan `addLog` untuk kenal pasti collection yang gagal
+- **Commit**: `dec1f10` ✅
+
+### Start List PDF — Format Heat 1/N (bukan Heat 1)
+- **Bug**: Bila cetak satu heat sahaja (dari tombol "Cetak Heat Ini"), PDF tunjuk "HEAT 1/1" bukan "HEAT 1/6"
+- **Punca**: `cetakHeatDariHari` dan `cetakSatuHeat` hantar hanya `[heat]` (1 item) ke `buatStartListPDFUnified`, menyebabkan `heats.filter(...).length = 1` sentiasa
+- **Fix**: Tambah parameter `jumlahHeatTotal = null` ke `buatStartListPDFUnified`
+  - `cetakHeatDariHari`: query semua heat dari Firestore, kira `jumlahHeatTotal` sebelum panggil PDF
+  - `cetakSatuHeat`: guna `heatList` state yang dah ada untuk kira `jumlahHeatTotal`
+- **Fail**: `src/utils/startListPdfUtils.js`, `src/pages/admin/StartList.jsx`
+- **Commit**: `491261a` ✅
+
+### bantahan — Dead Code, Ignore Selamanya
+- **Penemuan**: Collection `bantahan` + flow `rasmi`/`tidak_rasmi` + `bantahanDiterima` adalah dead code
+- **User confirm**: "aku x guna dah flow and logic tu"
+- **Keputusan**: Kekal dalam code, JANGAN sentuh, debug, atau sebut dalam perbincangan masa depan
+- **Memory**: Disimpan dalam `feedback_ignore_bantahan.md`
+
+### Suku Akhir / Separuh Akhir — Kajian Fasa 1 + Fasa 2
+- **Kajian mendalam**: 6 fail dianalisa untuk kesan semua perubahan yang diperlukan
+- **Dapatan penting**:
+  - `selectFinalists` + `parentAcaraId` chain: sudah handle separuh akhir → akhir ✅
+  - Rekod trigger: betul — rank 1 semua fasa (termasuk suku/separuh akhir) ✅
+  - `isSaringanAcara` mesti diubah: tambah `suku_akhir` + `separuh_akhir` untuk block `grantMedal`
+  - `buatHeatId`: QF/SF clash — mesti disambungkan
+  - WA TR20 serpentine: seeded draw untuk separuh akhir (rank 1→SA1, 2→SA2, 3→SA2, 4→SA1...)
+- **Plan**: Fasa 1 (selamat, tanpa serpentine) → Fasa 2 (WA strict serpentine)
+- **Memory**: Disimpan dalam `project_suku_separuh_akhir.md`
+
+## FIX — Sesi 25 Jun 2026 (Gate 3, Start List, Analytics, Security)
+
+### Gate 3 Kelayakan Umur — By Tarikh (cut-off 2 Januari MSSM)
+- **Sebelum**: Semak `tahunLahir` sahaja (by tahun)
+- **Selepas**: Semak tarikh penuh — `tLahir >= 2 Jan (tKej-umurHad)` dan `tLahir < 1 Jan (tKej-umurMin+1)`
+- **Standard**: MSSM cut-off 2 Januari — atlet lahir 1 Jan dikira TERLALU TUA
+- **Data Firestore**: ZERO sentuh — `umurHad`/`umurMin` kekal integer
+- **Label display**: KategoriSetup + ManualPendaftaran kini tunjuk `2 Jan 2014 – 31 Dis 2016`
+- **Fail**: `validasiPendaftaran.js`, `KategoriSetup.jsx`, `ManualPendaftaran.jsx`
+- **Status**: ✅ Fixed + deployed (25 Jun 2026)
+
+### Start List PDF — Format Heat 1/3
+- **Sebelum**: `"HEAT 1"` sahaja
+- **Selepas**: `"HEAT 1/3"` (heat semasa / jumlah heat saringan)
+- **Final + Saringan**: kekal `"FINAL"` / `"SARINGAN"` — tidak terjejas
+- **Fail**: `src/utils/startListPdfUtils.js`
+- **Status**: ✅ Fixed + deployed (25 Jun 2026)
+
+### Google Analytics — Pasang GA
+- **measurementId**: `G-PRD3GWTZZG`
+- **Cara**: `isSupported().then()` — hanya aktif dalam browser, selamat SSR
+- **Fail**: `src/firebase/config.js`, `.env.local`
+- **Status**: ✅ Deployed (25 Jun 2026)
+
+### Security — Kunci `tetapan` collection
+- **Sebelum**: `allow write: if true`
+- **Selepas**: `allow write: if isAdminOrAbove()`
+- **Semak**: Semua writer ke `tetapan` adalah halaman admin (ada Firebase Auth) ✅
+- **Status**: ✅ Firestore rules deployed (25 Jun 2026)
+
 ## PENDING
 
 ### KIV — Semak Kiraan Umur Standard MSSM (14 Jun 2026)
@@ -732,9 +799,48 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
 - **Repo baru**: `msrab1979-ai/olahragaKemaman` — private, history bersih
 - **Remote**: `git remote set-url origin https://github.com/msrab1979-ai/olahragaKemaman.git`
 
+## FIX — Sesi 25 Jun 2026 (Firestore rules + audit tally)
+
+### Firestore Rules — Buka Write Semua Collection Operasi
+- **Bug**: Pencatat HANTAR keputusan → `Missing or insufficient permissions` (write `heat`, `keputusan`, `medal_tally`, `mata_olahragawan`, `rekod`, `rekod_sejarah`)
+- **Punca**: Semua write rules guna `isPencatat()`/`isPengurusTeknik()` = Firebase Auth — sistem guna sessionStorage
+- **Fix**: Buka `allow write: if true` untuk `heat`, `keputusan`, `medal_tally`, `mata_olahragawan`, `rekod`, `rekod_sejarah`
+- **KIV selepas kejohanan**: Migrate Firebase Auth → sekat semula
+
+### Audit Tally Penuh — 101 hingga 501 (25 Jun 2026)
+- **Skrip**: `audit-tally-full.cjs` (read-only)
+- **Dapatan**: 93 acara selesai, 11 belum, 48 saringan (skip)
+- **Hasil**: **E=93 P=94 G=95** — Ground Truth (heat) = Firestore (medal_tally) ✅
+- **62 sekolah semak**: 0 beza — 100% tally betul
+- **Kesimpulan**: Masalah permission semalam tidak menyebabkan data rosak
+
+### KIV PDPA — noKP Terdedah Awam (fix selepas kejohanan)
+- **Isu**: `atlet` collection `allow read: if true` → noKP + nama + tarikh lahir kanak-kanak boleh dibaca sesiapa
+- `mata_olahragawan` doc ID = noKP → boleh enumerate semua noKP
+- **Bintang keselamatan**: ⭐⭐/5 — pelanggaran PDPA 2010
+- **Keputusan user**: Terima risiko sementara, fix selepas kejohanan habis
+- **Fix perlu dibuat**: (1) migrate semua login ke Firebase Auth, (2) `atlet` → `allow read: if isStaff()`, (3) tukar doc ID `mata_olahragawan` dari noKP ke UUID
+
 ### KIV — Padam rekod_sejarah SMK CHUKAI 48.75s
 - Doc ID: `LEavHyMzymxJ2aKSTUVs` dalam collection `rekod_sejarah`
 - Perlu padam manual di Firebase Console (permission denied via skrip)
+
+## FIX — Sesi 24 Jun 2026 (Firestore Rules v2 + index.html)
+
+### Firestore Rules — Login Broken Fix
+- **Bug**: Semua login gagal selepas deploy rules ketat — 403 pada `users` query
+- **Punca**: Rules guna `isAuth()` = Firebase Auth, tapi sistem guna sessionStorage auth — `request.auth` sentiasa null → semua read gagal
+- **Fix 1**: `users` → `allow read: if true` (login Admin/Pencatat/Pengurus Teknik query users tanpa Firebase Auth)
+- **Fix 2**: `sekolah` → `allow read: if true` (login Pengurus Pasukan)
+- **Fix 3**: `login_attempts` → `allow read, write: if true` (rate limiting semasa login)
+- **Fix 4**: `atlet` → `allow read: if true` (Dashboard getCountFromServer + sijil + pendaftaran)
+- **Write kekal selamat**: superadmin sahaja boleh ubah `users`, `sekolah`, `atlet`
+- **Commit**: rules deployed ✅
+
+### index.html — Deprecated Meta Tag
+- **Warning**: `<meta name="apple-mobile-web-app-capable">` deprecated
+- **Fix**: Tambah `<meta name="mobile-web-app-capable" content="yes">` — tag Apple kekal untuk iOS
+- **Fail**: `index.html`
 ```
 
 **Risiko teoridikal (tidak berlaku sekarang):** Acara saringan baru tanpa perkataan "saringan" + belum jana heat kedua → `grantMedal=true` secara salah. Mitigasi: semua 48 acara saringan dah ada "saringan" dalam nama.
