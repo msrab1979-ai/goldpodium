@@ -1948,16 +1948,19 @@ export default function StartList() {
     const cKey = `${aid}:${heat.heatId}`
     setCetakHeatId(cKey)
     try {
-      const [cfgSnap, rekodDNK] = await Promise.all([
+      const [cfgSnap, rekodDNK, allHeatsSnap] = await Promise.all([
         getDoc(doc(db, 'tetapan', 'home')),
         cariRekodUntukAcara(a),
+        getDocs(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat')),
       ])
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
+      const jumlahHeatTotal = allHeatsSnap.docs.filter(d => d.data().fasa !== 'final').length
       const pdf = buatStartListPDFUnified({
         acara:     a,
         heats:     [heat],
         namaKej:   cfg.tajukUtama || namaKej,
         jadual:    jadualMap[aid] || {},
+        jumlahHeatTotal,
         rekodDNK,
         namaSekolahMap,
         kategoriList,
@@ -2250,6 +2253,7 @@ export default function StartList() {
       const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       const jadual = jadualMap[selectedAcara.aceraId || selectedAcara.id] || {}
+      const jumlahHeatTotal = heatList.filter(x => x.fasa !== 'final').length
       const pdf = buatStartListPDFUnified({
         acara:     selectedAcara,
         heats:     [h],
@@ -2261,6 +2265,7 @@ export default function StartList() {
         logoKiri:  cfg.logoKiriBase64  || null,
         logoKanan: cfg.logoKananBase64 || null,
         bibPrefixMap,
+        jumlahHeatTotal,
       })
       pdf.save(`StartList_${selectedAcara.aceraId}_${h.heatId}_${Date.now()}.pdf`)
       // Rekod dalam Firestore

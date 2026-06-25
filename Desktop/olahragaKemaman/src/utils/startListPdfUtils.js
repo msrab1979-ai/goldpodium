@@ -131,7 +131,7 @@ export function katLabel(kod, kategoriList = []) {
 export function buatStartListPDFUnified({
   acara, heats, namaKej, jadual, rekodDNK = { D: null, N: null, K: null },
   namaSekolahMap = {}, kategoriList = [], logoKiri = null, logoKanan = null,
-  bibPrefixMap = {},
+  bibPrefixMap = {}, jumlahHeatTotal = null,
 }) {
   const isPadang       = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isMass         = acara.jenisAcara === 'mass_start'
@@ -176,7 +176,7 @@ export function buatStartListPDFUnified({
         ? (a.giliran ?? 99) - (b.giliran ?? 99)
         : (a.lorong  ?? 99) - (b.lorong  ?? 99)
     )
-    const jumlahHeat = heats.filter(h => h.fasa !== 'final').length
+    const jumlahHeat = jumlahHeatTotal ?? heats.filter(h => h.fasa !== 'final').length
     const fasaStr = heat.fasa === 'final'    ? 'FINAL'
                   : heat.fasa === 'saringan' ? 'SARINGAN'
                   : `HEAT ${heat.noHeat}/${jumlahHeat}`
