@@ -194,11 +194,10 @@ export default function BukuKejohanan() {
       const acaraList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       const acaraMap  = Object.fromEntries(acaraList.map(a => [a.id, a]))
 
-      // 6. Heats untuk acara yang ada keputusan (rasmi atau ada_keputusan)
+      // 6. Heats untuk semua acara — filter by statusKeputusan heat, bukan statusAcara
       setProgress('Memuatkan keputusan rasmi…')
-      const rasmiAcara = acaraList.filter(a => ['rasmi', 'ada_keputusan', 'tidak_rasmi'].includes(a.statusAcara))
       const heatResults = await Promise.all(
-        rasmiAcara.map(async a => {
+        acaraList.map(async a => {
           const hSnap = await getDocs(
             collection(db, 'kejohanan', kejId, 'acara', a.id, 'heat')
           )
