@@ -265,7 +265,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
   const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
   const peringkat   = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
   const parentId    = form.peringkatMode === 'final_p' ? form.parentAcaraId.trim() : ''
-  const saringanList = acaraList.filter(a => a.peringkat === 'saringan' && String(a.noAcara) !== String(acara.noAcara))
+  const saringanList = acaraList.filter(a => ['saringan','suku_akhir','separuh_akhir'].includes(a.peringkat) && String(a.noAcara) !== String(acara.noAcara))
 
   // Semak sama ada final sudah wujud untuk saringan ini
   const thisNo = String(acara.noAcara || acara.aceraId || acara.id)
@@ -552,7 +552,7 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
   const parentId     = form.peringkatMode === 'final_p' ? form.parentAcaraId.trim() : ''
 
   // Cadangan no acara saringan yang ada dalam sistem
-  const saringanList = acaraList.filter(a => a.peringkat === 'saringan')
+  const saringanList = acaraList.filter(a => ['saringan','suku_akhir','separuh_akhir'].includes(a.peringkat))
 
   // ── Tambah Final Serentak ─────────────────────────────────────────────────
   const [withFinal,   setWithFinal]   = useState(false)
