@@ -2847,7 +2847,7 @@ export default function StartList() {
   const isFinalAcara        = !!(selectedAcara?.parentAcaraId)
   const sarPhaseHeats       = saringanHeats.filter(h => h.fasa === 'heat' || h.fasa === 'saringan')
   const sarAllRasmi         = sarPhaseHeats.length > 0 &&
-    sarPhaseHeats.every(h => h.statusKeputusan === 'rasmi')
+    sarPhaseHeats.every(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
   const canJanaFinalFromFinal = canEdit && isFinalAcara && heatList.length === 0 && sarAllRasmi
 
   return (
