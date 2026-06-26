@@ -1892,8 +1892,9 @@ export default function InputKeputusan() {
         const hasResult = val != null && val !== '' && !isNaN(Number(val)) && Number(val) > 0
         const finalStatus = isFlagged ? rawStatus : hasResult ? 'selesai' : rawStatus
 
-        const namaSekolah = p.namaSekolah || sekolahMap[p.kodSekolah] || p.kodSekolah || ''
-        return { ...p, keputusan: val, kedudukan, status: finalStatus, cubaan, namaSekolah, updatedBy: userData?.uid || '' }
+        const namaSekolah   = p.namaSekolah || sekolahMap[p.kodSekolah] || p.kodSekolah || ''
+        const masaSebenar   = kp.masaSebenar != null ? kp.masaSebenar : (p.masaSebenar ?? null)
+        return { ...p, keputusan: val, kedudukan, status: finalStatus, cubaan, namaSekolah, masaSebenar, updatedBy: userData?.uid || '' }
       })
 
       // ── Kira rankDalamHeat ─────────────────────────────────────────────────
