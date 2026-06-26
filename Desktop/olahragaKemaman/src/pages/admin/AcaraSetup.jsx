@@ -134,6 +134,7 @@ const WA_CONFIG_DEFAULT = {
   },
   caraPilihFinal: 'hybrid',
   wildcardSlot: 2,
+  bilHeatSukuAkhir: 2,
 }
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
@@ -1283,6 +1284,20 @@ function WaConfigPanel({ kejohananId }) {
                   </div>
                   <button onClick={() => set('lorongKumpulan', WA_CONFIG_DEFAULT.lorongKumpulan)}
                     className="text-[10px] text-[#003399] font-semibold hover:underline shrink-0">Reset WA</button>
+                </div>
+
+                {/* Bilangan Heat SF — untuk suku_akhir → separuh_akhir (serpentine) */}
+                <div className="bg-teal-50 border border-teal-100 rounded-lg p-3 space-y-1.5">
+                  <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wide">Suku Akhir → Separuh Akhir</p>
+                  <p className="text-[10px] text-teal-600">Bilangan heat SF — finalis diagihkan ikut serpentine seeding WA.</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-gray-600 w-32 shrink-0">Bilangan Heat SF:</span>
+                    <input type="number" min="1" max="8" value={cfg.bilHeatSukuAkhir ?? 2}
+                      onChange={e => set('bilHeatSukuAkhir', parseInt(e.target.value) || 2)}
+                      className="w-16 border border-gray-200 rounded px-2 py-1 text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-teal-400/50"
+                    />
+                    <span className="text-[10px] text-gray-400">heat (biasanya 2)</span>
+                  </div>
                 </div>
                 {Object.entries(WA_LORONG_KUMPULAN_DEFAULT).map(([jenisKey, meta]) => {
                   const kumpulan  = (cfg.lorongKumpulan?.[jenisKey]) || meta.kumpulan

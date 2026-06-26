@@ -29,7 +29,7 @@ import { useAuth } from '../../context/AuthContext'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { cariRekodUntukAcara, formatPrestasiRekod, tahunRekod, lokasiRekod } from '../../utils/rekodUtils'
-import { selectFinalists, getFinalistSetup, getJenisTab } from '../../utils/finalistUtils'
+import { selectFinalists, getFinalistSetup, getJenisTab, serpentineSeed } from '../../utils/finalistUtils'
 import {
   WA_LORONG_KUMPULAN_DEFAULT,
   WA_LORONG_HEAT_REMOVE,
@@ -1071,6 +1071,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   const [saving,         setSaving]         = useState(false)
   const [msg,            setMsg]            = useState('')
   const [lorongKumpulan, setLorongKumpulan] = useState(WA_LORONG_KUMPULAN_DEFAULT)
+  const [bilHeatSF,      setBilHeatSF]      = useState(2)  // untuk suku_akhir → SF sahaja
 
   // Load tetapan/finalSetup + wa_config serentak
   useEffect(() => {
@@ -1082,15 +1083,19 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         const fs = fsSnap.exists() ? fsSnap.data() : null
         setFinalSetup(fs)
         setFinalis(selectFinalists(heatPhaseHeats, acara, fs, fasaJana))
-        if (waSnap.exists() && waSnap.data().lorongKumpulan) {
-          const raw = waSnap.data().lorongKumpulan
-          const parsed = {}
-          Object.entries(raw).forEach(([jenis, grps]) => {
-            parsed[jenis] = grps.map(s =>
-              String(s).split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
-            )
-          })
-          setLorongKumpulan({ ...WA_LORONG_KUMPULAN_DEFAULT, ...parsed })
+        if (waSnap.exists()) {
+          const waData = waSnap.data()
+          if (waData.lorongKumpulan) {
+            const raw = waData.lorongKumpulan
+            const parsed = {}
+            Object.entries(raw).forEach(([jenis, grps]) => {
+              parsed[jenis] = grps.map(s =>
+                String(s).split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+              )
+            })
+            setLorongKumpulan({ ...WA_LORONG_KUMPULAN_DEFAULT, ...parsed })
+          }
+          if (waData.bilHeatSukuAkhir) setBilHeatSF(Number(waData.bilHeatSukuAkhir) || 2)
         }
       })
       .catch(() => {
@@ -1113,12 +1118,38 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
     return `${m}:${(n - m * 60).toFixed(2).padStart(5, '0')}`
   }
 
+  // Helper: bina satu peserta entry untuk heat doc
+  function buatEntryPeserta(p) {
+    return isRelay ? ({
+      kodSekolah:    p.kodSekolah,
+      ahliPasukan:   p.ahliPasukan || [],
+      lorong:        p.lorong      ?? null,
+      keputusan:     null,
+      status:        'belum',
+      rankDalamHeat: null,
+      _dariHeat:     p.heatId      || null,
+    }) : ({
+      noBib:         p.noBib,
+      noKP:          p.noKP        || '',
+      namaAtlet:     p.namaAtlet,
+      kodSekolah:    p.kodSekolah,
+      namaSekolah:   p.namaSekolah || '',
+      kategoriKod:   p.kategoriKod || '',
+      lorong:        p.lorong      ?? null,
+      giliran:       p.giliran     ?? null,
+      keputusan:     null,
+      status:        'belum',
+      cubaan:        [],
+      rankDalamHeat: null,
+      _dariHeat:     p.heatId      || null,
+    })
+  }
+
   async function handleSimpan() {
     if (finalis.length === 0) return
     setSaving(true)
     setMsg('')
     try {
-      // Cari final acara — simpan heat di final path, bukan saringan path
       const saringanKey = acara.aceraId || acara.id
       const saringanNo  = String(acara.noAcara || saringanKey)
       const finalAcaraLinked = acaraList.find(a =>
@@ -1127,86 +1158,95 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       )
       const targetAcara = finalAcaraLinked || acara
       const targetKey   = targetAcara.aceraId || targetAcara.id
-
-      const fasaHeat = fasaJana === 'sukuKeSeparuh' ? 'heat' : 'final'
-      const heatId = buatHeatId(targetKey, fasaHeat, 1)
-      const ref    = doc(db, 'kejohanan', kejohananId, 'acara', targetKey, 'heat', heatId)
-
-      // Sort ikut prestasi terbaik sebelum assign lorong (WA standard)
-      const finalisUntukAssign = (!isPadang && !isMass)
-        ? [...finalis].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999))
-        : finalis
-
+      const fasaHeat    = fasaJana === 'sukuKeSeparuh' ? 'heat' : 'final'
       const jenisLorong = detectJenisLorong(acara)
-      const pesertaAssigned = isPadang || isMass
-        ? assignGiliran(finalis)
-        : assignLorongFinal(finalisUntukAssign, jenisLorong, lorongKumpulan)
 
-      await setDoc(ref, {
-        heatId,
-        aceraId:     targetKey,
-        kejohananId,
-        fasa:        fasaHeat,
-        noHeat:      1,
-        status:      'belum_mula',
-        windSpeed:   null,
-        isWindLegal: null,
-        peserta: pesertaAssigned.map(p => isRelay ? ({
-          // Relay: simpan sebagai pasukan
-          kodSekolah:    p.kodSekolah,
-          ahliPasukan:   p.ahliPasukan || [],
-          lorong:        p.lorong      ?? null,
-          keputusan:     null,
-          status:        'belum',
-          rankDalamHeat: null,
-          _dariHeat:     p.heatId      || null,
-        }) : ({
-          // Individu: larian / padang / mass_start
-          noBib:         p.noBib,
-          noKP:          p.noKP        || '',
-          namaAtlet:     p.namaAtlet,
-          kodSekolah:    p.kodSekolah,
-          namaSekolah:   p.namaSekolah || '',
-          kategoriKod:   p.kategoriKod || '',
-          lorong:        p.lorong      ?? null,
-          giliran:       p.giliran     ?? null,
-          keputusan:     null,
-          status:        'belum',
-          cubaan:        [],
-          rankDalamHeat: null,
-          _dariHeat:     p.heatId      || null,
-        })),
-        finalisDipilih: finalis.map(p => isRelay ? p.kodSekolah : p.noBib),
-        dariSaringan:   saringanKey,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
+      if (fasaJana === 'sukuKeSeparuh') {
+        // ── Serpentine seeding: bahagi finalis kepada N heat SF ──────────────
+        // Finalis disusun ikut rank (terpantas dulu) sebelum serpentine
+        const finalisByRank = [...finalis].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999))
+        const heatGroups    = serpentineSeed(finalisByRank, bilHeatSF)
 
-      // Mark saringan — finalDijanaKe supaya InputKeputusan tunjuk betul
+        const batch = writeBatch(db)
+        heatGroups.forEach((kumpulan, idx) => {
+          const noHeat = idx + 1
+          const heatId = buatHeatId(targetKey, fasaHeat, noHeat)
+          const ref    = doc(db, 'kejohanan', kejohananId, 'acara', targetKey, 'heat', heatId)
+          // Assign lorong dalam setiap heat (WA — terpantas dapat lorong tengah)
+          const assigned = assignLorongFinal(
+            [...kumpulan].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999)),
+            jenisLorong,
+            lorongKumpulan
+          )
+          batch.set(ref, {
+            heatId,
+            aceraId:        targetKey,
+            kejohananId,
+            fasa:           fasaHeat,
+            noHeat,
+            status:         'belum_mula',
+            windSpeed:      null,
+            isWindLegal:    null,
+            peserta:        assigned.map(buatEntryPeserta),
+            finalisDipilih: kumpulan.map(p => isRelay ? p.kodSekolah : p.noBib),
+            dariSaringan:   saringanKey,
+            createdAt:      serverTimestamp(),
+            updatedAt:      serverTimestamp(),
+          })
+        })
+        await batch.commit()
+
+      } else {
+        // ── Satu heat final (saringan → akhir / separuh_akhir → akhir) ──────
+        const heatId = buatHeatId(targetKey, fasaHeat, 1)
+        const ref    = doc(db, 'kejohanan', kejohananId, 'acara', targetKey, 'heat', heatId)
+
+        const finalisUntukAssign = (!isPadang && !isMass)
+          ? [...finalis].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999))
+          : finalis
+        const pesertaAssigned = isPadang || isMass
+          ? assignGiliran(finalis)
+          : assignLorongFinal(finalisUntukAssign, jenisLorong, lorongKumpulan)
+
+        await setDoc(ref, {
+          heatId,
+          aceraId:        targetKey,
+          kejohananId,
+          fasa:           fasaHeat,
+          noHeat:         1,
+          status:         'belum_mula',
+          windSpeed:      null,
+          isWindLegal:    null,
+          peserta:        pesertaAssigned.map(buatEntryPeserta),
+          finalisDipilih: finalis.map(p => isRelay ? p.kodSekolah : p.noBib),
+          dariSaringan:   saringanKey,
+          createdAt:      serverTimestamp(),
+          updatedAt:      serverTimestamp(),
+        })
+      }
+
+      // Mark saringan — finalDijanaKe supaya butang Jana SF/Final hilang
       await updateDoc(
         doc(db, 'kejohanan', kejohananId, 'acara', saringanKey),
         { finalDijanaKe: String(targetAcara.noAcara || targetKey) }
       ).catch(() => {})
 
-      // ── Auto-register finalis ke pendaftaran acara final (individu sahaja) ────
-      if (!isRelay) {
-        const finalAcara = finalAcaraLinked
-        if (finalAcara) {
-          const finalAcaraId = finalAcara.aceraId || finalAcara.id
-          const batch = writeBatch(db)
-          for (const p of finalis) {
-            if (!p.noKP) continue
-            const pendRef  = doc(db, 'kejohanan', kejohananId, 'pendaftaran', p.noKP)
-            const pendSnap = await getDoc(pendRef)
-            if (pendSnap.exists()) {
-              const ids = pendSnap.data().acaraIds || []
-              if (!ids.includes(finalAcaraId)) {
-                batch.update(pendRef, { acaraIds: [...ids, finalAcaraId], updatedAt: serverTimestamp() })
-              }
+      // Auto-register finalis ke pendaftaran acara SF/final (individu sahaja)
+      if (!isRelay && finalAcaraLinked) {
+        const finalAcaraId = finalAcaraLinked.aceraId || finalAcaraLinked.id
+        const batch = writeBatch(db)
+        for (const p of finalis) {
+          if (!p.noKP) continue
+          const pendRef  = doc(db, 'kejohanan', kejohananId, 'pendaftaran', p.noKP)
+          const pendSnap = await getDoc(pendRef)
+          if (pendSnap.exists()) {
+            const ids = pendSnap.data().acaraIds || []
+            if (!ids.includes(finalAcaraId)) {
+              batch.update(pendRef, { acaraIds: [...ids, finalAcaraId], updatedAt: serverTimestamp() })
             }
           }
-          await batch.commit()
         }
+        await batch.commit()
       }
 
       onGenerated()

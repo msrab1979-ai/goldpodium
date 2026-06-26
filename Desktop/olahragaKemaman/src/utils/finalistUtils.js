@@ -142,3 +142,28 @@ export function assignLorong(finalists, isPadang) {
   )
   return ranked.map((f, i) => ({ ...f, lorong: LANE_ORDER[i] || (i + 1) }))
 }
+
+/**
+ * Bahagi finalis kepada N heat mengikut serpentine seeding WA.
+ *
+ * Pattern zig-zag setiap 2:  H2, H1, H1, H2, H2, H1, H1, H2 ...
+ * Tujuan: setiap heat mendapat campuran rank kuat + lemah — seimbang.
+ *
+ * @param {Array}  finalis   - tersusun ikut rank (rank 1 = index 0), dari selectFinalists
+ * @param {number} bilHeat   - bilangan heat SF (biasanya 2)
+ * @returns {Array[]} array of arrays — index 0 = heat 1, index 1 = heat 2, ...
+ */
+export function serpentineSeed(finalis, bilHeat) {
+  if (bilHeat <= 1) return [finalis]
+  const heats = Array.from({ length: bilHeat }, () => [])
+  // Serpentine: setiap "blok" sebesar bilHeat, arah bertukar
+  // blok genap: 0,1,2,...,bilHeat-1  (kiri→kanan)
+  // blok ganjil: bilHeat-1,...,1,0   (kanan→kiri)
+  finalis.forEach((f, i) => {
+    const blok = Math.floor(i / bilHeat)
+    const posInBlok = i % bilHeat
+    const heatIdx = blok % 2 === 0 ? posInBlok : (bilHeat - 1 - posInBlok)
+    heats[heatIdx].push(f)
+  })
+  return heats
+}
