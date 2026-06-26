@@ -403,6 +403,8 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
           <select value={form.peringkatMode} onChange={e => set('peringkatMode', e.target.value)} className={ic}>
             <option value="akhir">Terus Final</option>
             <option value="saringan">Saringan</option>
+            <option value="suku_akhir">Suku Akhir</option>
+            <option value="separuh_akhir">Separuh Akhir</option>
             <option value="final_p">Final ←</option>
           </select>
           {form.peringkatMode === 'final_p' && (
