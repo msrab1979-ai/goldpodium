@@ -5014,8 +5014,10 @@ function PPPendaftaranView({ sekolahList }) {
                     const baki     = had - pSek.length
                     const heatAda  = heatDijanaMap[sid] === true
                     const bypassed = heatAda && !isAcaraLocked(sid)
-                    const jenis    = a.peringkat === 'saringan' ? '[Saringan]'
-                                   : a.peringkat === 'akhir'    ? '[Terus Final]'
+                    const jenis    = a.peringkat === 'saringan'     ? '[Saringan]'
+                                   : a.peringkat === 'suku_akhir'   ? '[Suku Akhir]'
+                                   : a.peringkat === 'separuh_akhir'? '[Separuh Akhir]'
+                                   : a.peringkat === 'akhir'        ? '[Terus Final]'
                                    : ''
                     return (
                       <option key={sid} value={sid}>
@@ -5930,6 +5932,10 @@ function PPPendaftaranView({ sekolahList }) {
                   const isRelay  = a.jenisAcara === 'relay'
                   const peringkatBadge = a.peringkat === 'saringan'
                     ? <span className="text-[8px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Saringan</span>
+                    : a.peringkat === 'suku_akhir'
+                    ? <span className="text-[8px] font-bold px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded-full">Suku Akhir</span>
+                    : a.peringkat === 'separuh_akhir'
+                    ? <span className="text-[8px] font-bold px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">Separuh Akhir</span>
                     : a.parentAcaraId
                     ? <span className="text-[8px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">Final</span>
                     : <span className="text-[8px] font-bold px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">Terus Final</span>
