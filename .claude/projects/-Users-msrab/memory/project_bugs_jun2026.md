@@ -1022,6 +1022,35 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
 ## FIX — Sesi 26 Jun 2026 (BukuKejohanan Hari 5, commit `f24ce72` + `0519306`)
 
 ### BukuKejohanan — Hari 5 Tiada dalam Jana Buku
+- Fix 1: `finalHeatMap` terima `'diterima'` + relax `rankDalamHeat` filter
+- Fix 2 (root cause): Buang `rasmiAcara` filter — load heat semua acara, guna `statusKeputusan` heat sebagai penyaring. Acara Hari 5 mungkin ada `statusAcara` di luar `['rasmi','ada_keputusan','tidak_rasmi']`
+- **Status**: ✅ Fixed + deployed + pushed
+
+## FIX — Sesi 26 Jun 2026 (Firestore rules, commit rules-only deploy)
+
+### tetapan collection — write blocked
+- `tetapan` write guna `isAdminOrAbove()` = Firebase Auth — sistem guna sessionStorage → denied
+- Fix: `allow write: if true` (sama seperti collection operasi lain)
+- Kesan: `tetapan/bukuKongsi` (Kongsi Buku) kini boleh disimpan
+- **Status**: ✅ Fixed + deployed
+
+## FEATURE — Sesi 26 Jun 2026 (Hand Timing, commit `75b2613`)
+
+### Masa Sebenar — Acara Final Balapan (Hand Timing)
+- **Scope**: `InputLorong` + `InputRelay` + `acara.peringkat === 'akhir'` + `acara.adaHandTiming === true`
+- **AcaraSetup**: Checkbox `HT` baru dalam EditAcaraRow — simpan `adaHandTiming: bool` ke Firestore acara
+- **InputKeputusan**:
+  - Kolum baru `Masa Sebenar` (border teal) selepas `Masa Bundar`
+  - Input optional `m.ss.ms` → simpan `masaSebenar` (saat tulen) dalam peserta heat
+  - `_rawHT` prefix `_` → distrip oleh `stripUndef` sebelum Firestore
+  - Warning merah + block HANTAR jika `masaSebenar` ada tapi `keputusan` (masa bundar) kosong
+- **Home**: `hasil = "10.20 (10.16)"` jika `acara.adaHandTiming && p.masaSebenar > 0`, else masa biasa
+- **Rank/rekod/PDF**: kekal guna `keputusan` (masa bundar) — zero kesan
+- **Status**: ✅ Built + deployed + pushed
+
+## FIX — Sesi 26 Jun 2026 (BukuKejohanan Hari 5, commit `f24ce72` + `0519306`)
+
+### BukuKejohanan — Hari 5 Tiada dalam Jana Buku
 
 **Fix 1 (f24ce72) — `finalHeatMap` + `hariSorted` filter:**
 - `finalHeatMap`: hanya terima `'rasmi'` → tukar ke `['rasmi','diterima']`
