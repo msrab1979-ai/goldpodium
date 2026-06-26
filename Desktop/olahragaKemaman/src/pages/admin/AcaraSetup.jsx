@@ -2093,6 +2093,7 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
   const [editId,     setEditId]     = useState(null)
   const [editVal,    setEditVal]    = useState('')
   const [saving,     setSaving]     = useState(false)
+  const [htSaving,   setHtSaving]   = useState(null)
 
   // Peringkat — guna field `peringkat` terus dari Firestore:
   //   'saringan' → Saringan
@@ -2128,6 +2129,19 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
     if (ia === -1) return 1; if (ib === -1) return -1
     return ia - ib
   })
+
+  // Toggle Hand Timing — auto-save
+  async function toggleHT(a) {
+    const key     = String(a.noAcara || a.aceraId || a.id)
+    const newVal  = !a.adaHandTiming
+    setHtSaving(key)
+    try {
+      await updateDoc(doc(db, 'kejohanan', kejohananId, 'acara', key),
+        { adaHandTiming: newVal, updatedAt: serverTimestamp() })
+      onHadUpdated(key, a.hadAtletPerSekolah ?? 2, newVal)
+    } catch (e) { alert('Ralat: ' + e.message) }
+    finally { setHtSaving(null) }
+  }
 
   // Simpan had inline
   async function saveHad(a) {
@@ -2431,6 +2445,7 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
                           <span className="ml-1 normal-case text-[8px] font-normal text-gray-300">(klik edit)</span>
                         </th>
                         <th className="px-3 py-2 text-center w-24">Peringkat</th>
+                        <th className="px-3 py-2 text-center w-12">HT</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2514,6 +2529,25 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
                               <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${P_BADGE[peringkat]}`}>
                                 {P_LABEL[peringkat]}
                               </span>
+                            </td>
+
+                            {/* Hand Timing toggle — auto-save */}
+                            <td className="px-3 py-2.5 text-center">
+                              {htSaving === key ? (
+                                <svg className="w-3.5 h-3.5 animate-spin text-teal-500 mx-auto" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                                </svg>
+                              ) : (
+                                <button onClick={() => toggleHT(a)} title="Toggle Hand Timing"
+                                  className={`w-8 h-4 rounded-full transition-colors relative focus:outline-none ${
+                                    a.adaHandTiming ? 'bg-teal-500' : 'bg-gray-200'
+                                  }`}>
+                                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${
+                                    a.adaHandTiming ? 'translate-x-4' : 'translate-x-0.5'
+                                  }`} />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         )
@@ -2772,13 +2806,14 @@ export default function AcaraSetup() {
     ))
   }
 
-  // Kemaskini hadAtletPerSekolah inline — tanpa reload penuh
-  function handleHadUpdated(aceraKey, newVal) {
-    setAcaraList(l => l.map(a =>
-      (a.noAcara || a.aceraId || a.id) === String(aceraKey)
-        ? { ...a, hadAtletPerSekolah: newVal }
-        : a
-    ))
+  // Kemaskini hadAtletPerSekolah + adaHandTiming inline — tanpa reload penuh
+  function handleHadUpdated(aceraKey, newVal, newHT) {
+    setAcaraList(l => l.map(a => {
+      if ((a.noAcara || a.aceraId || a.id) !== String(aceraKey)) return a
+      const update = { ...a, hadAtletPerSekolah: newVal }
+      if (newHT !== undefined) update.adaHandTiming = newHT
+      return update
+    }))
   }
 
   // Tukar tarikh semua acara dalam satu hari (batch)

@@ -15,71 +15,40 @@ service cloud.firestore {
       return isAuth() && getRole() == 'superadmin';
     }
 
-    function isAdmin() {
-      return isAuth() && getRole() == 'admin';
-    }
-
-    function isPencatat() {
-      return isAuth() && getRole() == 'pencatat';
-    }
-
-    function isPengurusTeknik() {
-      return isAuth() && getRole() == 'pengurus_teknik';
-    }
-
-    function isAdminOrAbove() {
-      return isAuth() && getRole() in ['superadmin', 'admin'];
-    }
-
-    function isStaff() {
-      return isAuth() && getRole() in ['superadmin', 'admin', 'pencatat', 'pengurus_teknik'];
-    }
-
     // ── users ─────────────────────────────────────────────────────
-    // Sistem KOAM guna sessionStorage auth (bukan Firebase Auth) —
-    // login perlu query users tanpa Firebase Auth token.
-    // WRITE: hanya superadmin (Firebase Auth) boleh ubah.
     match /users/{uid} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── sekolah ───────────────────────────────────────────────────
-    // Pengurus pasukan login guna kodSekolah+PIN — perlu baca tanpa auth.
     match /sekolah/{kodSekolah} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── login_attempts ────────────────────────────────────────────
-    // Rate limiting semasa login — perlu baca/tulis tanpa Firebase Auth.
     match /login_attempts/{docId} {
       allow read, write: if true;
     }
 
     // ── atlet ─────────────────────────────────────────────────────
-    // Dashboard, pendaftaran, sijil — semua baca atlet tanpa Firebase Auth
     match /atlet/{noKP} {
       allow read: if true;
-      allow create: if isAdminOrAbove();
-      allow update: if isSuperAdmin() ||
-        (isAdmin() && resource.data.kodSekolah ==
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
-      allow delete: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── kejohanan ─────────────────────────────────────────────────
     match /kejohanan/{kejohananId} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
 
       // acara (sub-collection)
       match /acara/{aceraId} {
         allow read: if true;
-        allow write: if isSuperAdmin();
+        allow write: if true;
 
         // heat (sub-collection)
-        // Pencatat guna sessionStorage (bukan Firebase Auth) — allow write terus
         match /heat/{heatId} {
           allow read: if true;
           allow write: if true;
@@ -87,8 +56,7 @@ service cloud.firestore {
           // keputusan (sub-collection)
           match /keputusan/{keputusanId} {
             allow read: if true;
-            allow create, update: if true;
-            allow delete: if isSuperAdmin();
+            allow write: if true;
           }
         }
       }
@@ -96,27 +64,19 @@ service cloud.firestore {
       // pendaftaran (sub-collection)
       match /pendaftaran/{noBib} {
         allow read: if true;
-        allow create: if isAdminOrAbove();
-        allow update: if isSuperAdmin() ||
-          (isAdmin() && resource.data.kodSekolah ==
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
-        allow delete: if isSuperAdmin();
+        allow write: if true;
       }
 
       // relay_pasukan (sub-collection)
       match /relay_pasukan/{relayId} {
         allow read: if true;
-        allow create: if isAdminOrAbove();
-        allow update: if isSuperAdmin() ||
-          (isAdmin() && resource.data.kodSekolah ==
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
-        allow delete: if isSuperAdmin();
+        allow write: if true;
       }
 
       // pengesahan (sub-collection)
       match /pengesahan/{pengesahanId} {
         allow read: if true;
-        allow write: if isSuperAdmin();
+        allow write: if true;
       }
     }
 
@@ -135,9 +95,7 @@ service cloud.firestore {
     // ── bantahan ─────────────────────────────────────────────────
     match /bantahan/{bantahanId} {
       allow read: if true;
-      allow create: if isAdmin();
-      allow update: if isSuperAdmin();
-      allow delete: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── mata_olahragawan ─────────────────────────────────────────
@@ -149,13 +107,13 @@ service cloud.firestore {
     // ── jadual_acara ─────────────────────────────────────────────
     match /jadual_acara/{jadualId} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── jadual_khas ───────────────────────────────────────────────
     match /jadual_khas/{id} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── medal_tally ───────────────────────────────────────────────
@@ -167,29 +125,25 @@ service cloud.firestore {
     // ── kategori ──────────────────────────────────────────────────
     match /kategori/{id} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── tetapan ───────────────────────────────────────────────────
     match /tetapan/{id} {
       allow read: if true;
-      allow write: if isAdminOrAbove();
+      allow write: if true;
     }
 
     // ── pilihan_olahragawan ───────────────────────────────────────
     match /pilihan_olahragawan/{id} {
       allow read: if true;
-      allow write: if isAdminOrAbove();
+      allow write: if true;
     }
 
     // ── notifikasi ───────────────────────────────────────────────
     match /notifikasi/{notifId} {
-      allow read: if isAuth() &&
-        resource.data.penerimUid == request.auth.uid;
-      allow create: if false;
-      allow update: if isAuth() &&
-        resource.data.penerimUid == request.auth.uid;
-      allow delete: if false;
+      allow read: if true;
+      allow write: if true;
     }
 
     // ── medal_tally_kat ───────────────────────────────────────────
@@ -207,19 +161,25 @@ service cloud.firestore {
     // ── wa_config ─────────────────────────────────────────────────
     match /wa_config/{id} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
     }
 
     // ── anugerah_custom ───────────────────────────────────────────
     match /anugerah_custom/{id} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if true;
+    }
+
+    // ── buku_kongsi ───────────────────────────────────────────────
+    match /buku_kongsi/{id} {
+      allow read: if true;
+      allow write: if true;
     }
 
     // ── audit_log ────────────────────────────────────────────────
     match /audit_log/{logId} {
-      allow read: if isSuperAdmin();
-      allow write: if false;
+      allow read: if true;
+      allow write: if true;
     }
 
   }
