@@ -7,7 +7,7 @@ metadata:
   originSessionId: 1e75eee1-2133-4651-803c-b283bd6c0e7e
 ---
 
-## Status: SIAP PENUH (26 Jun 2026) — commit `b1fd39f`
+## Status: SIAP PENUH (26 Jun 2026) — commit `85df169`
 
 ### Yang Dah Dibina
 
@@ -33,6 +33,7 @@ metadata:
   - Baca sifir BH+BT yang betul ikut fasa — Fix B4
 
 **Ghost Run Sweep — commits `229a654` → `b1fd39f` (8 bug ditemui + fixed):**
+
 - InputKeputusan: `janaFinalEligible` exclude suku/separuh akhir → `selesaiTanpaJana` kotak teal
 - InputKeputusan: 4 lokasi `_selectFinalists` pass `fasa='sukuKeSeparuh'` untuk suku_akhir
 - StartList: `cetakAcaraDariHari` fasaStr tambah suku_akhir/separuh_akhir
@@ -41,6 +42,11 @@ metadata:
 - StartList: `allHeatRasmi` terima `'diterima'` selain `'rasmi'`
 - StartList: `JanaFinalModal` label modal/butang — "Jana SF"/"Separuh Akhir" bila suku_akhir
 - PendaftaranSetup: badge + dropdown label untuk suku_akhir (teal) dan separuh_akhir (indigo)
+
+**Ghost Run Separuh Akhir — commits `3e3d13e` + `85df169` (2 bug ditemui + fixed):**
+- Bug #9: `sarAllRasmi` (canJanaFinalFromFinal gate) tidak terima `'diterima'` — Jana Final tidak muncul
+- Bug #10: `finalExists` untuk separuh_akhir tidak guna `finalDijanaKe` — butang Jana Final muncul semula selepas jana
+- Extend `finalExists` logic: `(isSukuAkhirAcara || isSeparuhAkhirAcara) ? !!finalDijanaKe : heatList.some(h => h.fasa==='final')`
 
 ---
 

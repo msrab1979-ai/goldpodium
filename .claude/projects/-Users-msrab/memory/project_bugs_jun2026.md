@@ -495,6 +495,40 @@ metadata:
 - Badge RBK muncul dalam Home → admin sahkan dalam tab Tuntutan
 - Tiada kod diubah — sudah betul dari mula
 
+## FIX — Sesi 26 Jun 2026 (Ghost Run Separuh Akhir — 2 bug baru)
+
+### Bug #9 — sarAllRasmi tidak terima 'diterima' (StartList, commit `3e3d13e`)
+- `canJanaFinalFromFinal` (admin view acara akhir, parentAcaraId = separuh_akhir) — butang Jana Final tidak muncul walaupun semua heat SF dah HANTAR
+- Punca: `sarAllRasmi` check `=== 'rasmi'` sahaja, bukan `'diterima'`
+- Fix: `sarPhaseHeats.every(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))`
+- Fail: `StartList.jsx` line 2849-2850
+
+### Bug #10 — finalExists silap untuk separuh_akhir (StartList, commit `85df169`)
+- Selepas Jana Final dari acara SF, butang "Jana Final" masih muncul dalam acara separuh_akhir
+- Punca: SF menyimpan heat akhir dalam acara akhir (bukan dalam SF doc) → `heatList.some(h => h.fasa === 'final')` sentiasa false untuk SF
+- sama konsep seperti Bug #5 (suku_akhir) — `finalDijanaKe` ditulis ke separuh_akhir doc tapi tidak disemak
+- Fix: extend `finalExists` guna `finalDijanaKe` untuk kedua-dua `suku_akhir` + `separuh_akhir`:
+  ```js
+  const isSeparuhAkhirAcara = selectedAcara?.peringkat === 'separuh_akhir'
+  const finalExists = (isSukuAkhirAcara || isSeparuhAkhirAcara)
+    ? !!(selectedAcara?.finalDijanaKe)
+    : heatList.some(h => h.fasa === 'final')
+  ```
+- Fail: `StartList.jsx`
+
+### Ghost Run Separuh Akhir — Semua Gate Confirmed
+Flow pengurus daftar → StartList jana heat SF → pencatat input masa → admin jana Final:
+- `isSaringanAcara` untuk separuh_akhir: betul (`grantMedal=false`) ✓
+- `selesaiTanpaJana` dalam InputKeputusan: muncul bila semua heat SF selesai ✓
+- `janaFinalEligible`: false untuk separuh_akhir ✓
+- `canJanaFinalFromFinal` (Bug #9 fix): gate betul ✓
+- JanaFinalModal `fromFinal=true`: acara = saringanAcara (separuh_akhir), `fasaJana='toFinal'`, `fasaHeat='final'` ✓
+- `targetAcara`: cari acara akhir via `parentAcaraId` ✓
+- `selectFinalists` dengan `fasa='toFinal'`: baca `overrideByAcara` ✓
+- `finalDijanaKe` ditulis ke separuh_akhir (Bug #10 fix): butang Jana Final hilang ✓
+- Heat akhir `fasa:'final'`, `grantMedal=true`: medal + mata olahragawan ditulis ✓
+- Rekod trigger: fires untuk rank 1 (tidak bergantung grantMedal) ✓
+
 ## PENDING
 
 ### KIV — Semak Kiraan Umur Standard MSSM (14 Jun 2026)
