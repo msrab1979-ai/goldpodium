@@ -1019,6 +1019,25 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
 
 **Skrip audit**: `/tmp/audit-acara-peringkat.cjs` (read-only, tidak disimpan dalam repo)
 
+## FIX — Sesi 26 Jun 2026 (BukuKejohanan + Rules + Hand Timing)
+
+### BukuKejohanan Hari 5 — commit `f24ce72` + `0519306`
+- Fix 1: `finalHeatMap` terima `'diterima'` + relax `rankDalamHeat` filter
+- Fix 2 (root cause): Buang `rasmiAcara` filter — load heat semua acara, bukan filter by `statusAcara`
+
+### Firestore Rules — Buka Semua (commit rules deploy)
+- Semua collection → `allow read, write: if true` untuk tempoh kejohanan
+- KIV selepas kejohanan: migrate Firebase Auth, kunci semula
+
+### Hand Timing — Masa Sebenar (commit `75b2613` + `ec8a1e4` + `0b3ba65`)
+- **AcaraSetup SemakAcara**: Kolum HT — toggle auto-save `adaHandTiming` terus dalam table paparan normal
+- **InputKeputusan InputLorong + InputRelay**: Kolum `Masa Sebenar` (teal) bila `adaHandTiming=true && peringkat='akhir'`
+  - Optional, format `m.ss.ms`, simpan `masaSebenar` dalam peserta heat
+  - Warning merah + block HANTAR jika `masaSebenar` ada tapi `keputusan` kosong
+  - Bug fix: `masaSebenar` tidak disimpan dalam `handleSave` — fixed: tambah dalam `updatedPeserta` map
+- **Home**: Header `Masa Rasmi`, baris kecil `Tdk Rasmi 12.87` di bawah masa bundar bila `masaSebenar` ada
+- Rank/rekod/PDF: kekal guna `keputusan` (masa bundar) — zero kesan
+
 ## FIX — Sesi 26 Jun 2026 (BukuKejohanan Hari 5, commit `f24ce72` + `0519306`)
 
 ### BukuKejohanan — Hari 5 Tiada dalam Jana Buku
