@@ -402,7 +402,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
         <td className="px-1.5 py-1.5">
           <select value={form.peringkatMode} onChange={e => set('peringkatMode', e.target.value)} className={ic}>
             <option value="akhir">Terus Final</option>
-            <option value="saringan">Saringan</option>
+            {peringkatMode0 === 'saringan' && <option value="saringan">Saringan (lama)</option>}
             <option value="suku_akhir">Suku Akhir</option>
             <option value="separuh_akhir">Separuh Akhir</option>
             <option value="final_p">Final ←</option>
@@ -813,7 +813,6 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
         <td className="px-1.5 py-1.5">
           <select value={form.peringkatMode} onChange={e => set('peringkatMode', e.target.value)} className={ic}>
             <option value="akhir">Terus Final</option>
-            <option value="saringan">Saringan</option>
             <option value="suku_akhir">Suku Akhir</option>
             <option value="separuh_akhir">Separuh Akhir</option>
             <option value="final_p">Final ←</option>
