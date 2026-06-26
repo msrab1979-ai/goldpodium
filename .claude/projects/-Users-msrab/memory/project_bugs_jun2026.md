@@ -440,6 +440,61 @@ metadata:
 - **Semak**: Semua writer ke `tetapan` adalah halaman admin (ada Firebase Auth) ✅
 - **Status**: ✅ Firestore rules deployed (25 Jun 2026)
 
+## FIX — Sesi 26 Jun 2026 (Ghost Run Sweep — suku_akhir bugs)
+
+### Bug #1 — janaFinalEligible panel Jana Final muncul untuk suku/separuh akhir (InputKeputusan)
+- Pencatat HANTAR heat suku akhir → panel "Jana Final ▶" muncul → keliru
+- Fix: `janaFinalEligible` exclude `suku_akhir`/`separuh_akhir` → tambah `selesaiTanpaJana` → kotak teal "Semua Heat Selesai — Admin jana dalam Start List"
+- Fail: `InputKeputusan.jsx`
+
+### Bug #2 — selectFinalists guna sifir salah (4 lokasi, InputKeputusan)
+- `finalisBibs`, `finalisQMap`, `cetakQMap`, `handleJanaFinal` panggil `_selectFinalists` tanpa `fasa` param
+- Untuk suku_akhir: baca `overrideByAcara` (salah) bukan `sukuKeSeparuhByAcara`
+- Badge Q/q dalam panel pencatat silap; cetakQMap dalam PDF silap
+- Fix: semua 4 lokasi pass `fasa='sukuKeSeparuh'` bila `peringkat === 'suku_akhir'`
+- Fail: `InputKeputusan.jsx`
+
+### Bug #3 — cetakAcaraDariHari fasaStr tertinggal (StartList tab Hari)
+- Fungsi cetak PDF dari tab Hari: `fasaStr` tiada case `suku_akhir`/`separuh_akhir` → PDF cetak `HEAT undefined`
+- Fix: tambah kedua-dua case, selaras dengan 3 fungsi PDF lain
+- Fail: `StartList.jsx`
+
+### Bug #4 — isSaringanAcara Home.jsx silap
+- `isSaringanAcara` check `p.includes('saringan')` sahaja → suku_akhir/separuh_akhir dianggap acara final
+- Kesan: kolum Q/q tidak muncul dalam paparan Home untuk acara suku/separuh akhir
+- Fix: `['saringan', 'suku_akhir', 'separuh_akhir'].includes(p)`
+- Fail: `Home.jsx`
+
+### Bug #5 — finalExists silap untuk suku_akhir (KRITIKAL, StartList)
+- SF dijana dengan `fasa:'heat'` (Fix B3) → `finalExists = heatList.some(h => h.fasa === 'final')` sentiasa false
+- Kesan: butang "Jana SF" muncul semula selepas SF dijana → boleh overwrite heat SF
+- Fix: untuk suku_akhir, guna `!!selectedAcara.finalDijanaKe` sebagai flag
+- Fail: `StartList.jsx`
+
+### Bug #6 — allHeatRasmi tidak terima 'diterima' (StartList)
+- Flow baru guna `statusKeputusan:'diterima'` — tapi `allHeatRasmi` check `=== 'rasmi'` sahaja
+- Kesan: butang Jana SF/Final tidak muncul walaupun semua heat dah HANTAR
+- Fix: `['rasmi', 'diterima'].includes(h.statusKeputusan)`
+- Fail: `StartList.jsx`
+
+### Bug #7 — Label modal "Jana Heat Final" untuk suku_akhir (StartList JanaFinalModal)
+- Header, bilangan atlet, butang Cipta semua tulis "Final" bila sepatutnya "Separuh Akhir"
+- Gate info check `overrideByAcara` untuk suku_akhir (patut `sukuKeSeparuhByAcara`)
+- Fix: conditional render ikut `fasaJana === 'sukuKeSeparuh'`
+- Fail: `StartList.jsx`
+
+### Bug #8 — peringkatBadge PendaftaranSetup silap (TabPP)
+- `suku_akhir`/`separuh_akhir` masuk else branch → badge "Terus Final" (salah)
+- Dropdown label juga kosong untuk kedua-dua peringkat baru
+- Fix: tambah case eksplisit — badge teal (suku_akhir), indigo (separuh_akhir)
+- Fail: `PendaftaranSetup.jsx`
+
+### Rekod trigger — CONFIRMED BETUL
+- `postRasmiUtils` rekod detection tidak bergantung pada `grantMedal`
+- Rank 1 dalam heat suku_akhir → rekod tuntutan ditulis jika lebih pantas
+- Badge RBK muncul dalam Home → admin sahkan dalam tab Tuntutan
+- Tiada kod diubah — sudah betul dari mula
+
 ## PENDING
 
 ### KIV — Semak Kiraan Umur Standard MSSM (14 Jun 2026)

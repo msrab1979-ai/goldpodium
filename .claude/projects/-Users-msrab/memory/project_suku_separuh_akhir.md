@@ -7,7 +7,7 @@ metadata:
   originSessionId: 1e75eee1-2133-4651-803c-b283bd6c0e7e
 ---
 
-## Status: FASA 1 + TETAPAN FINAL SIAP (26 Jun 2026)
+## Status: SIAP PENUH (26 Jun 2026) — commit `b1fd39f`
 
 ### Yang Dah Dibina
 
@@ -32,6 +32,16 @@ metadata:
   - Jana heat suku→SF dengan `fasa:'heat'` (bukan `fasa:'final'`) — Fix B3
   - Baca sifir BH+BT yang betul ikut fasa — Fix B4
 
+**Ghost Run Sweep — commits `229a654` → `b1fd39f` (8 bug ditemui + fixed):**
+- InputKeputusan: `janaFinalEligible` exclude suku/separuh akhir → `selesaiTanpaJana` kotak teal
+- InputKeputusan: 4 lokasi `_selectFinalists` pass `fasa='sukuKeSeparuh'` untuk suku_akhir
+- StartList: `cetakAcaraDariHari` fasaStr tambah suku_akhir/separuh_akhir
+- Home.jsx: `isSaringanAcara` tambah suku_akhir/separuh_akhir
+- StartList: `finalExists` untuk suku_akhir guna `finalDijanaKe` (SF fasa='heat', bukan 'final')
+- StartList: `allHeatRasmi` terima `'diterima'` selain `'rasmi'`
+- StartList: `JanaFinalModal` label modal/butang — "Jana SF"/"Separuh Akhir" bila suku_akhir
+- PendaftaranSetup: badge + dropdown label untuk suku_akhir (teal) dan separuh_akhir (indigo)
+
 ---
 
 ### Flow Lengkap (Sekarang Boleh Guna)
@@ -54,6 +64,14 @@ tetapan/finalSetup:
   overrideByAcara: { '113': { bestHeat:3, bestTime:1 } }       ← saringan/SF→akhir
   sukuKeSeparuhByAcara: { '113': { bestHeat:4, bestTime:0 } }  ← suku→SF (BARU)
 ```
+
+---
+
+### Rekod Trigger — Confirmed Betul
+- `postRasmiUtils` rekod detection tidak bergantung pada `grantMedal`
+- Rank 1 dalam heat suku_akhir → rekod tuntutan ditulis jika lebih pantas
+- Badge RBK muncul dalam Home → admin sahkan dalam tab Tuntutan
+- `grantMedal=false` untuk suku/separuh akhir — medal dan mata olahragawan TIDAK ditulis
 
 ---
 
