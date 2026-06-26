@@ -911,23 +911,8 @@ function TetapanFinal({ kategoriList }) {
             </button>
 
             {isOpen && (
-              <div className="border-t border-gray-100 overflow-x-auto">
-                <table className="w-full text-xs min-w-[540px]">
-                  <thead>
-                    <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                      <th className="px-4 py-2 text-left">Acara</th>
-                      <th className="px-3 py-2 text-center">Heat</th>
-                      <th className="px-3 py-2 text-center">Atlet</th>
-                      <th className="px-3 py-2 text-center">BH→Akhir</th>
-                      <th className="px-3 py-2 text-center">BT→Akhir</th>
-                      <th className="px-3 py-2 text-center">= Final</th>
-                      <th className="px-3 py-2 text-center bg-teal-50 text-teal-600">BH→SF</th>
-                      <th className="px-3 py-2 text-center bg-teal-50 text-teal-600">BT→SF</th>
-                      <th className="px-3 py-2 text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {acara.map((a, i) => {
+              <div className="border-t border-gray-100 divide-y divide-gray-50">
+                {acara.map((a, i) => {
                       const n       = heatCountMap[a.id] || 0
                       const peserta = pesertaMap[a.id] || 0
                       const ov      = overrides[a.id] || {}
@@ -946,82 +931,71 @@ function TetapanFinal({ kategoriList }) {
                       const isSukuAcara = a.peringkat === 'suku_akhir'
 
                       return (
-                        <tr key={a.id} className={`border-b border-gray-50 last:border-0 ${i%2===0?'':'bg-gray-50/30'}`}>
-                          <td className="px-4 py-2.5">
-                            <p className="font-semibold text-gray-700 text-[11px]">{a.namaAcara}</p>
-                            {a.jenisAcara === 'relay' && <span className="text-[8px] text-purple-500 font-bold">RELAY</span>}
-                            {isSukuAcara && <span className="text-[8px] text-teal-600 font-bold">SUKU AKHIR</span>}
-                          </td>
+                        <div key={a.id} className={`px-4 py-3 ${i%2===0?'':'bg-gray-50/40'}`}>
 
-                          <td className="px-3 py-2.5 text-center">
-                            {n > 0
-                              ? <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>{n}
-                                </span>
-                              : <span className="text-[10px] text-gray-300">—</span>}
-                          </td>
+                          {/* Nama acara + info */}
+                          <div className="flex items-center gap-2 mb-2.5">
+                            <p className="text-xs font-bold text-gray-800 flex-1">{a.namaAcara}</p>
+                            {n > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">{n} heat</span>}
+                            {peserta > 0 && <span className="text-[10px] text-gray-400">{peserta} atlet</span>}
+                            {a.jenisAcara === 'relay' && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600">RELAY</span>}
+                            {isSukuAcara && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700">SUKU AKHIR</span>}
+                          </div>
 
-                          <td className="px-3 py-2.5 text-center text-[11px] text-gray-500">
-                            {peserta > 0 ? peserta : '—'}
-                          </td>
+                          {/* Bahagian 1 — Sifir ke Akhir */}
+                          <div className="bg-purple-50/60 rounded-lg px-3 py-2 mb-1.5">
+                            <p className="text-[9px] font-bold text-purple-500 uppercase tracking-wide mb-1.5">
+                              {isSukuAcara ? 'Separuh Akhir → Akhir' : 'Saringan / SF → Akhir'}
+                            </p>
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-gray-500 w-16">BH / heat</span>
+                                <input type="number" min={0} max={99} value={bh}
+                                  onChange={e => setOv(a.id, 'bestHeat', e.target.value)}
+                                  className={numCls + (isSet ? ' border-purple-300' : '')} />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-gray-500 w-6">BT</span>
+                                <input type="number" min={0} max={99} value={bt}
+                                  onChange={e => setOv(a.id, 'bestTime', e.target.value)}
+                                  className={numCls + (isSet ? ' border-purple-300' : '')} />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-gray-400">=</span>
+                                {total !== null
+                                  ? <span className={`font-black text-sm ${ok ? 'text-green-600' : 'text-amber-500'}`}>{total}</span>
+                                  : <span className="text-[10px] text-gray-300">—</span>}
+                                {total !== null && !ok && stdRow &&
+                                  <span className="text-[9px] text-gray-400 ml-1">(std: BH={stdRow.bh}/BT={stdRow.bt})</span>}
+                              </div>
+                            </div>
+                          </div>
 
-                          <td className="px-3 py-2.5 text-center">
-                            <input type="number" min={0} max={99}
-                              value={bh}
-                              onChange={e => setOv(a.id, 'bestHeat', e.target.value)}
-                              className={numCls + (isSet ? ' border-purple-300' : '')} />
-                          </td>
-
-                          <td className="px-3 py-2.5 text-center">
-                            <input type="number" min={0} max={99}
-                              value={bt}
-                              onChange={e => setOv(a.id, 'bestTime', e.target.value)}
-                              className={numCls + (isSet ? ' border-purple-300' : '')} />
-                          </td>
-
-                          <td className="px-3 py-2.5 text-center">
-                            {total !== null
-                              ? <span className={`font-black text-sm ${ok ? 'text-green-600' : 'text-amber-500'}`}>{total}</span>
-                              : <span className="text-[11px] text-gray-300">belum jana</span>}
-                          </td>
-
-                          <td className="px-3 py-2.5 text-center bg-teal-50/40">
-                            {isSukuAcara
-                              ? <input type="number" min={0} max={99}
-                                  value={sukuBH}
-                                  placeholder="—"
-                                  onChange={e => setSukuOvField(a.id, 'bestHeat', e.target.value)}
-                                  className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
-                              : <span className="text-[10px] text-gray-300">—</span>}
-                          </td>
-
-                          <td className="px-3 py-2.5 text-center bg-teal-50/40">
-                            {isSukuAcara
-                              ? <input type="number" min={0} max={99}
-                                  value={sukuBT}
-                                  placeholder="—"
-                                  onChange={e => setSukuOvField(a.id, 'bestTime', e.target.value)}
-                                  className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
-                              : <span className="text-[10px] text-gray-300">—</span>}
-                          </td>
-
-                          <td className="px-3 py-2.5 text-center text-[10px]">
-                            {total === null
-                              ? <span className="text-gray-300">—</span>
-                              : isBT
-                              ? <span className="text-blue-500 font-bold">🔵 BT</span>
-                              : ok
-                              ? <span className="text-green-600 font-bold">✓ 8</span>
-                              : <div>
-                                  <span className="text-amber-500 font-bold">⚠ {total}</span>
-                                  {stdRow && <p className="text-[8px] text-gray-400 mt-0.5">std: BH={stdRow.bh}/BT={stdRow.bt}</p>}
-                                </div>}
-                          </td>
-                        </tr>
+                          {/* Bahagian 2 — Sifir Suku → SF (hanya untuk acara suku_akhir) */}
+                          {isSukuAcara && (
+                            <div className="bg-teal-50/60 rounded-lg px-3 py-2">
+                              <p className="text-[9px] font-bold text-teal-600 uppercase tracking-wide mb-1.5">Suku Akhir → Separuh Akhir</p>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-gray-500 w-16">BH / heat</span>
+                                  <input type="number" min={0} max={99}
+                                    value={sukuBH} placeholder="0"
+                                    onChange={e => setSukuOvField(a.id, 'bestHeat', e.target.value)}
+                                    className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-gray-500 w-6">BT</span>
+                                  <input type="number" min={0} max={99}
+                                    value={sukuBT} placeholder="0"
+                                    onChange={e => setSukuOvField(a.id, 'bestTime', e.target.value)}
+                                    className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )
-                    })}
-                  </tbody>
-                </table>
+                })}
               </div>
             )}
           </div>
