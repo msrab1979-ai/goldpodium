@@ -529,6 +529,36 @@ Flow pengurus daftar → StartList jana heat SF → pencatat input masa → admi
 - Heat akhir `fasa:'final'`, `grantMedal=true`: medal + mata olahragawan ditulis ✓
 - Rekod trigger: fires untuk rank 1 (tidak bergantung grantMedal) ✓
 
+## Ghost Run — Sesi 26 Jun 2026 (Terus Akhir + Relay — BERSIH)
+
+### Terus Akhir (peringkat='akhir', tiada parentAcaraId)
+- Heat dijana `fasa:'final'` (bukan 'terus_final' — 'terus_final' adalah label logic sahaja)
+- `isSaringanAcara = false` → `grantMedal = true` ✓
+- postRasmi: medal + mata_olahragawan + rekod — semua betul ✓
+- `janaFinalEligible = false` (peringkat bukan 'saringan') → tiada butang Jana Final ✓
+- **BERSIH — tiada bug**
+
+### Relay Saringan → Final
+- Jana heat: `fasa:'heat'` (atau 'final' jika terus_final, tapi relay saringan pasti 'heat')
+- InputKeputusan relay saringan: `isSaringanAcara = true` → `grantMedal = false` ✓ tiada medal
+- JanaFinalModal relay: `fasaJana = 'toFinal'`, `isRelay = true`, skip auto-register pendaftaran ✓
+- postRasmi relay final: `grantMedal = true`, `!isRelay` → skip mata_olahragawan ✓, medal_tally ditulis ✓, rekod relay fires (`isRelay && rank === 1`) ✓
+- **BERSIH — tiada bug**
+
+### Relay Terus Final (peringkat='akhir', satu heat)
+- Heat `fasa:'final'` → `grantMedal = true` → medal_tally ditulis ✓, rekod relay fires ✓
+- **BERSIH — tiada bug**
+
+### Ringkasan Semua 5 Flow (Ghost Run Lengkap)
+| Flow | grantMedal | medal_tally | mata_olah | rekod |
+|---|---|---|---|---|
+| Terus akhir larian/padang | true | ✓ | ✓ | ✓ |
+| Terus akhir relay | true | ✓ | skip (isRelay) | ✓ relay |
+| Relay saringan heat | false | skip | skip | ✓ fires |
+| Relay final | true | ✓ | skip (isRelay) | ✓ relay |
+| Saringan → Akhir | false→true | ✓ akhir sahaja | ✓ akhir sahaja | ✓ semua fasa |
+| Suku Akhir → SF → Akhir | false→false→true | ✓ akhir sahaja | ✓ akhir sahaja | ✓ semua fasa |
+
 ## PENDING
 
 ### KIV — Semak Kiraan Umur Standard MSSM (14 Jun 2026)
