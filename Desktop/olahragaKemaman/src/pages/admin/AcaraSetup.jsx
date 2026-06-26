@@ -400,13 +400,16 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
         </td>
         {/* Peringkat */}
         <td className="px-1.5 py-1.5">
-          <select value={form.peringkatMode} onChange={e => set('peringkatMode', e.target.value)} className={ic}>
-            <option value="akhir">Terus Final</option>
-            {peringkatMode0 === 'saringan' && <option value="saringan">Saringan (lama)</option>}
-            <option value="suku_akhir">Suku Akhir</option>
-            <option value="separuh_akhir">Separuh Akhir</option>
-            <option value="final_p">Final ←</option>
-          </select>
+          {peringkatMode0 === 'saringan' ? (
+            <span className="text-[10px] text-gray-400 px-1">Saringan</span>
+          ) : (
+            <select value={form.peringkatMode} onChange={e => set('peringkatMode', e.target.value)} className={ic}>
+              <option value="akhir">Terus Final</option>
+              <option value="suku_akhir">Suku Akhir</option>
+              <option value="separuh_akhir">Separuh Akhir</option>
+              <option value="final_p">Final ←</option>
+            </select>
+          )}
           {form.peringkatMode === 'final_p' && (
             <select value={form.parentAcaraId} onChange={e => set('parentAcaraId', e.target.value)}
               className={ic + ' mt-1 text-[10px]'}>
