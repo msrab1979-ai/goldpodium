@@ -2767,14 +2767,24 @@ export default function InputKeputusan() {
 
   const janaFinalEligible = useMemo(() => {
     if (!selectedAcara || heats.length === 0) return false
-    // Hanya acara saringan yang perlu jana final
     const p = (selectedAcara.peringkat || '').toLowerCase()
     const n = (selectedAcara.namaAcara  || '').toLowerCase()
-    const isSaringan = ['saringan', 'suku_akhir', 'separuh_akhir'].includes(p) || n.includes('saringan')
+    // suku_akhir & separuh_akhir — admin jana dalam StartList, bukan pencatat
+    if (['suku_akhir', 'separuh_akhir'].includes(p)) return false
+    const isSaringan = p === 'saringan' || n.includes('saringan')
     if (!isSaringan) return false
     const nonFinal = heats.filter(h => h.peringkat !== 'final')
     if (nonFinal.length === 0) return false
-    // Semua heat saringan mesti ada keputusan (rasmi / tidak_rasmi / diterima)
+    return nonFinal.every(h => ['rasmi', 'tidak_rasmi', 'diterima'].includes(h.statusKeputusan))
+  }, [heats, selectedAcara])
+
+  // Suku/Separuh Akhir — semua heat selesai tapi pencatat tak perlu buat apa
+  const selesaiTanpaJana = useMemo(() => {
+    if (!selectedAcara || heats.length === 0) return false
+    const p = (selectedAcara.peringkat || '').toLowerCase()
+    if (!['suku_akhir', 'separuh_akhir'].includes(p)) return false
+    const nonFinal = heats.filter(h => h.peringkat !== 'final')
+    if (nonFinal.length === 0) return false
     return nonFinal.every(h => ['rasmi', 'tidak_rasmi', 'diterima'].includes(h.statusKeputusan))
   }, [heats, selectedAcara])
 
@@ -3254,6 +3264,21 @@ export default function InputKeputusan() {
                 </div>
               )}
 
+              {/* Suku/Separuh Akhir — semua heat selesai, admin jana dalam StartList */}
+              {selesaiTanpaJana && (
+                <div className="pb-4">
+                  <div className="bg-teal-50 border border-teal-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+                    <span className="text-teal-500 text-lg">✓</span>
+                    <div>
+                      <p className="text-xs font-black text-teal-700">Semua Heat Selesai</p>
+                      <p className="text-[11px] text-teal-600 mt-0.5">
+                        Admin akan jana peringkat seterusnya dalam <span className="font-bold">Start List</span>.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Final sudah dijana — makluman */}
               {finalDijanaKe && !janaFinalEligible && (
                 <div className="pb-4">
@@ -3519,6 +3544,21 @@ export default function InputKeputusan() {
                 finalSetup={finalSetup}
                 finalDijanaKe={finalDijanaKe}
               />
+            </div>
+          )}
+
+          {/* ── Suku/Separuh Akhir — semua heat selesai, admin jana dalam StartList ── */}
+          {selesaiTanpaJana && (
+            <div className="pb-6">
+              <div className="bg-teal-50 border border-teal-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+                <span className="text-teal-500 text-lg">✓</span>
+                <div>
+                  <p className="text-xs font-black text-teal-700">Semua Heat Selesai</p>
+                  <p className="text-[11px] text-teal-600 mt-0.5">
+                    Admin akan jana peringkat seterusnya dalam <span className="font-bold">Start List</span>.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 
