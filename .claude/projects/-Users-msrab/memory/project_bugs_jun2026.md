@@ -529,6 +529,24 @@ Flow pengurus daftar → StartList jana heat SF → pencatat input masa → admi
 - Heat akhir `fasa:'final'`, `grantMedal=true`: medal + mata olahragawan ditulis ✓
 - Rekod trigger: fires untuk rank 1 (tidak bergantung grantMedal) ✓
 
+## FIX — Sesi 26 Jun 2026 (Ghost Run Edit Acara — Bug #12 + #13 + UX)
+
+### Bug #12 — Dropdown edit acara tiada Suku Akhir / Separuh Akhir (commit `980c534`)
+- Modal inline edit hanya ada: Terus Final, Saringan, Final ← — tiada suku_akhir/separuh_akhir
+- Fix: tambah kedua-dua option dalam `EditAcaraRow` dropdown
+- Fail: `AcaraSetup.jsx`
+
+### Bug #13 — saringanList untuk "Final ←" tidak sertakan suku_akhir/separuh_akhir (commit `f7d75b0`)
+- Dropdown "Final ←" hanya tunjuk acara `peringkat='saringan'` — admin tidak boleh link separuh_akhir ke suku_akhir
+- Fix: `saringanList` sertakan `['saringan','suku_akhir','separuh_akhir']` — kedua-dua lokasi (EditAcaraRow + AcaraModal)
+- Fail: `AcaraSetup.jsx`
+
+### UX — Sorokkan 'Saringan' dari dropdown peringkat (commits `e8b29df` + `5481dae`)
+- Admin lain keliru dengan pilihan 'Saringan' — guna 'Separuh Akhir' sebagai ganti
+- Tambah baru: tiada option Saringan — 4 pilihan sahaja: Terus Final, Suku Akhir, Separuh Akhir, Final ←
+- Edit acara lama `peringkat='saringan'`: papar teks "Saringan" (read-only) — dropdown tidak muncul, Firestore selamat
+- Fail: `AcaraSetup.jsx`
+
 ## FEATURE — Sesi 26 Jun 2026 (Serpentine Fasa 2, commit `c0cb528`)
 
 ### Serpentine Seeding — Suku Akhir → Separuh Akhir
