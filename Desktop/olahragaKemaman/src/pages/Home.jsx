@@ -541,7 +541,7 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
   const isSaringanAcara = (() => {
     const p = (acara.peringkat  || '').toLowerCase()
     const n = (acara.namaAcara  || '').toLowerCase()
-    return p.includes('saringan') || n.includes('saringan')
+    return ['saringan', 'suku_akhir', 'separuh_akhir'].includes(p) || n.includes('saringan')
   })()
 
   // Tunjuk heat yang ada keputusan ('diterima' = baru, 'tidak_rasmi'/'rasmi' = data lama)

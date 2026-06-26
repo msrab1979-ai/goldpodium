@@ -2442,7 +2442,7 @@ export default function StartList() {
         pdf.rect(M, curY, W - M * 2, 6.5, 'F')
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8)
         pdf.setTextColor(0, 51, 153)
-        const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : `HEAT ${heat.noHeat}`
+        const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
         pdf.text(fasaStr, M + 3, curY + 4.5)
         pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7)
         pdf.text(`${pesertaHeat.length} peserta`, W - M - 3, curY + 4.5, { align: 'right' })
