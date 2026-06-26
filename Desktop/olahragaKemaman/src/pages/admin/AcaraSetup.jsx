@@ -245,6 +245,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
     peringkatMode:     peringkatMode0,
     parentAcaraId:     acara.parentAcaraId     || '',
     adaHandTiming:     acara.adaHandTiming     || false,
+    isIndividu:        acara.isIndividu ?? (acara.jenisAcara !== 'relay'),
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
@@ -287,6 +288,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
       namaAcara: fNamaFull, namaAcaraPendek: form.namaAcaraPendek.trim(),
       kelas, jantina: form.jantina, kategoriKod: form.kategoriKod,
       jenisAcara: form.jenisAcara,
+      isIndividu: form.isIndividu,
       tarikhAcara: fTarikh, masa: finalMasa || '', lokasi: form.lokasi, sesi: 'Petang',
       peringkat: 'akhir', parentAcaraId: saringanId,
       adaHeat: false,
@@ -329,6 +331,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
         unitUkuran:        isPadang ? 'm' : 's',
         hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
         adaHandTiming:     form.adaHandTiming || false,
+        isIndividu:        form.isIndividu,
         updatedAt:         serverTimestamp(),
       }
       await updateDoc(doc(db, 'kejohanan', kejohananId, 'acara', docId), updates)
@@ -422,14 +425,18 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
             </select>
           )}
         </td>
-        {/* Hand Timing */}
+        {/* Jenis Had */}
         <td className="px-1.5 py-1.5">
-          <label className="flex flex-col items-center gap-1 cursor-pointer">
-            <span className="text-[9px] text-gray-400 font-medium">HT</span>
-            <input type="checkbox" checked={!!form.adaHandTiming}
-              onChange={e => set('adaHandTiming', e.target.checked)}
-              className="w-4 h-4 accent-teal-600" />
-          </label>
+          <button type="button"
+            onClick={() => set('isIndividu', !form.isIndividu)}
+            title="Klik untuk tukar Individu/Berpasukan"
+            className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${
+              form.isIndividu
+                ? 'bg-blue-50 text-blue-700 border-blue-300'
+                : 'bg-purple-50 text-purple-700 border-purple-300'
+            }`}>
+            {form.isIndividu ? 'Individu' : 'Berpasukan'}
+          </button>
         </td>
         {/* Tindakan */}
         <td className="px-1.5 py-1.5">
@@ -538,6 +545,7 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
     hadAtletPerSekolah: lastA?.hadAtletPerSekolah || 2,
     peringkatMode:     'akhir',   // 'akhir' | 'saringan' | 'final_p'
     parentAcaraId:     '',
+    isIndividu:        lastA?.isIndividu ?? (lastA?.jenisAcara !== 'relay'),
   })
   const [saving, setSaving]       = useState(false)
   const [err, setErr]             = useState('')
@@ -552,6 +560,11 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
     if (form.namaAcaraPendek)
       setForm(f => ({ ...f, jenisAcara: detectJenisFromNama(f.namaAcaraPendek) }))
   }, [form.namaAcaraPendek])
+
+  // Auto-sync isIndividu apabila jenisAcara berubah
+  useEffect(() => {
+    setForm(f => ({ ...f, isIndividu: f.jenisAcara !== 'relay' }))
+  }, [form.jenisAcara])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -590,6 +603,7 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
       namaAcara: fNamaFull, namaAcaraPendek: form.namaAcaraPendek.trim(),
       kelas, jantina: form.jantina, kategoriKod: form.kategoriKod,
       jenisAcara: form.jenisAcara,
+      isIndividu: form.isIndividu,
       tarikhAcara: fTarikh, masa: finalMasa || '', lokasi: form.lokasi, sesi: 'Petang',
       peringkat: 'akhir', parentAcaraId: saringanId,
       adaHeat: false,
@@ -621,6 +635,7 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
       namaAcara: namaFull, namaAcaraPendek: form.namaAcaraPendek.trim(),
       kelas, jantina: form.jantina, kategoriKod: form.kategoriKod,
       jenisAcara: form.jenisAcara,
+      isIndividu: form.isIndividu,
       tarikhAcara, masa: form.masa, lokasi: form.lokasi, sesi: 'Pagi',
       peringkat, parentAcaraId: parentId || null,
       adaHeat: PERINGKAT_DENGAN_HEAT.includes(peringkat),
@@ -843,6 +858,19 @@ function AddAcaraRow({ tarikhAcara, kejohananId, kategoriList, acaraList, onSave
               ))}
             </select>
           )}
+        </td>
+        {/* Jenis Had */}
+        <td className="px-1.5 py-1.5">
+          <button type="button"
+            onClick={() => set('isIndividu', !form.isIndividu)}
+            title="Klik untuk tukar Individu/Berpasukan"
+            className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${
+              form.isIndividu
+                ? 'bg-blue-50 text-blue-700 border-blue-300'
+                : 'bg-purple-50 text-purple-700 border-purple-300'
+            }`}>
+            {form.isIndividu ? 'Individu' : 'Berpasukan'}
+          </button>
         </td>
         {/* Tindakan */}
         <td className="px-1.5 py-1.5">
@@ -2549,6 +2577,7 @@ function SemakAcara({ acaraList, kategoriList, kejohananId, namaKej, onHadUpdate
                                 </button>
                               )}
                             </td>
+
                           </tr>
                         )
                       })}
@@ -2807,13 +2836,28 @@ export default function AcaraSetup() {
   }
 
   // Kemaskini hadAtletPerSekolah + adaHandTiming inline — tanpa reload penuh
-  function handleHadUpdated(aceraKey, newVal, newHT) {
+  function handleHadUpdated(aceraKey, newVal, newHT, newIndividu) {
     setAcaraList(l => l.map(a => {
       if ((a.noAcara || a.aceraId || a.id) !== String(aceraKey)) return a
       const update = { ...a, hadAtletPerSekolah: newVal }
       if (newHT !== undefined) update.adaHandTiming = newHT
+      if (newIndividu !== undefined) update.isIndividu = newIndividu
       return update
     }))
+  }
+
+  // Toggle Individu/Berpasukan inline — auto-save
+  const [indSaving, setIndSaving] = useState(null)
+  async function toggleIndividu(a) {
+    const key    = String(a.noAcara || a.aceraId || a.id)
+    const newVal = !(a.isIndividu ?? (a.jenisAcara !== 'relay'))
+    setIndSaving(key)
+    try {
+      await updateDoc(doc(db, 'kejohanan', selectedKej, 'acara', key),
+        { isIndividu: newVal, updatedAt: serverTimestamp() })
+      handleHadUpdated(key, a.hadAtletPerSekolah ?? 2, undefined, newVal)
+    } catch (e) { alert('Ralat: ' + e.message) }
+    finally { setIndSaving(null) }
   }
 
   // Tukar tarikh semua acara dalam satu hari (batch)
@@ -2924,7 +2968,7 @@ export default function AcaraSetup() {
   }
 
   return (
-    <div className="p-5 max-w-6xl mx-auto space-y-4">
+    <div className="p-5 space-y-4">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -3092,7 +3136,7 @@ export default function AcaraSetup() {
               ...(addingHari && !byHari[addingHari] && !extraHari.includes(addingHari) ? [addingHari] : []),
             ])].sort()
 
-            const TABLE_HEAD = ['No','Masa','Acara','Kat','J','Jenis','Lokasi','Max/Skl','Peringkat','Tindakan']
+            const TABLE_HEAD = ['No','Masa','Acara','Kat','J','Jenis','Lokasi','Max/Skl','Peringkat','Had','Tindakan']
 
             if (allTarikh.length === 0 && !showNewHari) return (
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm py-16 text-center space-y-3">
@@ -3222,6 +3266,24 @@ export default function AcaraSetup() {
                                     }`}>
                                       {a.peringkat === 'saringan' ? 'Saringan' : a.parentAcaraId ? 'Final' : 'Terus Final'}
                                     </span>
+                                  </td>
+                                  {/* Had — Individu/Berpasukan (klik untuk toggle) */}
+                                  <td className="px-3 py-2 text-center">
+                                    {indSaving === rowKey ? (
+                                      <svg className="w-3.5 h-3.5 animate-spin text-gray-400 mx-auto" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                                      </svg>
+                                    ) : (
+                                      <button onClick={() => toggleIndividu(a)} title="Klik untuk tukar Individu/Berpasukan"
+                                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all hover:opacity-70 ${
+                                          (a.isIndividu ?? (a.jenisAcara !== 'relay'))
+                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                            : 'bg-purple-50 text-purple-700 border-purple-200'
+                                        }`}>
+                                        {(a.isIndividu ?? (a.jenisAcara !== 'relay')) ? 'Individu' : 'Berpasukan'}
+                                      </button>
+                                    )}
                                   </td>
                                   <td className="px-3 py-2">
                                     <div className="flex justify-center gap-1">

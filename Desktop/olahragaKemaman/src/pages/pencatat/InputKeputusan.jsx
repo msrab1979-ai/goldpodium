@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteField,
+  collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteField, deleteDoc,
   query, orderBy, where, serverTimestamp, Timestamp, onSnapshot, runTransaction, increment,
 } from 'firebase/firestore'
 import { selectFinalists as _selectFinalists, assignLorong as _assignLorong, getFinalistSetup as _getFinalistSetup } from '../../utils/finalistUtils'
@@ -481,15 +481,24 @@ function HeatTabBar({ heats, selectedHeat, onSelect }) {
 // ─── Input sub-components ─────────────────────────────────────────────────────
 
 // Auto-kira kedudukan dari masa (lorong/relay/mass_start)
+// Tiebreaker: jika masa bundar sama, guna masaSebenar untuk pecah seri
 function kiraLaranRank(slots, keputusan) {
   const rows = slots.map(slot => {
     const kp = keputusan[slot] || {}
     const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
     const masa = flagged ? null : (Number(kp.keputusan) || null)
-    return { slot, masa, flagged }
+    const masaSebenar = flagged ? null : (Number(kp.masaSebenar) || null)
+    return { slot, masa, masaSebenar, flagged }
   })
   const sorted = [...rows].sort((a, b) => {
-    if (a.masa !== null && b.masa !== null) return a.masa - b.masa
+    if (a.masa !== null && b.masa !== null) {
+      if (a.masa !== b.masa) return a.masa - b.masa
+      // Masa bundar sama — tiebreak dengan masaSebenar
+      if (a.masaSebenar !== null && b.masaSebenar !== null) return a.masaSebenar - b.masaSebenar
+      if (a.masaSebenar !== null) return -1
+      if (b.masaSebenar !== null) return 1
+      return 0
+    }
     if (a.masa !== null) return -1
     if (b.masa !== null) return 1
     return 0
@@ -498,14 +507,46 @@ function kiraLaranRank(slots, keputusan) {
   let rank = 1
   sorted.forEach((r, i) => {
     if (r.masa === null) { rankMap[r.slot] = null; return }
-    if (i > 0 && sorted[i - 1].masa === r.masa) {
-      rankMap[r.slot] = rankMap[sorted[i - 1].slot]
+    const prev = sorted[i - 1]
+    // Rank sama hanya jika masa bundar sama DAN tiada masaSebenar untuk pecah seri
+    const isTie = i > 0 && prev.masa === r.masa &&
+      (prev.masaSebenar === null || r.masaSebenar === null || prev.masaSebenar === r.masaSebenar)
+    if (isTie) {
+      rankMap[r.slot] = rankMap[prev.slot]
     } else {
       rankMap[r.slot] = rank
     }
     rank++
   })
   return rankMap
+}
+
+// Kesan slot yang ada konflik masa sama + tiada masaSebenar untuk pecah seri
+// Kembalikan Set of slot numbers yang perlu warning
+function kesanKonflikMasa(slots, keputusan) {
+  const konflik = new Set()
+  const rows = slots.map(slot => {
+    const kp = keputusan[slot] || {}
+    const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+    const masa = flagged ? null : (Number(kp.keputusan) || null)
+    const masaSebenar = flagged ? null : (Number(kp.masaSebenar) || null)
+    return { slot, masa, masaSebenar }
+  }).filter(r => r.masa !== null)
+
+  rows.forEach((r, i) => {
+    rows.forEach((r2, j) => {
+      if (i >= j) return
+      if (r.masa === r2.masa) {
+        // Ada masa sama — semak sama ada masaSebenar boleh pecah seri
+        const bolehPecah = r.masaSebenar !== null && r2.masaSebenar !== null && r.masaSebenar !== r2.masaSebenar
+        if (!bolehPecah) {
+          konflik.add(r.slot)
+          konflik.add(r2.slot)
+        }
+      }
+    })
+  })
+  return konflik
 }
 
 function formatMasa(val) {
@@ -567,7 +608,8 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
         return matchA - matchB
       })
     : slotsAsal
-  const rankMap     = kiraLaranRank(slotsAsal, keputusan)
+  const rankMap      = kiraLaranRank(slotsAsal, keputusan)
+  const konflikSlots = kesanKonflikMasa(slotsAsal, keputusan)
 
   return (
     <div className="space-y-3">
@@ -628,8 +670,10 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
           const rank    = rankMap[lorong]
           const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
           const isCarian = carianBib && (kp.noBib || '').toUpperCase().includes(carianBib)
+          const isKonflik = konflikSlots.has(lorong)
           const rowBg  = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset' :
                          flagged ? 'bg-red-50' :
+                         isKonflik ? 'bg-amber-50' :
                          rank === 1 ? 'bg-yellow-50' :
                          rank === 2 ? 'bg-gray-50' :
                          rank === 3 ? 'bg-orange-50' :
@@ -688,9 +732,14 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
                   }}
                   placeholder="m.ss.ms"
                   disabled={flagged}
-                  className="w-full border-2 border-gray-300 rounded-lg px-1 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+                  className={`w-full border-2 rounded-lg px-1 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-300 ${
+                    isKonflik ? 'border-amber-400 focus:border-amber-500' : 'border-gray-300 focus:border-[#003399]'
+                  }`} />
                 {kp.keputusan > 0 && (
                   <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+                )}
+                {isKonflik && (
+                  <span className="text-[9px] text-amber-600 font-bold text-center leading-tight">⚠ Masa sama — isi masa sebenar</span>
                 )}
               </div>
 
@@ -708,7 +757,9 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
                     placeholder="m.ss.ms"
                     disabled={flagged}
                     className={`w-full border-2 rounded-lg px-1 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-300 ${
-                      htWarning ? 'border-red-400 focus:border-red-500' : 'border-teal-300 focus:border-teal-500'
+                      htWarning ? 'border-red-400 focus:border-red-500' :
+                      isKonflik ? 'border-amber-400 focus:border-amber-500' :
+                      'border-teal-300 focus:border-teal-500'
                     }`} />
                   {htWarning && (
                     <span className="text-[9px] text-red-500 font-bold">⚠ Masa Bundar kosong</span>
@@ -782,7 +833,8 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
     : slotsAsal
 
   // Auto-rank dari masa (masa terkecil = rank 1)
-  const rankMap = kiraLaranRank(slotsAsal, keputusan)
+  const rankMap      = kiraLaranRank(slotsAsal, keputusan)
+  const konflikSlots = kesanKonflikMasa(slotsAsal, keputusan)
 
   return (
     <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -805,9 +857,11 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
         const usedByOthers = new Set(
           slots.filter(s => s !== slot).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
         )
-        const isCarian = carianBib && (kp.noBib || '').toUpperCase().includes(carianBib)
+        const isCarian   = carianBib && (kp.noBib || '').toUpperCase().includes(carianBib)
+        const isKonflik  = konflikSlots.has(slot)
         const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset' :
                       flagged ? 'bg-red-50' :
+                      isKonflik ? 'bg-amber-50' :
                       rank === 1 ? 'bg-yellow-50' :
                       rank === 2 ? 'bg-gray-50' :
                       rank === 3 ? 'bg-orange-50' :
@@ -855,9 +909,14 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, finalisBib
                   onChange(slot, '_raw', saat ? fmtMasaDisplay(saat) : e.target.value)
                 }}
                 placeholder="m.ss.ms" disabled={flagged}
-                className="w-full border-2 border-gray-300 rounded-lg px-2 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+                className={`w-full border-2 rounded-lg px-2 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-300 ${
+                  isKonflik ? 'border-amber-400 focus:border-amber-500' : 'border-gray-300 focus:border-[#003399]'
+                }`} />
               {kp.keputusan > 0 && (
                 <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+              )}
+              {isKonflik && (
+                <span className="text-[9px] text-amber-600 font-bold text-center leading-tight">⚠ Masa sama — isi masa sebenar</span>
               )}
             </div>
 
@@ -1103,7 +1162,8 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
         return matchA - matchB
       })
     : slotsAsal
-  const rankMap    = kiraLaranRank(slotsAsal, keputusan)
+  const rankMap      = kiraLaranRank(slotsAsal, keputusan)
+  const konflikSlots = kesanKonflikMasa(slotsAsal, keputusan)
 
   return (
     <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -1142,9 +1202,11 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
         const usedByOthers = new Set(
           slots.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
         )
-        const isCarian = carianBib && (kp.kodSekolah || '').toUpperCase().includes(carianBib)
+        const isCarian  = carianBib && (kp.kodSekolah || '').toUpperCase().includes(carianBib)
+        const isKonflik = konflikSlots.has(lorong)
         const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset' :
                       flagged ? 'bg-red-50' :
+                      isKonflik ? 'bg-amber-50' :
                       rank === 1 ? 'bg-yellow-50' :
                       rank === 2 ? 'bg-gray-50' :
                       rank === 3 ? 'bg-orange-50' :
@@ -1183,9 +1245,14 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
                   onChange(lorong, '_raw', saat ? fmtMasaDisplay(saat) : e.target.value)
                 }}
                 placeholder="m.ss.ms" disabled={flagged}
-                className="w-full border-2 border-gray-300 rounded-lg px-2 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
+                className={`w-full border-2 rounded-lg px-2 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-300 ${
+                  isKonflik ? 'border-amber-400 focus:border-amber-500' : 'border-gray-300 focus:border-[#003399]'
+                }`} />
               {kp.keputusan > 0 && (
                 <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+              )}
+              {isKonflik && (
+                <span className="text-[9px] text-amber-600 font-bold text-center leading-tight">⚠ Masa sama — isi masa sebenar</span>
               )}
             </div>
 
@@ -1202,7 +1269,9 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
                   }}
                   placeholder="m.ss.ms" disabled={flagged}
                   className={`w-full border-2 rounded-lg px-1 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-300 ${
-                    htWarningRelay ? 'border-red-400 focus:border-red-500' : 'border-teal-300 focus:border-teal-500'
+                    htWarningRelay ? 'border-red-400 focus:border-red-500' :
+                    isKonflik ? 'border-amber-400 focus:border-amber-500' :
+                    'border-teal-300 focus:border-teal-500'
                   }`} />
                 {htWarningRelay && (
                   <span className="text-[9px] text-red-500 font-bold">⚠ Masa Bundar kosong</span>
@@ -1905,7 +1974,24 @@ export default function InputKeputusan() {
       )
       const finishers = [...updatedPeserta]
         .filter(p => p.status === 'selesai' && p.keputusan != null)
-        .sort((a, b) => isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan)
+        .sort((a, b) => {
+          if (isPadang) return Number(b.keputusan) - Number(a.keputusan)
+          const diff = Number(a.keputusan) - Number(b.keputusan)
+          if (diff !== 0) return diff
+          // Masa bundar sama — tiebreak 1: masaSebenar
+          const aHT = Number(a.masaSebenar) || null
+          const bHT = Number(b.masaSebenar) || null
+          if (aHT !== null && bHT !== null) return aHT - bHT
+          if (aHT !== null) return -1
+          if (bHT !== null) return 1
+          // Tiebreak 2: kedudukan manual pencatat
+          const aK = Number(a.kedudukan) || null
+          const bK = Number(b.kedudukan) || null
+          if (aK !== null && bK !== null) return aK - bK
+          if (aK !== null) return -1
+          if (bK !== null) return 1
+          return 0
+        })
 
       // Relay guna lorong sebagai key (noBib tiada dalam relay peserta)
       const rankKey = p => jenisAcara === 'relay' ? p.lorong : p.noBib
@@ -1917,7 +2003,7 @@ export default function InputKeputusan() {
           if (p.kedudukan) autoRankMap.set(rankKey(p), Number(p.kedudukan))
         })
       } else {
-        // Acara lain: sequential auto (1,2,3,4,5)
+        // Sequential: masa bundar → masaSebenar → kedudukan manual sebagai tiebreaker
         finishers.forEach((p, i) => {
           autoRankMap.set(rankKey(p), i + 1)
         })
@@ -2023,50 +2109,99 @@ export default function InputKeputusan() {
     }
   }
 
-  // ── Padam Keputusan — undo medal tally + clear result ────────────────────────
+  // ── Padam Keputusan — undo medal tally + mata_olahragawan + rekod tuntutan ──
 
   async function handleDelete() {
-    if (!window.confirm('Padam keputusan heat ini?\nMedal tally akan dikemaskini semula.')) return
+    if (!window.confirm('Padam keputusan heat ini?\nSemua data (medal tally, mata atlet, rekod) akan diundo.')) return
     if (!kejohananId || !selectedAcara || !selectedHeat || !bolehEdit) return
     setSaving(true)
     try {
-      const aceraKey = selectedAcara.aceraId || selectedAcara.acaraId
-      const heatRef  = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', selectedHeat.heatId)
+      const aceraKey    = selectedAcara.aceraId || selectedAcara.acaraId
+      const heatRef     = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', selectedHeat.heatId)
+      const isRelayHeat = selectedAcara?.jenisAcara === 'relay'
 
-      // Fetch data semasa
+      // Fetch data semasa dari Firestore
       const heatSnap = await getDoc(heatRef)
       if (!heatSnap.exists()) return
       const heatData = heatSnap.data()
 
-      // Undo medal tally contributions dari heat ini
       for (const p of (heatData.peserta || [])) {
-        if (!p.kodSekolah) continue
-        const tId        = `${p.kodSekolah}_${kejohananId}`
-        // Relay: guna kodSekolah sebagai key unik (noBib/noKP tiada dalam relay peserta)
-        const isRelayHeat = selectedAcara?.jenisAcara === 'relay'
-        const contribKey = `contrib_${selectedHeat.heatId}_${isRelayHeat ? p.kodSekolah : (p.noKP || p.noBib)}`
-        try {
-          const tRef  = doc(db, 'medal_tally', tId)
-          const tSnap = await getDoc(tRef)
-          if (!tSnap.exists()) continue
-          const contrib = tSnap.data()[contribKey]
-          if (!contrib) continue
-          const pingat = contrib.pingat
-          await updateDoc(tRef, {
-            [contribKey]: deleteField(),
-            [pingat]:     increment(-1),
-            jumlahPingat: increment(-1),
-          })
-        } catch { /* ignore */ }
+
+        // 1. Undo medal_tally
+        if (p.kodSekolah) {
+          const contribKey = `contrib_${selectedHeat.heatId}_${isRelayHeat ? p.kodSekolah : (p.noKP || p.noBib)}`
+          try {
+            const tRef  = doc(db, 'medal_tally', `${p.kodSekolah}_${kejohananId}`)
+            const tSnap = await getDoc(tRef)
+            if (tSnap.exists()) {
+              const contrib = tSnap.data()[contribKey]
+              if (contrib) {
+                const pingat   = contrib.pingat
+                const katKey   = contrib.kategoriKod || ''
+                const jantina  = contrib.jantina     || ''
+                const katField = `kat_${katKey}_${jantina}_${pingat}`
+                await updateDoc(tRef, {
+                  [contribKey]: deleteField(),
+                  [pingat]:     increment(-1),
+                  jumlahPingat: increment(-1),
+                  [katField]:   increment(-1),
+                })
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
+        // 2. Undo mata_olahragawan — acaraDetail + rekod_ field + counter
+        if (p.noKP && !isRelayHeat) {
+          const mId  = `${p.noKP}_${kejohananId}`
+          const mRef = doc(db, 'mata_olahragawan', mId)
+          try {
+            const mSnap = await getDoc(mRef)
+            if (mSnap.exists()) {
+              const mData      = mSnap.data()
+              const acaraField = `acaraDetail_${aceraKey}`
+              const rekodField = `rekod_${aceraKey}`
+              const detail     = mData[acaraField]
+              const patch      = {}
+
+              // Undo acaraDetail (mata + pingat counter)
+              if (detail) {
+                patch[acaraField]           = deleteField()
+                patch.jumlahMata            = increment(-(detail.mata || 0))
+                patch[`pingat_${detail.pingat}`] = increment(-1)
+              }
+
+              // Padam badge rekod (field sahaja — JANGAN sentuh rekod collection aktif)
+              if (mData[rekodField]) {
+                patch[rekodField] = deleteField()
+              }
+
+              if (Object.keys(patch).length > 0) {
+                await updateDoc(mRef, patch)
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
+        // 3. Padam rekod tuntutan sahaja (BUKAN rekod aktif)
+        if (p.noKP && !isRelayHeat && p.rankDalamHeat === 1) {
+          try {
+            const namaPendek = selectedAcara.namaAcaraPendek || selectedAcara.namaAcara
+            const rKey = buildRekodKey(namaPendek, selectedAcara.jantina, selectedAcara.kategoriKod, 'D')
+            await deleteDoc(doc(db, 'rekod', rKey + '_tuntutan')).catch(() => {})
+          } catch { /* ignore */ }
+        }
       }
 
-      // Clear keputusan dalam peserta
+      // 4. Clear peserta dalam heat — reset status, keputusan, masaSebenar
       const clearedPeserta = (heatData.peserta || []).map(p => ({
         ...p,
         keputusan:     null,
         rankDalamHeat: null,
         kedudukan:     null,
         pecahRekod:    null,
+        masaSebenar:   null,
+        status:        'belum',
       }))
 
       await updateDoc(heatRef, {
@@ -2076,7 +2211,7 @@ export default function InputKeputusan() {
         updatedAt:        serverTimestamp(),
       })
 
-      // Update statusAcara
+      // 5. Update statusAcara
       const updatedHeats = heats.map(h =>
         h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: 'kosong' } : h
       )

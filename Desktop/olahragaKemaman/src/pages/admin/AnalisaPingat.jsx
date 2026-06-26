@@ -46,6 +46,12 @@ export default function AnalisaPingat() {
   const [confirmGanti, setConfirmGanti] = useState(null) // { tajukId, atlet }
   const [cetakTBLoading, setCetakTBLoading] = useState(false)
 
+  // Calon Home state
+  const [calonList,    setCalonList]    = useState([])   // [{ noKP, namaAtlet, namaSekolah, kategoriKod, pingat, acaraPingat, mata, rekodList }]
+  const [savingCalon,  setSavingCalon]  = useState(null) // noKP yang sedang disimpan
+  const [showAtHome,   setShowAtHome]   = useState(false)
+  const [savingShow,   setSavingShow]   = useState(false)
+
   useEffect(() => {
     async function load() {
       setLoading(true)
@@ -159,10 +165,12 @@ export default function AnalisaPingat() {
 
         setAtletMap(aMap)
 
-        // 8. Load tajuk atlet terbaik dari Firestore
+        // 8. Load tajuk atlet terbaik + calon dari Firestore
         const tbSnap = await getDoc(doc(db, 'tetapan', 'atletTerbaik'))
         if (tbSnap.exists()) {
           setTajukList(tbSnap.data().tajuk || [])
+          setCalonList(tbSnap.data().calon || [])
+          setShowAtHome(tbSnap.data().showAtHome || false)
         }
 
       } catch (e) {
@@ -285,12 +293,52 @@ export default function AnalisaPingat() {
   async function saveTajuk(newList) {
     setSavingTajuk(true)
     try {
-      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { tajuk: newList })
+      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { tajuk: newList }, { merge: true })
       setTajukList(newList)
     } catch (e) {
       console.error('saveTajuk:', e)
     } finally {
       setSavingTajuk(false)
+    }
+  }
+
+  async function toggleCalon(atlet) {
+    const noKP = atlet.noKP
+    setSavingCalon(noKP)
+    const sudahCalon = calonList.some(c => c.noKP === noKP)
+    const newCalon = sudahCalon
+      ? calonList.filter(c => c.noKP !== noKP)
+      : [...calonList, {
+          noKP,
+          namaAtlet:    atlet.namaAtlet,
+          namaSekolah:  atlet.namaSekolah,
+          kategoriKod:  atlet.kategoriKod,
+          kategoriLabel: kategoriList.find(k => k.kod === atlet.kategoriKod)?.label || atlet.kategoriKod,
+          pingat:       atlet.pingat,
+          acaraPingat:  atlet.acaraPingat,
+          mata:         atlet.mata,
+          rekodList:    atlet.rekodList,
+        }]
+    try {
+      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { calon: newCalon }, { merge: true })
+      setCalonList(newCalon)
+    } catch (e) {
+      alert('Ralat: ' + e.message)
+    } finally {
+      setSavingCalon(null)
+    }
+  }
+
+  async function toggleShowAtHome() {
+    setSavingShow(true)
+    const newVal = !showAtHome
+    try {
+      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { showAtHome: newVal }, { merge: true })
+      setShowAtHome(newVal)
+    } catch (e) {
+      alert('Ralat: ' + e.message)
+    } finally {
+      setSavingShow(false)
     }
   }
 
@@ -791,13 +839,13 @@ export default function AnalisaPingat() {
           })}
           {/* Tab Atlet Terbaik — paling kanan */}
           <button onClick={() => setActiveTab('atletTerbaik')}
-            className={`shrink-0 px-3 py-1.5 text-[11px] font-bold rounded-t-lg border-b-2 transition-colors ml-auto ${
+            className={`shrink-0 ml-auto flex items-center gap-1.5 px-4 py-1.5 text-[11px] font-bold rounded-t-lg border-b-2 transition-colors ${
               activeTab === 'atletTerbaik'
                 ? 'border-yellow-500 text-yellow-700 bg-yellow-50'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                : 'border-yellow-400 text-yellow-700 bg-yellow-50 hover:bg-yellow-100'
             }`}>
-            Atlet Terbaik
-            {tajukList.length > 0 && <span className="ml-1 text-[10px] opacity-60">({tajukList.length})</span>}
+            🏆 Atlet Terbaik
+            {tajukList.length > 0 && <span className="text-[10px] opacity-70">({tajukList.length})</span>}
           </button>
         </div>
 
@@ -820,6 +868,7 @@ export default function AnalisaPingat() {
                     <th className="px-3 py-2.5 text-center font-bold text-amber-700 w-16">Gangsa</th>
                     <th className="px-3 py-2.5 text-center font-bold text-gray-600 w-12">Mata</th>
                     <th className="px-3 py-2.5 text-left font-bold text-amber-600">Rekod Dipecah</th>
+                    <th className="px-3 py-2.5 text-center font-bold text-green-600 w-20">Calon</th>
                     <th className="px-3 py-2.5 text-center font-bold text-gray-400 w-28">Pilih</th>
                   </tr>
                 </thead>
@@ -874,6 +923,25 @@ export default function AnalisaPingat() {
                               ))}
                             </div>
                           )}
+                        </td>
+                        {/* Kolum Calon — toggle show di Home */}
+                        <td className="px-3 py-3 text-center">
+                          {(() => {
+                            const isCalon = calonList.some(c => c.noKP === a.noKP)
+                            const isSaving = savingCalon === a.noKP
+                            return (
+                              <button
+                                onClick={() => toggleCalon(a)}
+                                disabled={isSaving}
+                                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold border transition-colors disabled:opacity-50 ${
+                                  isCalon
+                                    ? 'bg-green-100 border-green-400 text-green-700 hover:bg-green-200'
+                                    : 'bg-white border-gray-300 text-gray-400 hover:bg-green-50 hover:border-green-300 hover:text-green-600'
+                                }`}>
+                                {isSaving ? '…' : isCalon ? '✓ Calon' : '+ Calon'}
+                              </button>
+                            )
+                          })()}
                         </td>
                         {/* Kolum Pilih — dropdown tajuk */}
                         <td className="px-3 py-3 text-center">
@@ -939,6 +1007,24 @@ export default function AnalisaPingat() {
         {/* ── Tab Atlet Terbaik content ── */}
         {activeTab === 'atletTerbaik' && (
           <div className="p-4 space-y-4">
+
+            {/* Toggle Show Calon di Home */}
+            <div className={`flex items-center justify-between rounded-xl px-4 py-3 border ${showAtHome ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-200'}`}>
+              <div>
+                <p className="text-xs font-bold text-gray-700">Papar Calon di Home</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{calonList.length} calon dipilih · Public boleh lihat tanpa No KP</p>
+              </div>
+              <button
+                onClick={toggleShowAtHome}
+                disabled={savingShow}
+                className={`px-4 py-2 text-xs font-bold rounded-lg border transition-colors disabled:opacity-50 ${
+                  showAtHome
+                    ? 'bg-green-600 border-green-700 text-white hover:bg-green-700'
+                    : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'
+                }`}>
+                {savingShow ? '…' : showAtHome ? '✓ ON — Sedang Papar' : 'OFF — Klik untuk Papar'}
+              </button>
+            </div>
 
             {/* Setup tajuk */}
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">

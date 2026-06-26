@@ -60,14 +60,59 @@ function tambahMinit(masa, minit) {
 }
 
 // ─── GATE 1 — Had Acara Per Atlet ─────────────────────────────────────────────
+//
+// Had baca dari KATEGORI ATLET (bukan kategori acara).
+// Kiraan merentas SEMUA acara yang didaftar — guna isIndividu untuk bezakan.
+// isIndividu=true → individu, isIndividu=false → berpasukan, undefined → individu (fallback).
+//
+// Ini memastikan acara OPEN dikira dalam had atlet yang sama.
 
-async function gate1_hadAcaraAtlet(noKP, kejohananId, kategoriId, jenisAcaraBaru) {
-  // Baca had LIVE dari Firestore — kategori/{kategoriId}
-  const katDoc = await getDoc(doc(db, 'kategori', kategoriId))
-  const hadIndividu = katDoc.exists() ? (katDoc.data().hadAcaraIndividu ?? 2) : 2
+async function gate1_hadAcaraAtlet(noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan) {
+  // ── Cari kategori atlet dari tarikhLahir+jantina ──────────────────────────
+  const kategoriSnap = await getDocs(collection(db, 'kategori'))
+  const semuaKategori = kategoriSnap.docs.map(d => ({ kod: d.id, ...d.data() }))
+
+  // Tapis: jantina match, bukan OPEN, ada umurHad
+  const tKej = Number(tahunKejohanan) || new Date().getFullYear()
+  let kategoriAtlet = null
+
+  if (tarikhLahir && jantina) {
+    const candidates = semuaKategori.filter(k => {
+      if (!k.umurHad) return false
+      const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
+      if (lbl.includes('OPEN')) return false
+      if (jantina === 'L' && !lbl.startsWith('L')) return false
+      if (jantina === 'P' && !lbl.startsWith('P')) return false
+      const tarikhTerawal = new Date(`${tKej - Number(k.umurHad)}-01-02`)
+      const tarikhTerkini = k.umurMin
+        ? new Date(`${tKej - Number(k.umurMin) + 1}-01-01`)
+        : new Date(`${tKej + 1}-01-01`)
+      const tLahir = new Date(tarikhLahir)
+      return tLahir >= tarikhTerawal && tLahir < tarikhTerkini
+    })
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
+      kategoriAtlet = candidates[0].kod
+    }
+  }
+
+  // Kategori atlet tidak dapat ditentukan — tolak dengan mesej jelas
+  if (!kategoriAtlet) {
+    return {
+      valid: false,
+      gate: 'GATE1',
+      mesej: 'Kategori atlet tidak dapat ditentukan. Semak tarikh lahir dan pastikan kategori umur sudah dikonfigurasi.',
+      had: 0,
+      semasa: 0,
+    }
+  }
+
+  // ── Baca had dari KATEGORI ATLET ──────────────────────────────────────────
+  const katDoc = await getDoc(doc(db, 'kategori', kategoriAtlet))
+  const hadIndividu = katDoc.exists() ? (katDoc.data().hadAcaraIndividu ?? 3) : 3
   const hadBeregu   = katDoc.exists() ? (katDoc.data().hadAcaraBeregu   ?? 2) : 2
 
-  // Semak pendaftaran atlet dalam kejohanan ini
+  // ── Semak pendaftaran atlet dalam kejohanan ini ───────────────────────────
   const pendSnap = await getDocs(
     query(
       collection(db, 'kejohanan', kejohananId, 'pendaftaran'),
@@ -75,16 +120,14 @@ async function gate1_hadAcaraAtlet(noKP, kejohananId, kategoriId, jenisAcaraBaru
     )
   )
 
-  // Kumpul semua aceraId yang sudah didaftar
   const semuaAceraIds = []
   pendSnap.docs.forEach(d => (d.data().acaraIds || []).forEach(id => semuaAceraIds.push(id)))
 
   if (semuaAceraIds.length === 0) {
-    const isRelay = jenisAcaraBaru === 'relay'
-    return { valid: true, had: isRelay ? hadBeregu : hadIndividu, semasa: 0 }
+    return { valid: true, had: acaraBaruIsIndividu ? hadIndividu : hadBeregu, semasa: 0 }
   }
 
-  // Dapatkan jenisAcara bagi setiap aceraId — untuk kira individu vs beregu
+  // ── Baca isIndividu bagi setiap acara sedia ada ───────────────────────────
   const acaraDocs = await Promise.all(
     semuaAceraIds.map(id => getDoc(doc(db, 'kejohanan', kejohananId, 'acara', id)))
   )
@@ -93,40 +136,36 @@ async function gate1_hadAcaraAtlet(noKP, kejohananId, kategoriId, jenisAcaraBaru
   let bilanganBeregu   = 0
   acaraDocs.forEach(d => {
     if (!d.exists()) return
-    // Kira hanya acara dalam KATEGORI yang sama — atlet Open boleh daftar
-    // walaupun sudah penuh kuota individu dalam kategori lain (cth: Kat A).
-    if (d.data().kategoriKod !== kategoriId) return
-    d.data().jenisAcara === 'relay' ? bilanganBeregu++ : bilanganIndividu++
+    // isIndividu=false → berpasukan, lain-lain (true/undefined) → individu
+    if (d.data().isIndividu === false) {
+      bilanganBeregu++
+    } else {
+      bilanganIndividu++
+    }
   })
 
-  const isRelay = jenisAcaraBaru === 'relay'
-
-  if (isRelay) {
-    if (bilanganBeregu >= hadBeregu) {
-      return {
-        valid: false,
-        gate: 'GATE1',
-        mesej: `Atlet sudah mencapai had ${hadBeregu} acara berkumpulan (relay).`,
-        had: hadBeregu,
-        semasa: bilanganBeregu,
-      }
-    }
-  } else {
+  if (acaraBaruIsIndividu) {
     if (bilanganIndividu >= hadIndividu) {
       return {
         valid: false,
         gate: 'GATE1',
-        mesej: `Atlet sudah mencapai had ${hadIndividu} acara individu.`,
+        mesej: `Atlet sudah mencapai had ${hadIndividu} acara individu (Kategori ${kategoriAtlet}).`,
         had: hadIndividu,
         semasa: bilanganIndividu,
       }
     }
-  }
-
-  return {
-    valid: true,
-    had: isRelay ? hadBeregu : hadIndividu,
-    semasa: isRelay ? bilanganBeregu : bilanganIndividu,
+    return { valid: true, had: hadIndividu, semasa: bilanganIndividu }
+  } else {
+    if (bilanganBeregu >= hadBeregu) {
+      return {
+        valid: false,
+        gate: 'GATE1',
+        mesej: `Atlet sudah mencapai had ${hadBeregu} acara berkumpulan (Kategori ${kategoriAtlet}).`,
+        had: hadBeregu,
+        semasa: bilanganBeregu,
+      }
+    }
+    return { valid: true, had: hadBeregu, semasa: bilanganBeregu }
   }
 }
 
@@ -452,12 +491,14 @@ async function gate8_heatSudahDijana(aceraId, kejohananId) {
  * @param {string} params.aceraId         - ID acara baru yang hendak didaftar
  * @param {string} params.kategoriId      - Kod kategori acara (A|B|C|D|E|PPKI)
  * @param {string} params.jenisAcara      - Jenis acara ('relay' atau lain-lain)
+ * @param {string} params.jantina         - Jantina atlet ('L' atau 'P') — untuk Gate 1
  * @param {number} params.tahunKejohanan  - Tahun kejohanan — untuk kira kelayakan umur (Gate 3)
  * @returns {Promise<{valid: boolean, gate: string, mesej: string, had: number, semasa: number}>}
  */
 export async function validasiPendaftaran({
   noKP,
   tarikhLahir,
+  jantina,
   kodSekolah,
   kejohananId,
   aceraId,
@@ -469,7 +510,12 @@ export async function validasiPendaftaran({
   let result
 
   // GATE 1 — Had acara per atlet (individu + berkumpulan)
-  result = await gate1_hadAcaraAtlet(noKP, kejohananId, kategoriId, jenisAcara)
+  // Baca isIndividu dari acara baru — tentukan sama ada individu atau berpasukan
+  const acaraBaruDoc = await getDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraId))
+  const acaraBaruIsIndividu = acaraBaruDoc.exists()
+    ? (acaraBaruDoc.data().isIndividu ?? (acaraBaruDoc.data().jenisAcara !== 'relay'))
+    : true
+  result = await gate1_hadAcaraAtlet(noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan)
   if (!result.valid) return result
 
   // GATE 2 — Had atlet per sekolah per acara

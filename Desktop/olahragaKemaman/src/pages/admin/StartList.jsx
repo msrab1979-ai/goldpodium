@@ -1062,7 +1062,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   const isMass   = acara.jenisAcara === 'mass_start'
   const isRelay  = acara.jenisAcara === 'relay'
 
-  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan')
+  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan' || h.fasa === 'suku_akhir')
   const fasaJana = acara.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
 
   const [finalis,        setFinalis]        = useState([])
@@ -1158,7 +1158,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       )
       const targetAcara = finalAcaraLinked || acara
       const targetKey   = targetAcara.aceraId || targetAcara.id
-      const fasaHeat    = fasaJana === 'sukuKeSeparuh' ? 'heat' : 'final'
+      const fasaHeat    = fasaJana === 'sukuKeSeparuh' ? 'suku_akhir' : 'final'
       const jenisLorong = detectJenisLorong(acara)
 
       if (fasaJana === 'sukuKeSeparuh') {
@@ -2875,7 +2875,7 @@ export default function StartList() {
   // ── Derived: Heat → Final gate ────────────────────────────────────────────
   const isSukuAkhirAcara    = selectedAcara?.peringkat === 'suku_akhir'
   const isSeparuhAkhirAcara = selectedAcara?.peringkat === 'separuh_akhir'
-  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan')
+  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan' || h.fasa === 'suku_akhir')
   // suku_akhir/separuh_akhir: final dijana di acara lain — guna finalDijanaKe sebagai flag dah jana
   const finalExists    = (isSukuAkhirAcara || isSeparuhAkhirAcara)
     ? !!(selectedAcara?.finalDijanaKe)

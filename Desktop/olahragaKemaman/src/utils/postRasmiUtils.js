@@ -74,17 +74,34 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   // Kira rank dari keputusan (on-the-fly — lebih tepat dari rankDalamHeat yang mungkin lapuk)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acaraDoc.jenisAcara)
   const semua    = heatDoc.peserta || []
+  const isLompatTinggi = /lompat tinggi/i.test(
+    acaraDoc.namaAcara || acaraDoc.namaAcaraPendek || ''
+  )
   const finishers = semua
     .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
-    .sort((a, b) => isPadang ? Number(b.keputusan) - Number(a.keputusan) : Number(a.keputusan) - Number(b.keputusan))
+    .sort((a, b) => {
+      if (isPadang) return Number(b.keputusan) - Number(a.keputusan)
+      const diff = Number(a.keputusan) - Number(b.keputusan)
+      if (diff !== 0) return diff
+      // Masa bundar sama — tiebreak 1: masaSebenar
+      const aHT = Number(a.masaSebenar) || null
+      const bHT = Number(b.masaSebenar) || null
+      if (aHT !== null && bHT !== null) return aHT - bHT
+      if (aHT !== null) return -1
+      if (bHT !== null) return 1
+      // Tiebreak 2: kedudukan manual pencatat
+      const aK = Number(a.kedudukan) || null
+      const bK = Number(b.kedudukan) || null
+      if (aK !== null && bK !== null) return aK - bK
+      if (aK !== null) return -1
+      if (bK !== null) return 1
+      return 0
+    })
   // Relay guna kodSekolah sebagai key (noBib/noKP tiada)
   const pKey = p => isRelay ? (p.kodSekolah || p.lorong) : (p.noKP || p.noBib)
   const computedRankMap = new Map()
   // Lompat Tinggi: GUNA kedudukan manual pencatat (count-back rules MSSM)
-  // Lain: sequential auto (1,2,3,4,5)
-  const isLompatTinggi = /lompat tinggi/i.test(
-    acaraDoc.namaAcara || acaraDoc.namaAcaraPendek || ''
-  )
+  // Lain: sequential auto dengan tiebreak masaSebenar → kedudukan manual
   if (isLompatTinggi) {
     finishers.forEach(p => {
       if (p.kedudukan) computedRankMap.set(pKey(p), Number(p.kedudukan))

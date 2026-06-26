@@ -885,6 +885,7 @@ export default function JadualSetup() {
           kelas:        acara.kelas      || '—',
           peringkat:    acara.peringkat  || '—',
           jenisAcara:   acara.jenisAcara || '',
+          isIndividu:   acara.isIndividu,
           statusAcara:  acara.statusAcara || '',
           statusJadual: jadual.statusJadual || 'aktif',
           lokasi:       jadual.lokasi    || acara.lokasi   || '—',
@@ -1200,6 +1201,7 @@ export default function JadualSetup() {
                             <th className="px-3 py-2 text-left w-20">Masa</th>
                             <th className="px-3 py-2 text-left">Acara</th>
                             <th className="px-3 py-2 text-left w-16">Kelas</th>
+                            <th className="px-3 py-2 text-center w-20">Had</th>
                             <th className="px-3 py-2 text-left w-28">Peringkat</th>
                             <th className="px-3 py-2 text-center w-14">Heat</th>
                             <th className="px-3 py-2 text-center w-28">Status</th>
@@ -1237,6 +1239,21 @@ export default function JadualSetup() {
                                 {/* Kelas */}
                                 <td className="px-3 py-2.5">
                                   <span className="font-semibold text-gray-600">{r.kelas}</span>
+                                </td>
+
+                                {/* Had — Individu/Berpasukan */}
+                                <td className="px-3 py-2.5 text-center">
+                                  {r.isIndividu === undefined ? (
+                                    <span className="text-[9px] text-gray-300">—</span>
+                                  ) : (
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      r.isIndividu
+                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : 'bg-purple-50 text-purple-700 border-purple-200'
+                                    }`}>
+                                      {r.isIndividu ? 'Individu' : 'Berpasukan'}
+                                    </span>
+                                  )}
                                 </td>
 
                                 {/* Peringkat */}

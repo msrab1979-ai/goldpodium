@@ -1055,6 +1055,11 @@ export default function Home() {
   const [activePeringkatRekod, setActivePeringkatRekod] = useState('D')
   const [activeKatRekod,     setActiveKatRekod]     = useState('')
 
+  // Atlet Terbaik (calon di Home)
+  const [calonAtlet,    setCalonAtlet]    = useState([])   // dari tetapan/atletTerbaik
+  const [showCalonTab,  setShowCalonTab]  = useState(false)
+  const [activeCalonKat, setActiveCalonKat] = useState('')
+
   // Finalist setup (tetapan/finalSetup)
   const [finalSetup,   setFinalSetup]   = useState(null)
 
@@ -1067,6 +1072,19 @@ export default function Home() {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'tetapan', 'home'), s => {
       if (s.exists()) setCfg({ ...TETAPAN_DEFAULTS, ...s.data() })
+    })
+    return () => unsub()
+  }, [])
+
+  // Calon Atlet Terbaik — real-time listener
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'tetapan', 'atletTerbaik'), s => {
+      if (s.exists()) {
+        setShowCalonTab(!!s.data().showAtHome)
+        const calon = s.data().calon || []
+        setCalonAtlet(calon)
+        if (calon.length > 0) setActiveCalonKat(k => k || calon[0].kategoriKod || '')
+      }
     })
     return () => unsub()
   }, [])
@@ -2262,11 +2280,12 @@ export default function Home() {
             </div>
 
             {/* Tab Pills */}
-            <div className="flex gap-1.5 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
+            <div className="flex gap-1.5 mb-4 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
               {[
                 { id: 'jadual',    label: 'Jadual' },
                 { id: 'keputusan', label: 'Keputusan' },
                 { id: 'rekod',     label: 'Rekod Kejohanan' },
+                ...(showCalonTab && calonAtlet.length > 0 ? [{ id: 'atletTerbaik', label: '🏆 Atlet Terbaik' }] : []),
               ].map(t => (
                 <button key={t.id} onClick={() => {
                   setActiveTab(t.id)
@@ -2687,6 +2706,118 @@ export default function Home() {
                           </table>
                         </div>
                       )}
+                    </>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* ── Tab: Atlet Terbaik ── */}
+            {activeTab === 'atletTerbaik' && (() => {
+              const fmtP = (val, unit) => {
+                if (val == null || val === '') return '—'
+                const n = Number(val)
+                if (isNaN(n) || n === 0) return '—'
+                if (unit === 'm') return `${n.toFixed(2)}m`
+                const min = Math.floor(n / 60)
+                const sek = (n % 60).toFixed(2).padStart(5, '0')
+                return min > 0 ? `${min}:${sek}` : `${n.toFixed(2)}s`
+              }
+              const katKeys = []
+              const katLabelMap = {}
+              calonAtlet.forEach(a => {
+                const k = a.kategoriKod || '—'
+                if (!katKeys.includes(k)) {
+                  katKeys.push(k)
+                  katLabelMap[k] = (a.kategoriLabel || a.kategoriKod || '—').replace(/^[LP]/i, '')
+                }
+              })
+              const kat = activeCalonKat && katKeys.includes(activeCalonKat) ? activeCalonKat : katKeys[0] || ''
+              const calonTapis = calonAtlet.filter(a => (a.kategoriKod || '—') === kat)
+              return (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🏆</span>
+                    <div>
+                      <p className="text-sm font-black text-gray-800 tracking-wide">CALON ATLET TERBAIK</p>
+                      <p className="text-[10px] text-gray-400">{calonAtlet.length} calon · Acara final sahaja</p>
+                    </div>
+                  </div>
+                  {calonAtlet.length === 0 ? (
+                    <div className="py-10 text-center text-gray-400 text-sm">Tiada calon dipilih.</div>
+                  ) : (
+                    <>
+                      {/* Tab kategori */}
+                      <div className="flex gap-1.5 overflow-x-auto pb-1">
+                        {katKeys.map(k => (
+                          <button key={k} onClick={() => setActiveCalonKat(k)}
+                            className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                              kat === k
+                                ? 'bg-amber-500 text-white border-amber-500'
+                                : 'bg-white text-gray-500 border-gray-200 hover:border-amber-300 hover:text-amber-600'
+                            }`}>
+                            {katLabelMap[k]}
+                            <span className="ml-1 opacity-60">({calonAtlet.filter(a => (a.kategoriKod||'—') === k).length})</span>
+                          </button>
+                        ))}
+                      </div>
+                      {/* Senarai calon */}
+                      <div className="space-y-2">
+                        {calonTapis.map((a, i) => (
+                          <div key={i} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                            <div className="px-4 py-3 flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-black text-gray-900 text-sm leading-tight">{a.namaAtlet}</p>
+                                <p className="text-[11px] text-gray-400 mt-0.5">{a.namaSekolah}</p>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0 pt-0.5">
+                                {[1,2,3].map(rank => {
+                                  const icons  = { 1:'🥇', 2:'🥈', 3:'🥉' }
+                                  const colors = { 1:'text-yellow-500', 2:'text-gray-400', 3:'text-amber-600' }
+                                  const count  = a.pingat?.[rank] || 0
+                                  if (count === 0) return null
+                                  return (
+                                    <div key={rank} className="text-center">
+                                      <p className={`text-lg font-black leading-none ${colors[rank]}`}>{count}</p>
+                                      <p className="text-[9px] text-gray-400">{icons[rank]}</p>
+                                      {(a.acaraPingat?.[rank] || []).map((n, k) => (
+                                        <p key={k} className="text-[9px] text-gray-500 leading-tight max-w-[60px] truncate">{n}</p>
+                                      ))}
+                                    </div>
+                                  )
+                                })}
+                                <div className="w-px h-8 bg-gray-200" />
+                                <div className="text-center">
+                                  <p className="text-lg font-black text-[#003399] leading-none">{a.mata || 0}</p>
+                                  <p className="text-[9px] text-gray-400">Mata</p>
+                                </div>
+                              </div>
+                            </div>
+                            {a.rekodList && a.rekodList.length > 0 && (
+                              <div className="border-t border-amber-100 bg-amber-50 px-4 py-2 space-y-1.5">
+                                {a.rekodList.map((r, j) => (
+                                  <div key={j} className="text-[10px] leading-relaxed">
+                                    <p className="font-black text-amber-800">
+                                      🏅 {r.namaAcaraPendek || r.namaAcara}
+                                      {r.prestasiBaru != null && r.prestasiBaru !== '' && (
+                                        <span className="text-green-700 font-bold ml-1">({fmtP(r.prestasiBaru, r.unit)})</span>
+                                      )}
+                                    </p>
+                                    {(r.namaLama || r.prestasiLama != null) && (
+                                      <p className="text-gray-500 mt-0.5 break-words">
+                                        Lama: {r.namaLama && <span className="font-semibold text-gray-600">{r.namaLama}</span>}
+                                        {r.prestasiLama != null && <span className="ml-1">({fmtP(r.prestasiLama, r.unit)})</span>}
+                                        {r.lokasiLama && <span className="ml-1">· {r.lokasiLama}</span>}
+                                        {r.tahunLama && <span className="ml-1">· {r.tahunLama}</span>}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </>
                   )}
                 </div>

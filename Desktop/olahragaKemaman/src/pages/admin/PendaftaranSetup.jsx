@@ -45,37 +45,44 @@ const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Semak kelayakan umur ikut tarikh penuh — MSSM cut-off 2 Januari
+// Kembalikan true jika tarikhLahir dalam julat [tarikhTerawal, tarikhTerkini)
+function layakUmurMSSM(tarikhLahir, umurHad, umurMin, tahunKejohanan) {
+  if (!tarikhLahir || !umurHad || !tahunKejohanan) return true
+  const tKej = Number(tahunKejohanan)
+  // Paling tua layak: lahir pada atau selepas 2 Jan (tKej - umurHad)
+  const tarikhTerawal = new Date(`${tKej - Number(umurHad)}-01-02`)
+  // Paling muda layak: lahir sebelum 1 Jan (tKej - umurMin + 1)
+  const tarikhTerkini = umurMin
+    ? new Date(`${tKej - Number(umurMin) + 1}-01-01`)
+    : new Date(`${tKej + 1}-01-01`)
+  const tLahir = new Date(tarikhLahir)
+  return tLahir >= tarikhTerawal && tLahir < tarikhTerkini
+}
+
 /**
- * Kira kategori MSSM dari tahun lahir, jantina, dan tahun kejohanan.
- * Gunakan label prefix (L/P) untuk tapis jantina — elak atlet L dapat kategori P.
- * Pilih kategori paling spesifik (umurHad terkecil) supaya atlet 10 tahun dapat
- * kategori L10 bukan L12 walaupun kedua-dua merangkumi umur 10.
- * Kategori OPEN (ada 'OPEN' dalam label) diabaikan — dikendalikan secara berasingan.
+ * Kira kategori MSSM dari tarikhLahir penuh, jantina, dan tahun kejohanan.
+ * Guna cut-off 2 Januari (standard MSSM) — bukan sekadar tahun lahir.
+ * Pilih kategori paling spesifik (umurHad terkecil).
+ * Kategori OPEN diabaikan — dikendalikan secara berasingan.
  */
 function kiraKategori(tarikhLahir, jantina, tahunKejohanan, kategoriList = []) {
   if (!tarikhLahir || !tahunKejohanan) return null
-  const tahunLahir = new Date(tarikhLahir).getFullYear()
-  const umur = Number(tahunKejohanan) - tahunLahir
-  if (isNaN(umur) || umur < 0 || umur > 30) return null
   if (kategoriList.length > 0) {
     const filtered = kategoriList.filter(k => {
       if (!k.kod) return false
       if (!k.umurHad) return false
       // Guna label untuk detect jantina (label = 'L10','P10','OPEN-SK-L' dll)
-      // kod dalam Firestore adalah single-letter (A,B,C...) — jangan guna untuk detect jantina
       const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
       if (lbl.includes('OPEN')) return false
       if (jantina === 'L' && !lbl.startsWith('L')) return false
       if (jantina === 'P' && !lbl.startsWith('P')) return false
       return true
     })
-    const candidates = filtered.filter(k => {
-      const min = k.umurMin != null ? Number(k.umurMin) : 0
-      const max = Number(k.umurHad)
-      return umur >= min && umur <= max
-    })
+    const candidates = filtered.filter(k =>
+      layakUmurMSSM(tarikhLahir, k.umurHad, k.umurMin, tahunKejohanan)
+    )
     if (candidates.length === 0) return null
-    // Pilih paling spesifik: umurHad terkecil
     candidates.sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
     return candidates[0].kod
   }
@@ -249,11 +256,7 @@ function KatDropdown({ noKP, value, kategoriList, disabled, onSaved,
     }
   }
 
-  // Tapis: hanya kategori yang jantina & umur atlet layak (refer KategoriSetup)
-  const umurAtlet = (tahunKej && tarikhLahir)
-    ? tahunKej - new Date(tarikhLahir).getFullYear()
-    : null
-
+  // Tapis: hanya kategori yang jantina & umur atlet layak — guna tarikh penuh cut-off 2 Jan
   const valid = [...(kategoriList || [])].filter(k => {
     if (!k.kod) return false
     if (!k.umurHad) return false
@@ -261,10 +264,8 @@ function KatDropdown({ noKP, value, kategoriList, disabled, onSaved,
     if (lbl.includes('OPEN')) return false
     if (jantina === 'L' && !lbl.startsWith('L')) return false
     if (jantina === 'P' && !lbl.startsWith('P')) return false
-    if (umurAtlet !== null) {
-      const min = k.umurMin != null ? Number(k.umurMin) : 0
-      const max = Number(k.umurHad)
-      if (umurAtlet < min || umurAtlet > max) return false
+    if (tarikhLahir && tahunKej) {
+      if (!layakUmurMSSM(tarikhLahir, k.umurHad, k.umurMin, tahunKej)) return false
     }
     return true
   }).sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
@@ -680,6 +681,7 @@ function DaftarModal({ acara, kejohanan, atletSekolah, pendaftaranList, jadualLi
         const hasil = await validasiPendaftaran({
           noKP,
           tarikhLahir:     atlet.tarikhLahir,
+          jantina:         atlet.jantina,
           kodSekolah:      atlet.kodSekolah,
           kejohananId,
           aceraId:         acara.aceraId,
@@ -3571,6 +3573,7 @@ function PPImportDaftarModal({
             const hasil = await validasiPendaftaran({
               noKP,
               tarikhLahir:    atlet.tarikhLahir,
+              jantina:        atlet.jantina,
               kodSekolah,
               kejohananId:    kejohanan.id,
               aceraId,
@@ -4195,6 +4198,7 @@ function PPPendaftaranView({ sekolahList }) {
           const hasil = await validasiPendaftaran({
             noKP,
             tarikhLahir:    atlet.tarikhLahir,
+            jantina:        atlet.jantina,
             kodSekolah:     atlet.kodSekolah,
             kejohananId,
             aceraId:        acara.aceraId || acara.id,
