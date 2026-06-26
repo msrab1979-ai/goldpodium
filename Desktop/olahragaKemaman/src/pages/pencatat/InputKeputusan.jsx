@@ -558,6 +558,7 @@ function fmtMasaDisplay(saat) {
 function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, sekolahMap = {}, finalisBibs = new Set(), finalisQMap = new Map(), carianBib = '' }) {
   const bilLorong   = acara.bilanganLorong || heat.bilanganLorong || 8
   const isWind      = acara.isWindReading || false
+  const isHT        = !!(acara.adaHandTiming && acara.peringkat === 'akhir')
   const slotsAsal   = Array.from({ length: bilLorong }, (_, i) => i + 1)
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
@@ -594,11 +595,12 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
       <div className="rounded-xl border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="grid bg-[#003399] text-white text-xs font-bold uppercase tracking-wider"
-          style={{ gridTemplateColumns: '44px 80px 1fr 88px 60px 100px' }}>
+          style={{ gridTemplateColumns: isHT ? '44px 80px 1fr 88px 88px 60px 100px' : '44px 80px 1fr 88px 60px 100px' }}>
           <div className="px-2 py-3 text-center">Lrg</div>
           <div className="px-2 py-3 text-center">No BIB</div>
           <div className="px-2 py-3">Atlet / Sekolah</div>
-          <div className="px-2 py-3 text-center">Masa</div>
+          <div className="px-2 py-3 text-center">Masa Bundar</div>
+          {isHT && <div className="px-2 py-3 text-center">Masa Sebenar</div>}
           <div className="px-2 py-3 text-center">Kddk</div>
           <div className="px-2 py-3 text-center">Catatan</div>
         </div>
@@ -612,11 +614,11 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
           if (isKosong) {
             return (
               <div key={lorong} className="grid border-t border-gray-100 bg-gray-50"
-                style={{ gridTemplateColumns: '44px 80px 1fr 88px 60px 100px' }}>
+                style={{ gridTemplateColumns: isHT ? '44px 80px 1fr 88px 88px 60px 100px' : '44px 80px 1fr 88px 60px 100px' }}>
                 <div className="px-1 py-3 flex items-center justify-center">
                   <span className="text-sm font-black text-gray-300">{lorong}</span>
                 </div>
-                <div className="col-span-5 px-3 flex items-center">
+                <div className={`col-span-${isHT ? 6 : 5} px-3 flex items-center`}>
                   <span className="text-sm text-gray-300 italic">— Lorong kosong —</span>
                 </div>
               </div>
@@ -638,10 +640,12 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
               .filter(v => v !== '' && v != null)
           )
 
+          const htWarning = isHT && !flagged && (kp.masaSebenar > 0) && !(kp.keputusan > 0)
+
           return (
             <div key={lorong}
-              className={`grid border-t border-gray-100 ${rowBg}`}
-              style={{ gridTemplateColumns: '44px 80px 1fr 88px 60px 100px' }}>
+              className={`grid border-t border-gray-100 ${htWarning ? 'bg-red-50 ring-1 ring-red-300 ring-inset' : rowBg}`}
+              style={{ gridTemplateColumns: isHT ? '44px 80px 1fr 88px 88px 60px 100px' : '44px 80px 1fr 88px 60px 100px' }}>
 
               {/* Lorong */}
               <div className="px-1 py-3 flex items-center justify-center">
@@ -672,7 +676,7 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
                 </p>
               </div>
 
-              {/* Masa */}
+              {/* Masa Bundar */}
               <div className="px-1 py-2 flex flex-col items-center gap-0.5">
                 <input type="text" inputMode="decimal"
                   value={kp._raw ?? (kp.keputusan ? fmtMasaDisplay(kp.keputusan) : '')}
@@ -689,6 +693,31 @@ function InputLorong({ heat, acara, keputusan, onChange, onWind, windSpeed, seko
                   <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
                 )}
               </div>
+
+              {/* Masa Sebenar — hanya bila adaHandTiming */}
+              {isHT && (
+                <div className="px-1 py-2 flex flex-col items-center gap-0.5">
+                  <input type="text" inputMode="decimal"
+                    value={kp._rawHT ?? (kp.masaSebenar ? fmtMasaDisplay(kp.masaSebenar) : '')}
+                    onChange={e => onChange(lorong, '_rawHT', e.target.value)}
+                    onBlur={e => {
+                      const saat = parseMasaInput(e.target.value)
+                      onChange(lorong, 'masaSebenar', saat || null)
+                      onChange(lorong, '_rawHT', saat ? fmtMasaDisplay(saat) : e.target.value)
+                    }}
+                    placeholder="m.ss.ms"
+                    disabled={flagged}
+                    className={`w-full border-2 rounded-lg px-1 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-300 ${
+                      htWarning ? 'border-red-400 focus:border-red-500' : 'border-teal-300 focus:border-teal-500'
+                    }`} />
+                  {htWarning && (
+                    <span className="text-[9px] text-red-500 font-bold">⚠ Masa Bundar kosong</span>
+                  )}
+                  {kp.masaSebenar > 0 && !htWarning && (
+                    <span className="text-[10px] font-mono text-teal-600 font-bold">{fmtMasaDisplay(kp.masaSebenar)}</span>
+                  )}
+                </div>
+              )}
 
               {/* Kedudukan */}
               <div className="px-1 py-2 flex items-center justify-center">
@@ -1066,6 +1095,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
 function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
   const bilPasukan = acara.bilPasukan || heat.bilPasukan || acara.bilanganLorong || 8
   const slotsAsal  = Array.from({ length: bilPasukan }, (_, i) => i + 1)
+  const isHT       = !!(acara.adaHandTiming && acara.peringkat === 'akhir')
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
         const matchA = (keputusan[a]?.kodSekolah || '').toUpperCase().includes(carianBib) ? 0 : 1
@@ -1079,10 +1109,11 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
     <div className="rounded-xl border border-gray-200 overflow-hidden">
       {/* Header */}
       <div className="grid bg-[#003399] text-white text-xs font-bold uppercase tracking-wider"
-        style={{ gridTemplateColumns: '44px 1fr 88px 60px 100px' }}>
+        style={{ gridTemplateColumns: isHT ? '44px 1fr 88px 88px 60px 100px' : '44px 1fr 88px 60px 100px' }}>
         <div className="px-2 py-3 text-center">Lrg</div>
         <div className="px-2 py-3">Sekolah</div>
-        <div className="px-2 py-3 text-center">Masa</div>
+        <div className="px-2 py-3 text-center">Masa Bundar</div>
+        {isHT && <div className="px-2 py-3 text-center">Masa Sebenar</div>}
         <div className="px-2 py-3 text-center">Kddk</div>
         <div className="px-2 py-3 text-center">Catatan</div>
       </div>
@@ -1095,11 +1126,11 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
         if (isKosong) {
           return (
             <div key={lorong} className="grid border-t border-gray-100 bg-gray-50"
-              style={{ gridTemplateColumns: '44px 1fr 88px 60px 100px' }}>
+              style={{ gridTemplateColumns: isHT ? '44px 1fr 88px 88px 60px 100px' : '44px 1fr 88px 60px 100px' }}>
               <div className="px-1 py-3 flex items-center justify-center">
                 <span className="text-sm font-black text-gray-300">{lorong}</span>
               </div>
-              <div className="col-span-4 px-3 flex items-center">
+              <div className={`col-span-${isHT ? 5 : 4} px-3 flex items-center`}>
                 <span className="text-xs text-gray-300 italic">— Lorong kosong —</span>
               </div>
             </div>
@@ -1119,9 +1150,11 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
                       rank === 3 ? 'bg-orange-50' :
                       idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
 
+        const htWarningRelay = isHT && !flagged && (kp.masaSebenar > 0) && !(kp.keputusan > 0)
+
         return (
-          <div key={lorong} className={`grid border-t border-gray-100 ${rowBg}`}
-            style={{ gridTemplateColumns: '44px 1fr 88px 60px 100px' }}>
+          <div key={lorong} className={`grid border-t border-gray-100 ${htWarningRelay ? 'bg-red-50 ring-1 ring-red-300 ring-inset' : rowBg}`}
+            style={{ gridTemplateColumns: isHT ? '44px 1fr 88px 88px 60px 100px' : '44px 1fr 88px 60px 100px' }}>
 
             <div className="px-1 py-2.5 flex items-center justify-center">
               <span className="text-sm font-black text-gray-700">{lorong}</span>
@@ -1139,6 +1172,7 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
               )}
             </div>
 
+            {/* Masa Bundar */}
             <div className="px-1 py-2 flex flex-col items-center gap-0.5">
               <input type="text" inputMode="decimal"
                 value={kp._raw ?? (kp.keputusan ? fmtMasaDisplay(kp.keputusan) : '')}
@@ -1154,6 +1188,30 @@ function InputRelay({ heat, acara, keputusan, onChange, sekolahMap = {}, carianB
                 <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
               )}
             </div>
+
+            {/* Masa Sebenar — hanya bila adaHandTiming */}
+            {isHT && (
+              <div className="px-1 py-2 flex flex-col items-center gap-0.5">
+                <input type="text" inputMode="decimal"
+                  value={kp._rawHT ?? (kp.masaSebenar ? fmtMasaDisplay(kp.masaSebenar) : '')}
+                  onChange={e => onChange(lorong, '_rawHT', e.target.value)}
+                  onBlur={e => {
+                    const saat = parseMasaInput(e.target.value)
+                    onChange(lorong, 'masaSebenar', saat || null)
+                    onChange(lorong, '_rawHT', saat ? fmtMasaDisplay(saat) : e.target.value)
+                  }}
+                  placeholder="m.ss.ms" disabled={flagged}
+                  className={`w-full border-2 rounded-lg px-1 py-2.5 text-base font-mono font-bold text-center text-gray-900 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-300 ${
+                    htWarningRelay ? 'border-red-400 focus:border-red-500' : 'border-teal-300 focus:border-teal-500'
+                  }`} />
+                {htWarningRelay && (
+                  <span className="text-[9px] text-red-500 font-bold">⚠ Masa Bundar kosong</span>
+                )}
+                {kp.masaSebenar > 0 && !htWarningRelay && (
+                  <span className="text-[10px] font-mono text-teal-600 font-bold">{fmtMasaDisplay(kp.masaSebenar)}</span>
+                )}
+              </div>
+            )}
 
             <div className="px-1 py-2 flex items-center justify-center">
               {flagged ? (
@@ -1334,6 +1392,12 @@ export default function InputKeputusan() {
   // Mod Semua Peserta
   const [modSemua, setModSemua]           = useState(false)
   const [keputusanSemua, setKeputusanSemua] = useState({})
+
+  // Hand Timing warning — block HANTAR jika masaSebenar ada tapi masaBundar kosong
+  const isHTAcara = !!(selectedAcara?.adaHandTiming && selectedAcara?.peringkat === 'akhir')
+  const hasHtWarning = isHTAcara && Object.values(keputusan).some(kp =>
+    !['DNS','DNF','DQ'].includes(kp.status) && (kp.masaSebenar > 0) && !(kp.keputusan > 0)
+  )
 
   // ── Load data ──────────────────────────────────────────────────────────────
 
@@ -3477,11 +3541,14 @@ export default function InputKeputusan() {
                       } disabled:opacity-50`}>
                       {saving ? '…' : saved ? '✓ Tersimpan' : 'Simpan Draf'}
                     </button>
-                    <button onClick={handleHantar} disabled={saving}
+                    <button onClick={handleHantar} disabled={saving || hasHtWarning}
                       className="py-3.5 text-sm font-bold rounded-2xl bg-[#003399] hover:bg-[#002277] text-white disabled:bg-gray-300 transition-all">
                       {saving ? 'Menghantar…' : 'HANTAR ▶'}
                     </button>
                   </div>
+                  {hasHtWarning && (
+                    <p className="text-[11px] text-red-500 font-bold text-center">⚠ Masa Bundar wajib diisi jika Masa Sebenar ada</p>
+                  )}
                   <p className="text-[10px] text-gray-400 text-center">
                     Draf = simpan sahaja · HANTAR = hantar untuk disahkan
                   </p>

@@ -244,6 +244,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
     hadAtletPerSekolah: acara.hadAtletPerSekolah || 2,
     peringkatMode:     peringkatMode0,
     parentAcaraId:     acara.parentAcaraId     || '',
+    adaHandTiming:     acara.adaHandTiming     || false,
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
@@ -327,6 +328,7 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
         isWindReading:     detectWindFromNama(form.namaAcaraPendek),
         unitUkuran:        isPadang ? 'm' : 's',
         hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
+        adaHandTiming:     form.adaHandTiming || false,
         updatedAt:         serverTimestamp(),
       }
       await updateDoc(doc(db, 'kejohanan', kejohananId, 'acara', docId), updates)
@@ -419,6 +421,15 @@ function EditAcaraRow({ acara, kejohananId, kategoriList, acaraList, onSaved, on
               ))}
             </select>
           )}
+        </td>
+        {/* Hand Timing */}
+        <td className="px-1.5 py-1.5">
+          <label className="flex flex-col items-center gap-1 cursor-pointer">
+            <span className="text-[9px] text-gray-400 font-medium">HT</span>
+            <input type="checkbox" checked={!!form.adaHandTiming}
+              onChange={e => set('adaHandTiming', e.target.checked)}
+              className="w-4 h-4 accent-teal-600" />
+          </label>
         </td>
         {/* Tindakan */}
         <td className="px-1.5 py-1.5">

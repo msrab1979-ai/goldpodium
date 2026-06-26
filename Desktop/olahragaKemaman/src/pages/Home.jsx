@@ -726,7 +726,10 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
               const _rank = (p.rankDalamHeat === 'undefined' || p.rankDalamHeat === '') ? null : p.rankDalamHeat
               const kddk        = isLompatTinggi ? _ked : (_ked || _rank)
               const isSementara = !isLompatTinggi && !_ked && !!_rank
-              const hasil       = isPadang ? fmtJarak(p.keputusan) : fmtMasa(p.keputusan)
+              const hasilBundar = isPadang ? fmtJarak(p.keputusan) : fmtMasa(p.keputusan)
+              const hasil       = (!isPadang && acara.adaHandTiming && p.masaSebenar > 0)
+                ? `${hasilBundar} (${fmtMasa(p.masaSebenar)})`
+                : hasilBundar
               const medal       = isFinalHeat && (kddk === 1 ? '🥇' : kddk === 2 ? '🥈' : kddk === 3 ? '🥉' : null)
               // Relay: semak kelayakan guna kodSekolah; individu: guna noBib
               const layakFinal  = showCatatanCol && !flagged && finalistBibs.has(isRelay ? p.kodSekolah : p.noBib)
