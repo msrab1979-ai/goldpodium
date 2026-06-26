@@ -1019,6 +1019,21 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
 
 **Skrip audit**: `/tmp/audit-acara-peringkat.cjs` (read-only, tidak disimpan dalam repo)
 
+## FIX — Sesi 26 Jun 2026 (BukuKejohanan Hari 5, commit `f24ce72` + `0519306`)
+
+### BukuKejohanan — Hari 5 Tiada dalam Jana Buku
+
+**Fix 1 (f24ce72) — `finalHeatMap` + `hariSorted` filter:**
+- `finalHeatMap`: hanya terima `'rasmi'` → tukar ke `['rasmi','diterima']`
+- `hariSorted`: hanya terima `rankDalamHeat` → relax ke terima juga `keputusan > 0`
+
+**Fix 2 (0519306) — Root cause sebenar — rasmiAcara filter terlalu ketat:**
+- Filter `rasmiAcara` hanya load heat untuk acara `statusAcara ∈ ['rasmi','ada_keputusan','tidak_rasmi']`
+- Acara Hari 5 (contoh: no 429) mungkin ada `statusAcara` lain (null, 'selesai', dll) → diskip terus
+- Fix: buang `rasmiAcara` filter — load heat untuk **semua acara**, guna `statusKeputusan` heat sebagai penyaring
+- Fail: `BukuKejohanan.jsx` line 197-200
+- **Status**: ✅ Fixed + deployed + pushed
+
 ## FIX — Sesi 26 Jun 2026 (BukuKejohanan Hari 5, commit `f24ce72`)
 
 ### BukuKejohanan — Hari 5 Tidak Muncul dalam Jana Buku
