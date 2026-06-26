@@ -2833,10 +2833,11 @@ export default function StartList() {
   const isRelay  = selectedAcara?.jenisAcara === 'relay'
 
   // ── Derived: Heat → Final gate ────────────────────────────────────────────
-  const isSukuAkhirAcara = selectedAcara?.peringkat === 'suku_akhir'
+  const isSukuAkhirAcara    = selectedAcara?.peringkat === 'suku_akhir'
+  const isSeparuhAkhirAcara = selectedAcara?.peringkat === 'separuh_akhir'
   const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan')
-  // suku_akhir: SF dijana sebagai fasa:'heat' — guna finalDijanaKe sebagai flag dah jana
-  const finalExists    = isSukuAkhirAcara
+  // suku_akhir/separuh_akhir: final dijana di acara lain — guna finalDijanaKe sebagai flag dah jana
+  const finalExists    = (isSukuAkhirAcara || isSeparuhAkhirAcara)
     ? !!(selectedAcara?.finalDijanaKe)
     : heatList.some(h => h.fasa === 'final')
   const allHeatRasmi   = heatPhaseHeats.length > 0 &&
