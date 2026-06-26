@@ -1018,3 +1018,18 @@ grantMedal = !isSaringanAcara && (heat.fasa==='final' || heats.length===1)
 **Risiko teoridikal (tidak berlaku sekarang):** Acara saringan baru tanpa perkataan "saringan" + belum jana heat kedua → `grantMedal=true` secara salah. Mitigasi: semua 48 acara saringan dah ada "saringan" dalam nama.
 
 **Skrip audit**: `/tmp/audit-acara-peringkat.cjs` (read-only, tidak disimpan dalam repo)
+
+## FIX — Sesi 26 Jun 2026 (BukuKejohanan Hari 5, commit `f24ce72`)
+
+### BukuKejohanan — Hari 5 Tidak Muncul dalam Jana Buku
+
+**Punca 1 — `finalHeatMap` hanya terima `statusKeputusan === 'rasmi'`** (line 206-208):
+- Flow baru guna `'diterima'` — heat Hari 5 tidak masuk `finalHeatMap` → tiada data untuk jana halaman
+- Fix: `['rasmi', 'diterima'].includes(h.statusKeputusan)` untuk heat final/terus_final dan heat tunggal
+- Fail: `BukuKejohanan.jsx`
+
+**Punca 2 — `hariSorted` filter hanya terima `rankDalamHeat`** (line 1007-1008):
+- Sesetengah format (padang, terus_final) mungkin tiada `rankDalamHeat` → hari dikecualikan
+- Fix: Relax filter — terima juga peserta yang ada `keputusan > 0` (walaupun `rankDalamHeat` null)
+- Fail: `BukuKejohanan.jsx`
+- **Status**: ✅ Fixed + deployed + pushed
