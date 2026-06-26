@@ -204,8 +204,8 @@ export default function BukuKejohanan() {
           )
           const heats = hSnap.docs.map(d => ({ id: d.id, ...d.data() }))
           const final = heats.find(h =>
-            ['final', 'terus_final'].includes(h.fasa) && h.statusKeputusan === 'rasmi'
-          ) || (heats.length === 1 && heats[0].statusKeputusan === 'rasmi' ? heats[0] : null)
+            ['final', 'terus_final'].includes(h.fasa) && ['rasmi', 'diterima'].includes(h.statusKeputusan)
+          ) || (heats.length === 1 && ['rasmi', 'diterima'].includes(heats[0].statusKeputusan) ? heats[0] : null)
           // Semua heat dengan keputusan (rasmi/diterima/tidak_rasmi)
           const allHeats = heats.filter(h => ['rasmi', 'diterima', 'tidak_rasmi'].includes(h.statusKeputusan))
           return { acaraId: a.id, heat: final, allHeats }
@@ -1005,7 +1005,9 @@ export default function BukuKejohanan() {
     })
 
     const hariSorted = Object.keys(keputusanByDay).sort()
-      .filter(d => keputusanByDay[d].some(it => it.heats.some(h => (h.peserta || []).some(p => p.rankDalamHeat))))
+      .filter(d => keputusanByDay[d].some(it => it.heats.some(h =>
+        (h.peserta || []).some(p => p.rankDalamHeat || (p.keputusan != null && Number(p.keputusan) > 0))
+      )))
 
     if (hariSorted.length > 0) {
       hariSorted.forEach((tarikh, hariIdx) => {
