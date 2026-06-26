@@ -1224,7 +1224,9 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
           <div>
-            <h2 className="text-sm font-bold text-gray-800">Jana Heat Final</h2>
+            <h2 className="text-sm font-bold text-gray-800">
+              {fasaJana === 'sukuKeSeparuh' ? 'Jana Separuh Akhir' : 'Jana Heat Final'}
+            </h2>
             <p className="text-xs text-gray-400 mt-0.5">{acara.namaAcara}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
@@ -1241,7 +1243,9 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
               <>
                 <p className="font-bold">
                   Gate: {getJenisTab(acara).toUpperCase()} · Kategori {acara.kategoriKod}
-                  {finalSetup?.overrideByAcara?.[String(acara.noAcara)] ? ' · Override acara aktif' : ''}
+                  {fasaJana === 'sukuKeSeparuh'
+                    ? (finalSetup?.sukuKeSeparuhByAcara?.[String(acara.noAcara)] ? ' · Override acara aktif' : '')
+                    : (finalSetup?.overrideByAcara?.[String(acara.noAcara)] ? ' · Override acara aktif' : '')}
                 </p>
                 <p>
                   Top <strong>{bestHeat}</strong> dari setiap {heatPhaseHeats.length} heat
@@ -1257,7 +1261,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
           {/* Senarai finalis */}
           <div>
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
-              {finalis.length} {isRelay ? 'Pasukan' : 'Atlet'} Layak ke Final
+              {finalis.length} {isRelay ? 'Pasukan' : 'Atlet'} Layak ke {fasaJana === 'sukuKeSeparuh' ? 'Separuh Akhir' : 'Final'}
             </p>
 
             {!loadingSetup && finalis.length === 0 ? (
@@ -1337,7 +1341,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
               onClick={handleSimpan}
               disabled={saving || loadingSetup || finalis.length === 0}
               className="px-5 py-2 text-xs font-bold bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
-              {saving ? 'Menyimpan…' : `✓ Cipta Final (${finalis.length} ${isRelay ? 'pasukan' : 'peserta'})`}
+              {saving ? 'Menyimpan…' : `✓ ${fasaJana === 'sukuKeSeparuh' ? 'Cipta Separuh Akhir' : 'Cipta Final'} (${finalis.length} ${isRelay ? 'pasukan' : 'peserta'})`}
             </button>
           </div>
         </div>
@@ -2829,10 +2833,14 @@ export default function StartList() {
   const isRelay  = selectedAcara?.jenisAcara === 'relay'
 
   // ── Derived: Heat → Final gate ────────────────────────────────────────────
+  const isSukuAkhirAcara = selectedAcara?.peringkat === 'suku_akhir'
   const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan')
-  const finalExists    = heatList.some(h => h.fasa === 'final')
+  // suku_akhir: SF dijana sebagai fasa:'heat' — guna finalDijanaKe sebagai flag dah jana
+  const finalExists    = isSukuAkhirAcara
+    ? !!(selectedAcara?.finalDijanaKe)
+    : heatList.some(h => h.fasa === 'final')
   const allHeatRasmi   = heatPhaseHeats.length > 0 &&
-    heatPhaseHeats.every(h => h.statusKeputusan === 'rasmi')
+    heatPhaseHeats.every(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
   const canJanaFinal   = canEdit && allHeatRasmi && !finalExists
 
   // ── Derived: Jana Final dari final acara view ──────────────────────────────
@@ -3719,7 +3727,7 @@ export default function StartList() {
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          Jana Final
+                          {isSukuAkhirAcara ? 'Jana SF' : 'Jana Final'}
                         </button>
                       )}
                     </div>
@@ -3774,14 +3782,14 @@ export default function StartList() {
                       <div>
                         <p className="text-xs font-bold text-purple-800">Semua Heat RASMI</p>
                         <p className="text-[10px] text-purple-500">
-                          {heatPhaseHeats.length} heat selesai · Sedia pilih finalis dan jana heat Final
+                          {heatPhaseHeats.length} heat selesai · Sedia pilih finalis dan jana {isSukuAkhirAcara ? 'Separuh Akhir' : 'heat Final'}
                         </p>
                       </div>
                     </div>
                     <button
                       onClick={() => setModal({ type: 'janaFinal' })}
                       className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shrink-0">
-                      Jana Final →
+                      {isSukuAkhirAcara ? 'Jana SF →' : 'Jana Final →'}
                     </button>
                   </div>
                 )}
