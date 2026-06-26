@@ -2103,7 +2103,8 @@ export default function InputKeputusan() {
       }
 
       // 4. Pilih finalis dari heats saringan semasa
-      const raw = _selectFinalists(heats, selectedAcara, finalSetup)
+      const fasaParam = selectedAcara?.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
+      const raw = _selectFinalists(heats, selectedAcara, finalSetup, fasaParam)
       const isPadangAcara = ['padang_lompat', 'padang_balin'].includes(finalAcara.jenisAcara)
       const isMassAcara   = finalAcara.jenisAcara === 'mass_start'
       const sortFn = (a, b) => isPadangAcara ? b.keputusan - a.keputusan : a.keputusan - b.keputusan
@@ -2216,7 +2217,8 @@ export default function InputKeputusan() {
       const isSaringanHeat = !['final', 'terus_final'].includes(selectedHeat?.fasa) && selectedHeat?.peringkat !== 'final'
       const cetakQMap = new Map()
       if (isSaringanHeat && selectedAcara) {
-        const raw = _selectFinalists(heats, selectedAcara, finalSetup)
+        const _fasaParam = selectedAcara?.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
+        const raw = _selectFinalists(heats, selectedAcara, finalSetup, _fasaParam)
         raw.forEach(f => {
           const key = isRelayAcara ? f.kodSekolah : f.noBib
           if (key) cetakQMap.set(key, f.qualifyType || 'q')
@@ -2791,12 +2793,13 @@ export default function InputKeputusan() {
   // Semak jika final sudah dijana ke acara lain
   const finalDijanaKe = selectedAcara?.finalDijanaKe || null
 
-  // Set noBib yang layak final — dari heat final jika ada, atau kira dari saringan results
+  // Set noBib yang layak (ke peringkat seterusnya) — dari heat final jika ada, atau kira dari saringan results
   const finalisBibs = useMemo(() => {
     const finalHeat = heats.find(h => h.peringkat === 'final')
     if (finalHeat) return new Set((finalHeat.peserta || []).map(p => p.noBib).filter(Boolean))
     if (!selectedAcara) return new Set()
-    const raw = _selectFinalists(heats, selectedAcara, finalSetup)
+    const fasa = selectedAcara.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
+    const raw = _selectFinalists(heats, selectedAcara, finalSetup, fasa)
     return new Set(raw.map(f => f.noBib).filter(Boolean))
   }, [heats, selectedAcara, finalSetup])
 
@@ -2806,7 +2809,8 @@ export default function InputKeputusan() {
     if (finalHeat) return new Map() // final dah dijana, Q/q tak relevan
     if (!selectedAcara) return new Map()
     const isRelay = selectedAcara.jenisAcara === 'relay'
-    const raw = _selectFinalists(heats, selectedAcara, finalSetup)
+    const fasa = selectedAcara.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
+    const raw = _selectFinalists(heats, selectedAcara, finalSetup, fasa)
     const m = new Map()
     raw.forEach(f => {
       const key = isRelay ? f.kodSekolah : f.noBib
