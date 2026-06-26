@@ -7,7 +7,7 @@ metadata:
   originSessionId: 1e75eee1-2133-4651-803c-b283bd6c0e7e
 ---
 
-## Status: SIAP PENUH (26 Jun 2026) — commit `85df169`
+## Status: SIAP PENUH + SERPENTINE (26 Jun 2026) — commit `c0cb528`
 
 ### Yang Dah Dibina
 
@@ -48,6 +48,28 @@ metadata:
 - Bug #10: `finalExists` untuk separuh_akhir tidak guna `finalDijanaKe` — butang Jana Final muncul semula selepas jana
 - Extend `finalExists` logic: `(isSukuAkhirAcara || isSeparuhAkhirAcara) ? !!finalDijanaKe : heatList.some(h => h.fasa==='final')`
 
+**Fasa 2 Serpentine — commit `c0cb528` (SIAP):**
+- `finalistUtils.js`: fungsi baru `serpentineSeed(finalis, bilHeat)` — zig-zag ikut blok
+  - blok genap: kiri→kanan (H1,H2,...), blok ganjil: kanan→kiri (...,H2,H1)
+  - 8 finalis, 2 heat: H1=[rank1,4,5,8], H2=[rank2,3,6,7] ✓ seimbang
+- `StartList.jsx JanaFinalModal`:
+  - Tambah state `bilHeatSF` (default 2), load dari `wa_config.bilHeatSukuAkhir`
+  - `handleSimpan` bahagi kepada 2 laluan: serpentine (sukuKeSeparuh) vs satu heat (lain)
+  - Serpentine: sort→seed→assign lorong WA per heat→batch write N heat docs
+  - Helper `buatEntryPeserta()` — elak duplikasi kod peserta entry
+- `AcaraSetup.jsx WaConfigPanel`:
+  - Field baru `bilHeatSukuAkhir` (integer, default 2) dalam tab Lorong Final
+  - Kotak teal "Suku Akhir → Separuh Akhir" — admin set bilangan heat SF
+  - `WA_CONFIG_DEFAULT` tambah `bilHeatSukuAkhir: 2`
+
+**Ghost Run Serpentine — BERSIH:**
+- `fasaJana='sukuKeSeparuh'` → masuk laluan serpentine ✓
+- `bilHeatSF` baca dari `wa_config` ✓
+- Sort finalis by masa → serpentine → lorong WA per heat ✓
+- Simpan N heat `fasa:'heat'` dalam acara separuh_akhir (targetKey) ✓
+- `finalDijanaKe` ditulis → butang Jana SF hilang ✓
+- Auto-register finalis ke pendaftaran acara SF ✓
+
 ---
 
 ### Flow Lengkap (Sekarang Boleh Guna)
@@ -81,16 +103,5 @@ tetapan/finalSetup:
 
 ---
 
-### KIV — Fasa 2 Serpentine WA TR20
-
-- `serpentineSeed(finalists, bilHeat)` dalam finalistUtils.js
-- Rank 1→SA1, 2→SA2, 3→SA2, 4→SA1 (zig-zag)
-- Lorong Q=tengah (3,4,5,6), q=tepi (1,2,7,8)
-- Belum bina — tunggu event guna suku akhir dulu
-
-### KIV — Soalan Belum Jawab
-1. Serpentine — WA strict atau assign lorong biasa?
-2. Berapa heat SF — admin set manual atau auto-kira?
-
 **Why:** User nak upgrade sistem untuk event akan datang. Data KOAM 2026 zero sentuh.
-**How to apply:** Flow lengkap dah boleh guna. Serpentine KIV Fasa 2.
+**How to apply:** Flow lengkap dah boleh guna termasuk serpentine. Tiada KIV berbaki.

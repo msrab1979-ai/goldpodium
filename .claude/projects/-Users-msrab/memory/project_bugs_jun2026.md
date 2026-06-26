@@ -529,6 +529,20 @@ Flow pengurus daftar → StartList jana heat SF → pencatat input masa → admi
 - Heat akhir `fasa:'final'`, `grantMedal=true`: medal + mata olahragawan ditulis ✓
 - Rekod trigger: fires untuk rank 1 (tidak bergantung grantMedal) ✓
 
+## FEATURE — Sesi 26 Jun 2026 (Serpentine Fasa 2, commit `c0cb528`)
+
+### Serpentine Seeding — Suku Akhir → Separuh Akhir
+- **finalistUtils.js**: fungsi baru `serpentineSeed(finalis, bilHeat)`
+  - zig-zag blok genap (kiri→kanan) vs ganjil (kanan→kiri)
+  - 8 finalis, 2 heat → H1=[rank1,4,5,8], H2=[rank2,3,6,7]
+- **StartList.jsx JanaFinalModal**:
+  - State baru `bilHeatSF` load dari `wa_config.bilHeatSukuAkhir`
+  - `handleSimpan` bahagi: serpentine bila `fasaJana='sukuKeSeparuh'` vs satu heat lain
+  - Helper `buatEntryPeserta()` dikongsi kedua laluan
+  - Serpentine: sort→seed→assign lorong WA per heat→batch write N heat
+- **AcaraSetup.jsx WaConfigPanel**: kotak teal baru "Bilangan Heat SF" dalam tab Lorong Final
+- **Ghost Run: BERSIH** — tiada bug ditemui
+
 ## Ghost Run — Sesi 26 Jun 2026 (Terus Akhir + Relay — BERSIH)
 
 ### Terus Akhir (peringkat='akhir', tiada parentAcaraId)
