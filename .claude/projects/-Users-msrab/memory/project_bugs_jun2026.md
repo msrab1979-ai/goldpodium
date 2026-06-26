@@ -398,6 +398,12 @@ metadata:
 - **startListPdfUtils**: fasaStr "SUKU AKHIR 1/3" / "SEPARUH AKHIR 1/2"
 - **BukuKejohanan**: heatLabel dalam PDF keputusan
 
+### UX Tetapan Final — Card Layout (commit `898ca76`)
+- **Tukar**: Table 7 kolum → card per acara dengan 2 bahagian jelas
+- **Kotak ungu**: "Saringan / SF → Akhir" — BH + BT + kiraan = Final
+- **Kotak teal**: "Suku Akhir → Separuh Akhir" — hanya muncul bila acara ada `peringkat:'suku_akhir'`
+- **Nota**: Kotak teal tidak muncul untuk KOAM 2026 — betul, tiada acara suku akhir lagi
+
 ### Tetapan Final Suku Akhir + Fix B3/B4 (commit `9109bf0`)
 - **KategoriSetup**: kolum baru `BH→SF` + `BT→SF` (teal) hanya untuk acara `suku_akhir`, state `sukuOv` berasingan, simpan ke `sukuKeSeparuhByAcara`, `setDoc merge:true` (fix overwrite risiko)
 - **finalistUtils**: `getFinalistSetup` + `selectFinalists` terima param `fasa` — `'sukuKeSeparuh'` baca `sukuKeSeparuhByAcara`, `'toFinal'` kekal `overrideByAcara`
