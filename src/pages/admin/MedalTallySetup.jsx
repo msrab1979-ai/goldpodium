@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { collection, getDocs, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc, query, orderBy } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -97,7 +97,8 @@ function kiraDataPingat(heats, acara, atletMap) {
       if (isRelay) {
         sekolah = p.namaPasukan || p.kodSekolah || 'Tidak Diketahui'
       } else {
-        sekolah = atletMap[p.atletId]?.sekolah || p.sekolah || 'Tidak Diketahui'
+        // GP peserta simpan nama & sekolah terus dalam doc peserta (namaAtlet, sekolah)
+        sekolah = p.sekolah || atletMap[p.noKP]?.sekolah || atletMap[p.atletId]?.sekolah || 'Tidak Diketahui'
       }
 
       const jenisPin = i === 0 ? 'emas' : i === 1 ? 'perak' : 'gangsa'
@@ -109,7 +110,7 @@ function kiraDataPingat(heats, acara, atletMap) {
       pemenangList.push({
         kedudukan: i + 1,
         sekolah,
-        namaAtlet: isRelay ? (p.namaPasukan || '—') : (atletMap[p.atletId]?.nama || p.nama || p.atletId || '—'),
+        namaAtlet: isRelay ? (p.namaPasukan || '—') : (p.namaAtlet || atletMap[p.noKP]?.nama || atletMap[p.atletId]?.nama || p.nama || p.noKP || '—'),
         acara:     a?.nama || heat.acaraId || '—',
         kategori:  a?.kategori || '',
         jantina:   a?.jantina || '',
@@ -235,6 +236,10 @@ export default function MedalTallySetup() {
     if (!schoolId || !kejId) return
     setMuatTurun(true)
     try {
+      // Nama sekolah dari tenant doc (GP single-school — semua atlet dari sekolah sama)
+      const tenantSnap = await getDoc(doc(db, 'tenants', schoolId))
+      const namaSekolah = tenantSnap.data()?.namaSekolah || schoolId
+
       // Muat semua acara
       const aSnap = await getDocs(
         query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('nama'))
@@ -249,10 +254,10 @@ export default function MedalTallySetup() {
       const heatArrays  = await Promise.all(heatPromises)
       const semuaHeats  = heatArrays.flat()
 
-      // Muat atlet map
+      // Muat atlet map (key = noKP = doc ID)
       const atsSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
       const atletMap = {}
-      atsSnap.docs.forEach(d => { atletMap[d.id] = d.data() })
+      atsSnap.docs.forEach(d => { atletMap[d.id] = { ...d.data(), sekolah: namaSekolah } })
 
       const { tally: t, pemenangList } = kiraDataPingat(semuaHeats, semuaAcara, atletMap)
       setTally(t)

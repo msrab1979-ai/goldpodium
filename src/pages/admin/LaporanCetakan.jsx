@@ -156,9 +156,9 @@ function cetakBukuKejohanan(acara, heatsMap, atletMap, namaKej, namaSekolah) {
       })
 
       const rows = sorted.map((p, i) => {
-        const nama     = isRelay ? (p.namaPasukan || p.atletId || '—') : (atletMap[p.atletId]?.nama || p.nama || p.atletId || '—')
-        const sekolah  = isRelay ? '' : (atletMap[p.atletId]?.sekolah || p.sekolah || '—')
-        const kod      = isRelay ? (p.kodSekolah || '') : (atletMap[p.atletId]?.kodSekolah || '')
+        const nama     = isRelay ? (p.namaPasukan || p.namaAtlet || '—') : (p.namaAtlet || atletMap[p.noKP]?.nama || atletMap[p.atletId]?.nama || p.nama || p.noKP || '—')
+        const sekolah  = isRelay ? '' : (p.sekolah || atletMap[p.noKP]?.sekolah || atletMap[p.atletId]?.sekolah || '—')
+        const kod      = isRelay ? (p.kodSekolah || '') : (p.kodSekolah || atletMap[p.noKP]?.kodSekolah || '')
         const keputusan = p.dns ? 'DNS' : p.dnf ? 'DNF' : p.dq ? 'DQ'
           : isPadang ? `${(jarakTerbaik(p.cubaan) || 0).toFixed(2)}m`
           : saatKeStr(masaKeSaat(p.masa))
@@ -255,8 +255,8 @@ function cetakKeputusanAcara(acara, heats, atletMap, namaKej) {
       head: [['Ked.', 'Nama / Pasukan', 'Sekolah', 'Keputusan']],
       body: sorted.map((p, i) => [
         p.dns||p.dnf||p.dq ? '—' : (p.kedudukan || i+1),
-        isRelay ? (p.namaPasukan||p.atletId||'—') : (atletMap[p.atletId]?.nama||p.nama||p.atletId||'—'),
-        isRelay ? '' : (atletMap[p.atletId]?.sekolah||p.sekolah||'—'),
+        isRelay ? (p.namaPasukan||p.namaAtlet||'—') : (p.namaAtlet||atletMap[p.noKP]?.nama||atletMap[p.atletId]?.nama||p.nama||p.noKP||'—'),
+        isRelay ? '' : (p.sekolah||atletMap[p.noKP]?.sekolah||atletMap[p.atletId]?.sekolah||'—'),
         p.dns ? 'DNS' : p.dnf ? 'DNF' : p.dq ? 'DQ'
           : isPadang ? `${(jarakTerbaik(p.cubaan)||0).toFixed(2)}m`
           : saatKeStr(masaKeSaat(p.masa)),
@@ -314,18 +314,20 @@ export default function LaporanCetakan() {
     if (!schoolId || !kejId) return
     setMuatTurun(true)
     try {
-      const [aSnap, atsSnap, kejSnap] = await Promise.all([
+      const [aSnap, atsSnap, kejSnap, tenantSnap] = await Promise.all([
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('nama'))),
         getDocs(collection(db, 'tenants', schoolId, 'atlet')),
         getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId)),
+        getDoc(doc(db, 'tenants', schoolId)),
       ])
 
       const semuaAcara = aSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       setAcara(semuaAcara)
       if (kejSnap.exists()) setKejData(kejSnap.data())
 
+      const namaSekolah = tenantSnap.data()?.namaSekolah || schoolId
       const map = {}
-      atsSnap.docs.forEach(d => { map[d.id] = d.data() })
+      atsSnap.docs.forEach(d => { map[d.id] = { ...d.data(), sekolah: namaSekolah } })
       setAtletMap(map)
 
       // Muat semua heat

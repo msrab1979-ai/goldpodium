@@ -53,12 +53,15 @@ function jarakTerbaik(cubaan = []) {
   return valid.length ? Math.max(...valid) : null
 }
 
+// Key unik peserta — GP guna noKP sebagai ID (bukan atletId)
+function pesertaKey(p) { return p.noKP || p.atletId || p.noBib || '' }
+
 function kiraRankLorong(peserta) {
   const valid = peserta.filter(p => masaKeSaat(p.masa) !== null && !p.dns && !p.dnf && !p.dq)
   const sorted = [...valid].sort((a, b) => (masaKeSaat(a.masa) || 9999) - (masaKeSaat(b.masa) || 9999))
   return peserta.map(p => {
     if (p.dns || p.dnf || p.dq) return { ...p, kedudukan: null }
-    const idx = sorted.findIndex(s => s.atletId === p.atletId)
+    const idx = sorted.findIndex(s => pesertaKey(s) === pesertaKey(p))
     return { ...p, kedudukan: idx >= 0 ? idx + 1 : null }
   })
 }
@@ -68,9 +71,20 @@ function kiraRankPadang(peserta) {
   const sorted = [...valid].sort((a, b) => (jarakTerbaik(b.cubaan) || 0) - (jarakTerbaik(a.cubaan) || 0))
   return peserta.map(p => {
     if (p.dns || p.dnf || p.dq) return { ...p, kedudukan: null }
-    const idx = sorted.findIndex(s => s.atletId === p.atletId)
+    const idx = sorted.findIndex(s => pesertaKey(s) === pesertaKey(p))
     return { ...p, kedudukan: idx >= 0 ? idx + 1 : null }
   })
+}
+
+// Nama & sekolah peserta — GP simpan dalam peserta doc sendiri (namaAtlet, sekolah)
+// atletMap digunakan sebagai fallback sahaja
+function namaPeserta(p, atletMap, isRelay) {
+  if (isRelay) return p.namaPasukan || p.namaAtlet || p.atletId || '—'
+  return p.namaAtlet || atletMap[p.noKP]?.nama || atletMap[p.atletId]?.nama || p.nama || p.noKP || '—'
+}
+function sekolahPeserta(p, atletMap, isRelay) {
+  if (isRelay) return ''
+  return p.sekolah || atletMap[p.noKP]?.sekolah || atletMap[p.atletId]?.sekolah || ''
 }
 
 // ─── Const / label ────────────────────────────────────────────────────────────
@@ -152,8 +166,8 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
     }
   }
 
-  const namaP   = p => isRelay ? (p.namaPasukan || p.atletId || '—') : (atletMap[p.atletId]?.nama || p.nama || p.atletId || '—')
-  const sekolahP = p => isRelay ? '' : (atletMap[p.atletId]?.sekolah || p.sekolah || '')
+  const namaP    = p => namaPeserta(p, atletMap, isRelay)
+  const sekolahP = p => sekolahPeserta(p, atletMap, isRelay)
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center px-2 py-4 overflow-y-auto"
@@ -361,12 +375,12 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
                         #{p.giliran || i+1}
                       </span>
                       <p className="text-sm font-bold text-gray-800 truncate">
-                        {atletMap[p.atletId]?.nama || p.nama || p.atletId || '—'}
+                        {namaPeserta(p, atletMap, false)}
                       </p>
                     </div>
-                    {(atletMap[p.atletId]?.sekolah || p.sekolah) && (
+                    {sekolahPeserta(p, atletMap, false) && (
                       <p className="text-[10px] text-gray-400 mt-0.5 ml-7">
-                        {atletMap[p.atletId]?.sekolah || p.sekolah}
+                        {sekolahPeserta(p, atletMap, false)}
                       </p>
                     )}
                   </div>
@@ -546,7 +560,7 @@ function AcaraHeatPanel({ acara, atletMap, schoolId, kejId, onRefresh }) {
                             {p.dns || p.dnf || p.dq ? '—' : (p.kedudukan || i+1)}
                           </td>
                           <td className="py-1 pr-2 text-gray-700 truncate max-w-[150px]">
-                            {atletMap[p.atletId]?.nama || p.namaPasukan || p.nama || p.atletId}
+                            {namaPeserta(p, atletMap, acara.jenis === 'relay')}
                           </td>
                           <td className="py-1 text-right font-mono text-gray-600">
                             {p.dns ? <span className="text-red-400 text-[10px] font-bold">DNS</span>
