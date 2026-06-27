@@ -2,87 +2,136 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper — baca role dari Firestore (bukan custom claims) ──────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // HELPER FUNCTIONS
+    // ══════════════════════════════════════════════════════════════════════════
 
+    // Semak user log masuk
     function isAuth() {
       return request.auth != null;
     }
 
-    function getUserRole() {
-      return isAuth()
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
-        : '';
+    // Baca data user dari Firestore (cached oleh Firebase dalam 1 request)
+    function myData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    // Semak role
     function isSuperadmin() {
-      return isAuth() && getUserRole() == 'superadmin';
+      return isAuth() && myData().get('role', '') == 'superadmin';
     }
 
     function isAdmin() {
-      return isAuth() && getUserRole() == 'admin';
+      return isAuth() && myData().get('role', '') == 'admin';
     }
 
-    function isAdminOfSchool(schoolId) {
-      return isAdmin()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('schoolId', '') == schoolId;
+    function isTeacher() {
+      return isAuth() && myData().get('role', '') == 'teacher';
     }
 
-    function getUserData(schoolId) {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('schoolId', '') == schoolId;
+    // Semak admin/teacher milik sekolah ini
+    function isMySchool(schoolId) {
+      return isAuth() && myData().get('schoolId', '') == schoolId;
     }
 
-    // ── Login attempts — buka untuk rate limiting ─────────────────────────────
+    // Admin atau superadmin untuk sekolah ini
+    function canAccessSchool(schoolId) {
+      return isSuperadmin() || (isAdmin() && isMySchool(schoolId));
+    }
+
+    // Admin/teacher/superadmin untuk sekolah ini (baca sahaja)
+    function canReadSchool(schoolId) {
+      return isSuperadmin()
+        || ((isAdmin() || isTeacher()) && isMySchool(schoolId));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // LOGIN ATTEMPTS — rate limiting (buka penuh, tiada data sensitif)
+    // ══════════════════════════════════════════════════════════════════════════
 
     match /login_attempts/{docId} {
       allow read, write: if true;
     }
 
-    // ── Users ─────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // USERS — profil pengguna
+    // ══════════════════════════════════════════════════════════════════════════
 
     match /users/{uid} {
+      // User baca profil sendiri, superadmin baca semua
       allow read: if isAuth() && (request.auth.uid == uid || isSuperadmin());
+
+      // Superadmin boleh tulis mana-mana profil
       allow write: if isSuperadmin();
-      // First-run: user cipta doc sendiri sebagai superadmin (0 superadmin semasa)
+
+      // First-run: user baharu cipta profil superadmin pertama
       allow create: if isAuth()
                     && request.auth.uid == uid
-                    && request.resource.data.role == 'superadmin';
-      // Count query untuk semak bilangan superadmin semasa setup
-      allow list: if isAuth();
+                    && request.resource.data.get('role', '') == 'superadmin';
+
+      // Senarai user: superadmin sahaja
+      allow list: if isSuperadmin();
     }
 
-    // ── Superadmin — akses penuh ──────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // TENANTS — data sekolah (multi-tenant root)
+    // ══════════════════════════════════════════════════════════════════════════
 
-    match /{document=**} {
-      allow read, write: if isSuperadmin();
-    }
-
-    // ── Tenants ───────────────────────────────────────────────────────────────
-
+    // Profil sekolah itu sendiri
     match /tenants/{schoolId} {
-      allow read: if isAuth() && (isSuperadmin() || getUserData(schoolId));
+      allow read:  if canReadSchool(schoolId);
       allow write: if isSuperadmin();
     }
 
+    // ── Atlet master ─────────────────────────────────────────────────────────
+    match /tenants/{schoolId}/atlet/{atletId} {
+      allow read:   if canReadSchool(schoolId);
+      allow write:  if canAccessSchool(schoolId);
+    }
+
+    // ── Kejohanan ─────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId} {
-      allow read, write: if isAuth() && (isSuperadmin() || isAdminOfSchool(schoolId));
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
     }
 
-    match /tenants/{schoolId}/kejohanan/{kejId}/{sub=**} {
-      allow read, write: if isAuth() && (isSuperadmin() || isAdminOfSchool(schoolId));
+    // ── Semua subcollection dalam kejohanan ───────────────────────────────────
+    // (kategori, acara, acara/heat, pendaftaran, jadualKhas, tetapan)
+    match /tenants/{schoolId}/kejohanan/{kejId}/{subcol}/{docId} {
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
     }
 
-    match /tenants/{schoolId}/{document=**} {
-      allow read, write: if isSuperadmin();
+    // Heat (acara subcollection 3 peringkat dalam)
+    match /tenants/{schoolId}/kejohanan/{kejId}/acara/{acaraId}/heat/{heatId} {
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
     }
 
-    // ── Demo — baca awam ──────────────────────────────────────────────────────
+    // Wildcard untuk subcollection dalam kejohanan yang lebih dalam
+    match /tenants/{schoolId}/kejohanan/{kejId}/{path=**} {
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // Wildcard untuk semua lain dalam tenant (selamat, ikut sekolah)
+    match /tenants/{schoolId}/{path=**} {
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // DEMO — data awam untuk demo/landing
+    // ══════════════════════════════════════════════════════════════════════════
 
     match /demo/{document=**} {
-      allow read: if true;
+      allow read:  if true;
       allow write: if isSuperadmin();
     }
 
-    // ── Block semua lain ──────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // BLOCK SEMUA — default deny
+    // ══════════════════════════════════════════════════════════════════════════
 
     match /{document=**} {
       allow read, write: if false;
