@@ -39,6 +39,13 @@ service cloud.firestore {
       return isSuperadmin() || (isAdmin() && isMySchool(schoolId));
     }
 
+    // Teacher boleh tulis heat (input keputusan) untuk sekolah sendiri
+    function canWriteHeat(schoolId) {
+      return isSuperadmin()
+        || (isAdmin() && isMySchool(schoolId))
+        || (isTeacher() && isMySchool(schoolId));
+    }
+
     // Admin/teacher/superadmin untuk sekolah ini (baca sahaja)
     function canReadSchool(schoolId) {
       return isSuperadmin()
@@ -58,19 +65,24 @@ service cloud.firestore {
     // ══════════════════════════════════════════════════════════════════════════
 
     match /users/{uid} {
-      // User baca profil sendiri, superadmin baca semua
-      allow read: if isAuth() && (request.auth.uid == uid || isSuperadmin());
+      // User baca profil sendiri; superadmin baca semua; admin baca user dalam schoolId sendiri
+      allow read: if isAuth() && (
+        request.auth.uid == uid
+        || isSuperadmin()
+        || (isAdmin() && myData().get('schoolId','') != '')
+      );
 
-      // Superadmin boleh tulis mana-mana profil
-      allow write: if isSuperadmin();
+      // Superadmin boleh tulis mana-mana; admin hanya tulis user dalam schoolId sendiri
+      allow write: if isSuperadmin()
+        || (isAdmin() && isMySchool(resource.data.get('schoolId','')));
 
-      // First-run: user baharu cipta profil superadmin pertama
+      // First-run: user baharu cipta profil sendiri (superadmin pertama sahaja)
       allow create: if isAuth()
                     && request.auth.uid == uid
                     && request.resource.data.get('role', '') == 'superadmin';
 
-      // Senarai user: superadmin sahaja
-      allow list: if isSuperadmin();
+      // Senarai user: superadmin atau admin (admin urus teacher sekolah sendiri)
+      allow list: if isSuperadmin() || isAdmin();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -105,11 +117,11 @@ service cloud.firestore {
     // ── Heat — flat di bawah kejohanan (bukan nested dalam acara) ────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
       allow read:  if canReadSchool(schoolId);
-      allow write: if canAccessSchool(schoolId);
+      allow write: if canWriteHeat(schoolId);
     }
 
     // ── Semua subcollection lain dalam kejohanan ──────────────────────────────
-    // (kategori, acara, pendaftaran, jadualKhas, tetapan)
+    // (kategori, acara, pendaftaran, jadualKhas, tetapan, mata_olahragawan, medal_tally)
     match /tenants/{schoolId}/kejohanan/{kejId}/{subcol}/{docId} {
       allow read:  if canReadSchool(schoolId);
       allow write: if canAccessSchool(schoolId);
@@ -118,6 +130,12 @@ service cloud.firestore {
     // Wildcard untuk subcollection yang lebih dalam jika ada
     match /tenants/{schoolId}/kejohanan/{kejId}/{path=**} {
       allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Rekod kejohanan — baca awam (untuk landing page), tulis admin sahaja ──
+    match /tenants/{schoolId}/rekod/{rekodKey} {
+      allow read:  if true;
       allow write: if canAccessSchool(schoolId);
     }
 

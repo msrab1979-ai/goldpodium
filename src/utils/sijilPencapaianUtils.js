@@ -47,14 +47,14 @@ export function labelKedudukan(rank) {
  * Ambil senarai pencapaian INDIVIDU dari mata_olahragawan.
  * Filter: rank ≤ hadKedudukan, kodSekolah match (optional).
  */
-async function ambilSenaraiIndividu(db, kejId, hadKedudukan, kodSekolah) {
+async function ambilSenaraiIndividu(db, schoolId, kejId, hadKedudukan, kodSekolah) {
   let q = query(
-    collection(db, 'mata_olahragawan'),
+    collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan'),
     where('kejohananId', '==', kejId),
   )
   if (kodSekolah) {
     q = query(
-      collection(db, 'mata_olahragawan'),
+      collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan'),
       where('kejohananId', '==', kejId),
       where('kodSekolah', '==', kodSekolah),
     )
@@ -104,11 +104,11 @@ async function ambilSenaraiIndividu(db, kejId, hadKedudukan, kodSekolah) {
  *     - peserta.kodSekolah === kodSekolah (kalau filter)
  *   Loop ahliPasukan[] → satu entry per atlet
  */
-async function ambilSenaraiRelay(db, kejId, hadKedudukan, kodSekolah) {
+async function ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah) {
   const senarai = []
   const acaraSnap = await getDocs(
     query(
-      collection(db, 'kejohanan', kejId, 'acara'),
+      collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'),
       where('jenisAcara', '==', 'relay'),
     )
   )
@@ -118,7 +118,7 @@ async function ambilSenaraiRelay(db, kejId, hadKedudukan, kodSekolah) {
     const namaAcara = acara.namaAcara || acaraDoc.id
 
     const heatSnap = await getDocs(
-      collection(db, 'kejohanan', kejId, 'acara', acaraDoc.id, 'heat')
+      query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraDoc.id))
     )
 
     for (const heatDoc of heatSnap.docs) {
@@ -165,14 +165,15 @@ async function ambilSenaraiRelay(db, kejId, hadKedudukan, kodSekolah) {
  * Filter: rank ≤ hadKedudukan, kodSekolah match (optional).
  *
  * @param {object} db Firestore db
+ * @param {string} schoolId Tenant school ID
  * @param {string} kejId Kejohanan ID
  * @param {number} hadKedudukan Maximum rank yang layak (1-10)
  * @param {string|null} kodSekolah Filter sekolah, null = semua
  */
-export async function ambilSenaraiPencapaian(db, kejId, hadKedudukan = 5, kodSekolah = null) {
+export async function ambilSenaraiPencapaian(db, schoolId, kejId, hadKedudukan = 5, kodSekolah = null) {
   const [individu, relay] = await Promise.all([
-    ambilSenaraiIndividu(db, kejId, hadKedudukan, kodSekolah),
-    ambilSenaraiRelay(db, kejId, hadKedudukan, kodSekolah),
+    ambilSenaraiIndividu(db, schoolId, kejId, hadKedudukan, kodSekolah),
+    ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah),
   ])
   const senarai = [...individu, ...relay]
 

@@ -26,30 +26,27 @@ export function rekodKey(namaAcara, jantina, kategoriKod, peringkat) {
  * Fetch rekod Daerah (D), Negeri (N), Kebangsaan (K) untuk satu acara.
  * Return null jika tiada rekod untuk peringkat tersebut.
  *
+ * @param {string} schoolId - ID tenant (GP multi-tenant)
  * @param {{ namaAcara: string, jantina: string, kategoriKod: string }} acara
  * @returns {Promise<{ D: object|null, N: object|null, K: object|null }>}
  */
-export async function cariRekodUntukAcara(acara) {
+export async function cariRekodUntukAcara(schoolId, acara) {
   const { namaAcara, namaAcaraPendek, jantina, kategoriKod } = acara
 
   const nama = (namaAcaraPendek || namaAcara || '').trim()
 
-  // Kelas umur = bahagian nama selepas namaAcaraPendek
-  // Contoh: namaAcara "80M BERPAGAR L12", namaAcaraPendek "80M BERPAGAR" → kelas = "L12"
   const kelasDariNama = (namaAcara && namaAcaraPendek && namaAcara.trim() !== namaAcaraPendek.trim())
     ? namaAcara.trim().slice(namaAcaraPendek.trim().length).trim()
     : ''
 
-  // Bina senarai kategori untuk dicuba (buang duplikat)
   const katsToTry = [...new Set([
-    kategoriKod,      // format baru: kod huruf (A, B, C…)
-    kelasDariNama,    // format lama: kelas umur dari nama (L12, P12, L15…)
+    kategoriKod,
+    kelasDariNama,
   ].filter(Boolean))]
 
-  // Cari rekod untuk satu peringkat — cuba semua kombinasi key secara parallel
   async function cariSatu(peringkat) {
     const snaps = await Promise.all(
-      katsToTry.map(kat => getDoc(doc(db, 'rekod', rekodKey(nama, jantina, kat, peringkat))))
+      katsToTry.map(kat => getDoc(doc(db, 'tenants', schoolId, 'rekod', rekodKey(nama, jantina, kat, peringkat))))
     )
     const found = snaps.find(s => s.exists())
     return found ? found.data() : null

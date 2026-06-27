@@ -7,32 +7,34 @@
  * Admin ubah had dalam DB → sistem ikut automatik.
  * Tiada nilai hardcode dalam fungsi ini.
  *
+ * GP Multi-tenant: SEMUA path mesti guna tenants/{schoolId}/...
+ *
  * GATE 1 — key: noKP
  *   Had: kategori/{kategoriId}.hadAcaraIndividu + hadAcaraBeregu
  *   Semak bilangan acara individu & relay yang atlet sudah daftar.
  *
  * GATE 2 — key: kodSekolah + aceraId
- *   Had: acara/{aceraId}.hadAtletPerSekolah (dalam sub-collection kejohanan)
- *   Semak bilangan atlet sekolah yang sudah daftar acara yang sama.
+ *   Had: acara/{aceraId}.hadAtletPerSekolah
+ *   Semak bilangan atlet yang sudah daftar acara yang sama.
  *
  * GATE 3 — key: noKP + tarikhLahir
  *   Had: kategori/{kategoriId}.tahunLahirMin + tahunLahirMax
  *   Kira dari TAHUN LAHIR sahaja (standard WA — bukan tarikh tepat).
  *
  * GATE 4 — key: noKP + jantina
- *   Sumber: atlet/{noKP}.jantina vs acara.jantina dari Firestore
+ *   Sumber: atlet/{atletId}.jantina vs acara.jantina dari Firestore
  *
- * GATE 5 — key: kodSekolah + kategoriAcara
- *   Sumber: sekolah/{kodSekolah}.kategori vs acara.kategori dari Firestore
+ * GATE 5 — skip dalam GP (semua atlet dalam tenant sama → tiada cross-school issue)
  *
  * GATE 6 — key: noKP + aceraId + kejohananId
  *   Duplikasi: semak pendaftaran wujud untuk kombinasi ini.
  *
  * GATE 7 — key: noKP + jadualId
- *   Sumber: jadual_acara — semak masa bertindih dengan acara sedia ada.
+ *   Sumber: jadual/{aceraId} — semak masa bertindih dengan acara sedia ada.
  *
  * GATE 8 — key: aceraId + kejohananId
  *   Semak sama ada heat sudah dijana — jika ya, pendaftaran ditutup.
+ *   GP: heat adalah FLAT di bawah kejohanan, query where('aceraId', '==', aceraId).
  *
  * Return format:
  *   { valid: boolean, gate: string, mesej: string, had: number, semasa: number }
@@ -43,6 +45,36 @@ import {
   collection, query, where,
   getDocs, getDoc, doc, getCountFromServer,
 } from 'firebase/firestore'
+
+// ─── Path Helpers ─────────────────────────────────────────────────────────────
+
+function katPath(schoolId, kejId, katId) {
+  return doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori', katId)
+}
+
+function katCol(schoolId, kejId) {
+  return collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori')
+}
+
+function acaraPath(schoolId, kejId, acaraId) {
+  return doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', acaraId)
+}
+
+function pendCol(schoolId, kejId) {
+  return collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran')
+}
+
+function atletPath(schoolId, atletId) {
+  return doc(db, 'tenants', schoolId, 'atlet', atletId)
+}
+
+function jadualPath(schoolId, kejId, acaraId) {
+  return doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual', acaraId)
+}
+
+function heatCol(schoolId, kejId) {
+  return collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat')
+}
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
@@ -67,9 +99,9 @@ function tambahMinit(masa, minit) {
 //
 // Ini memastikan acara OPEN dikira dalam had atlet yang sama.
 
-async function gate1_hadAcaraAtlet(noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan) {
+async function gate1_hadAcaraAtlet(schoolId, noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan) {
   // ── Cari kategori atlet dari tarikhLahir+jantina ──────────────────────────
-  const kategoriSnap = await getDocs(collection(db, 'kategori'))
+  const kategoriSnap = await getDocs(katCol(schoolId, kejohananId))
   const semuaKategori = kategoriSnap.docs.map(d => ({ kod: d.id, ...d.data() }))
 
   // Tapis: jantina match, bukan OPEN, ada umurHad
@@ -108,16 +140,13 @@ async function gate1_hadAcaraAtlet(noKP, kejohananId, acaraBaruIsIndividu, tarik
   }
 
   // ── Baca had dari KATEGORI ATLET ──────────────────────────────────────────
-  const katDoc = await getDoc(doc(db, 'kategori', kategoriAtlet))
+  const katDoc = await getDoc(katPath(schoolId, kejohananId, kategoriAtlet))
   const hadIndividu = katDoc.exists() ? (katDoc.data().hadAcaraIndividu ?? 3) : 3
   const hadBeregu   = katDoc.exists() ? (katDoc.data().hadAcaraBeregu   ?? 2) : 2
 
   // ── Semak pendaftaran atlet dalam kejohanan ini ───────────────────────────
   const pendSnap = await getDocs(
-    query(
-      collection(db, 'kejohanan', kejohananId, 'pendaftaran'),
-      where('noKP', '==', noKP),
-    )
+    query(pendCol(schoolId, kejohananId), where('noKP', '==', noKP))
   )
 
   const semuaAceraIds = []
@@ -129,14 +158,13 @@ async function gate1_hadAcaraAtlet(noKP, kejohananId, acaraBaruIsIndividu, tarik
 
   // ── Baca isIndividu bagi setiap acara sedia ada ───────────────────────────
   const acaraDocs = await Promise.all(
-    semuaAceraIds.map(id => getDoc(doc(db, 'kejohanan', kejohananId, 'acara', id)))
+    semuaAceraIds.map(id => getDoc(acaraPath(schoolId, kejohananId, id)))
   )
 
   let bilanganIndividu = 0
   let bilanganBeregu   = 0
   acaraDocs.forEach(d => {
     if (!d.exists()) return
-    // isIndividu=false → berpasukan, lain-lain (true/undefined) → individu
     if (d.data().isIndividu === false) {
       bilanganBeregu++
     } else {
@@ -171,15 +199,14 @@ async function gate1_hadAcaraAtlet(noKP, kejohananId, acaraBaruIsIndividu, tarik
 
 // ─── GATE 2 — Had Atlet Per Sekolah Per Acara ─────────────────────────────────
 
-async function gate2_hadAtletSekolah(kodSekolah, aceraId, kejohananId) {
-  // Baca had LIVE dari Firestore — acara/{aceraId}
-  const acaraDoc = await getDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraId))
+async function gate2_hadAtletSekolah(schoolId, kodSekolah, aceraId, kejohananId) {
+  const acaraDoc = await getDoc(acaraPath(schoolId, kejohananId, aceraId))
   const aData = acaraDoc.exists() ? acaraDoc.data() : {}
 
-  // Relay: had = saizPasukan × hadPasukan (dari kategori) — bukan hadAtletPerSekolah
+  // Relay: had = saizPasukan × hadPasukan (dari kategori)
   let hadPerSekolah = aData.hadAtletPerSekolah ?? 2
   if (aData.jenisAcara === 'relay' && aData.kategoriKod) {
-    const katDoc = await getDoc(doc(db, 'kategori', aData.kategoriKod))
+    const katDoc = await getDoc(katPath(schoolId, kejohananId, aData.kategoriKod))
     if (katDoc.exists()) {
       const kat = katDoc.data()
       const saizPasukan = Number(kat.saizPasukan) || 4
@@ -190,12 +217,9 @@ async function gate2_hadAtletSekolah(kodSekolah, aceraId, kejohananId) {
     }
   }
 
-  // Semak bilangan atlet sekolah yang sudah daftar acara ini
+  // Semak bilangan atlet yang sudah daftar acara ini
   const pendSnap = await getDocs(
-    query(
-      collection(db, 'kejohanan', kejohananId, 'pendaftaran'),
-      where('kodSekolah', '==', kodSekolah),
-    )
+    query(pendCol(schoolId, kejohananId), where('kodSekolah', '==', kodSekolah))
   )
 
   const semasa = pendSnap.docs
@@ -226,36 +250,28 @@ async function gate2_hadAtletSekolah(kodSekolah, aceraId, kejohananId) {
 //   tarikhTerkini = 1 Jan (2026-10+1) = 1 Jan 2017  [exclusive → paling muda = 31 Dis 2016]
 //   → atlet lahir 2 Jan 2014 hingga 31 Dis 2016 sahaja layak
 
-async function gate3_kelayakanUmur(tarikhLahir, kategoriId, tahunKejohanan) {
-  // Baca had LIVE dari Firestore — kategori/{kategoriId}
-  const katDoc = await getDoc(doc(db, 'kategori', kategoriId))
+async function gate3_kelayakanUmur(schoolId, tarikhLahir, kategoriId, kejohananId, tahunKejohanan) {
+  const katDoc = await getDoc(katPath(schoolId, kejohananId, kategoriId))
 
-  // Kategori belum dikonfigurasi — lulus (fail-open)
   if (!katDoc.exists()) return { valid: true }
 
   const { umurMin, umurHad } = katDoc.data()
 
-  // Tiada had umur dikonfigurasi → lulus
   if (!umurHad) return { valid: true }
 
   const tKej = tahunKejohanan || new Date().getFullYear()
 
-  // MSSM standard: cut-off 2 Januari
-  // Paling tua yang layak: lahir pada atau selepas 2 Jan (tKej - umurHad)
   const tarikhTerawal = new Date(`${tKej - Number(umurHad)}-01-02`)
-  // Paling muda yang layak: lahir pada atau sebelum 1 Jan (tKej - umurMin + 1)
-  // Jika tiada umurMin → lahir sebelum atau pada 1 Jan tahun depan (iaitu semua dari tarikhTerawal)
   const tarikhTerkini = umurMin
     ? new Date(`${tKej - Number(umurMin) + 1}-01-01`)
     : new Date(`${tKej + 1}-01-01`)
 
   const tLahir = new Date(tarikhLahir)
 
-  // Label mesej
   const fmtTarikhLabel = d =>
     d.toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' })
   const labelTerawal = fmtTarikhLabel(tarikhTerawal)
-  const labelTerkini = fmtTarikhLabel(new Date(tarikhTerkini.getTime() - 86400000)) // tolak 1 hari untuk label
+  const labelTerkini = fmtTarikhLabel(new Date(tarikhTerkini.getTime() - 86400000))
 
   if (tLahir < tarikhTerawal || tLahir >= tarikhTerkini) {
     return {
@@ -273,9 +289,8 @@ async function gate3_kelayakanUmur(tarikhLahir, kategoriId, tahunKejohanan) {
 
 // ─── GATE 4 — Jantina ─────────────────────────────────────────────────────────
 
-async function gate4_jantina(noKP, aceraId, kejohananId) {
-  // Baca jantina atlet LIVE dari Firestore
-  const atletDoc = await getDoc(doc(db, 'atlet', noKP))
+async function gate4_jantina(schoolId, noKP, aceraId, kejohananId) {
+  const atletDoc = await getDoc(atletPath(schoolId, noKP))
   if (!atletDoc.exists()) {
     return {
       valid: false,
@@ -287,8 +302,7 @@ async function gate4_jantina(noKP, aceraId, kejohananId) {
   }
   const jantinaAtlet = atletDoc.data().jantina
 
-  // Baca jantina acara LIVE dari Firestore
-  const acaraDoc = await getDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraId))
+  const acaraDoc = await getDoc(acaraPath(schoolId, kejohananId, aceraId))
   if (!acaraDoc.exists()) {
     return {
       valid: false,
@@ -300,7 +314,6 @@ async function gate4_jantina(noKP, aceraId, kejohananId) {
   }
   const jantinaAcara = acaraDoc.data().jantina
 
-  // Acara campuran — semua jantina dibenarkan
   if (jantinaAcara === 'campuran') return { valid: true }
 
   if (jantinaAtlet !== jantinaAcara) {
@@ -317,58 +330,24 @@ async function gate4_jantina(noKP, aceraId, kejohananId) {
   return { valid: true }
 }
 
-// ─── GATE 5 — Kategori Sekolah ────────────────────────────────────────────────
+// ─── GATE 5 — Skip dalam GP ───────────────────────────────────────────────────
 //
-// Acara doc TIDAK ada field `kategori` (jenis sekolah SR/SM/PPKI).
-// Dapatkan jenisSekolah acara dengan cara:
-//   1. Baca kategoriKod dari acara (A/B/C/D/E/PPKI)
-//   2. Cari kategori/{kategoriKod}.jenisSekolah (SR/SM/PPKI)
-// Kemudian bandingkan dengan sekolah.kategori.
+// Dalam GP, setiap tenant adalah satu organisasi (sekolah/daerah/negeri).
+// Semua atlet dalam tenant yang sama — tiada isu cross-school.
+// Kelayakan jenisSekolah (SR/SM) masih boleh disemak melalui kategori acara + atlet,
+// tetapi ini ditangguhkan ke v2.0 jika diperlukan.
+//
+// Pass-open: Gate 5 sentiasa lulus dalam GP.
 
-async function gate5_kategoriSekolah(kodSekolah, aceraId, kejohananId) {
-  // Baca kategori sekolah LIVE dari Firestore
-  const sekolahDoc = await getDoc(doc(db, 'sekolah', kodSekolah))
-  const kategoriSekolah = sekolahDoc.exists() ? sekolahDoc.data().kategori : null
-
-  // Tiada data sekolah — bagi lulus (fail-open)
-  if (!kategoriSekolah) return { valid: true }
-
-  // Baca acara untuk dapat kategoriKod
-  const acaraDoc = await getDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraId))
-  if (!acaraDoc.exists()) return { valid: true }
-
-  const kategoriKodAcara = acaraDoc.data().kategoriKod  // A | B | C | D | E | PPKI
-
-  // Dapatkan jenisSekolah dari kategori collection
-  const katDoc = await getDoc(doc(db, 'kategori', kategoriKodAcara))
-  const jenisSekolahAcara = katDoc.exists() ? katDoc.data().jenisSekolah : null
-
-  // Kategori tidak dikonfigurasi atau gabungan — lulus
-  if (!jenisSekolahAcara || jenisSekolahAcara === 'gabungan') return { valid: true }
-
-  if (kategoriSekolah !== jenisSekolahAcara) {
-    const katLabel = { A:'B10',B:'B12',C:'B14',D:'B16',E:'B18',PPKI:'PPKI' }
-    return {
-      valid: false,
-      gate: 'GATE5',
-      mesej: `Sekolah ${kategoriSekolah} tidak boleh mendaftar acara ${jenisSekolahAcara} ` +
-             `(Kategori ${katLabel[kategoriKodAcara] || kategoriKodAcara}).`,
-      had: 0,
-      semasa: 0,
-    }
-  }
-
+async function gate5_kategoriSekolah() {
   return { valid: true }
 }
 
 // ─── GATE 6 — Duplikasi ───────────────────────────────────────────────────────
 
-async function gate6_duplikasi(noKP, aceraId, kejohananId) {
+async function gate6_duplikasi(schoolId, noKP, aceraId, kejohananId) {
   const pendSnap = await getDocs(
-    query(
-      collection(db, 'kejohanan', kejohananId, 'pendaftaran'),
-      where('noKP', '==', noKP),
-    )
+    query(pendCol(schoolId, kejohananId), where('noKP', '==', noKP))
   )
 
   const sudahDaftar = pendSnap.docs.some(d => (d.data().acaraIds || []).includes(aceraId))
@@ -388,16 +367,12 @@ async function gate6_duplikasi(noKP, aceraId, kejohananId) {
 
 // ─── GATE 7 — Konflik Jadual ──────────────────────────────────────────────────
 //
-// Acara doc TIDAK ada field `jadualId`.
-// Jadual disimpan dalam `jadual_acara/{kejohananId}-{aceraId}` (format dari JadualSetup).
-// Baca terus menggunakan format ID tersebut.
+// GP: jadual acara disimpan dalam tenants/{schoolId}/kejohanan/{kejId}/jadual/{aceraId}
+// Warn sahaja — tidak sekat pendaftaran.
 
-async function gate7_konflikJadual(noKP, aceraId, kejohananId) {
-  // Baca jadual acara baru terus dari jadual_acara collection
-  const jadualDocId = `${kejohananId}-${aceraId}`
-  const jadualBaruDoc = await getDoc(doc(db, 'jadual_acara', jadualDocId))
+async function gate7_konflikJadual(schoolId, noKP, aceraId, kejohananId) {
+  const jadualBaruDoc = await getDoc(jadualPath(schoolId, kejohananId, aceraId))
 
-  // Tiada jadual ditetapkan — tiada konflik yang boleh dikesan
   if (!jadualBaruDoc.exists()) return { valid: true }
 
   const jadualBaru = jadualBaruDoc.data()
@@ -408,12 +383,8 @@ async function gate7_konflikJadual(noKP, aceraId, kejohananId) {
   if (startBaru === null) return { valid: true }
   const endBaru = startBaru + (jadualBaru.masaJangka || 60)
 
-  // Dapatkan semua acara yang atlet sudah daftar
   const pendSnap = await getDocs(
-    query(
-      collection(db, 'kejohanan', kejohananId, 'pendaftaran'),
-      where('noKP', '==', noKP),
-    )
+    query(pendCol(schoolId, kejohananId), where('noKP', '==', noKP))
   )
 
   const semuaAceraIds = []
@@ -421,9 +392,8 @@ async function gate7_konflikJadual(noKP, aceraId, kejohananId) {
 
   if (semuaAceraIds.length === 0) return { valid: true }
 
-  // Baca jadual bagi setiap acara sedia ada — format: {kejId}-{aceraId}
   const jadualSediaDocs = await Promise.all(
-    semuaAceraIds.map(id => getDoc(doc(db, 'jadual_acara', `${kejohananId}-${id}`)))
+    semuaAceraIds.map(id => getDoc(jadualPath(schoolId, kejohananId, id)))
   )
 
   for (let i = 0; i < jadualSediaDocs.length; i++) {
@@ -431,18 +401,14 @@ async function gate7_konflikJadual(noKP, aceraId, kejohananId) {
     if (!jDoc.exists()) continue
 
     const j = jDoc.data()
-    // Berbeza tarikh — tiada konflik
     if (!j.tarikhAcara || j.tarikhAcara !== jadualBaru.tarikhAcara) continue
-    // Acara batal — abaikan
     if (j.statusJadual === 'batal') continue
-    // Acara yang sama — abaikan (akan ditangkap Gate 6)
     if (semuaAceraIds[i] === aceraId) continue
 
     const startSedia = masaKeMinit(j.masaMula)
     if (startSedia === null) continue
     const endSedia = startSedia + (j.masaJangka || 60)
 
-    // Semak pertindihan masa — WARN sahaja, tidak sekat
     if (startBaru < endSedia && endBaru > startSedia) {
       const namaAcaraSedia = j.namaAcara || semuaAceraIds[i]
       const masaKonflik = `${j.masaMula}–${tambahMinit(j.masaMula, j.masaJangka || 60)}`
@@ -460,10 +426,12 @@ async function gate7_konflikJadual(noKP, aceraId, kejohananId) {
 }
 
 // ─── GATE 8 — Heat Sudah Dijana ───────────────────────────────────────────────
+//
+// GP: heat adalah FLAT di bawah kejohanan — query where('aceraId', '==', aceraId).
 
-async function gate8_heatSudahDijana(aceraId, kejohananId) {
+async function gate8_heatSudahDijana(schoolId, aceraId, kejohananId) {
   const snap = await getCountFromServer(
-    collection(db, 'kejohanan', kejohananId, 'acara', aceraId, 'heat')
+    query(heatCol(schoolId, kejohananId), where('aceraId', '==', aceraId))
   )
   if (snap.data().count > 0) {
     return {
@@ -484,18 +452,21 @@ async function gate8_heatSudahDijana(aceraId, kejohananId) {
  * Semua had dibaca secara live dari Firestore — tiada nilai hardcode.
  *
  * @param {object} params
- * @param {string} params.noKP            - No. Kad Pengenalan atlet
- * @param {string} params.tarikhLahir     - Tarikh lahir atlet (YYYY-MM-DD)
- * @param {string} params.kodSekolah      - Kod sekolah atlet
- * @param {string} params.kejohananId     - ID kejohanan
- * @param {string} params.aceraId         - ID acara baru yang hendak didaftar
- * @param {string} params.kategoriId      - Kod kategori acara (A|B|C|D|E|PPKI)
- * @param {string} params.jenisAcara      - Jenis acara ('relay' atau lain-lain)
- * @param {string} params.jantina         - Jantina atlet ('L' atau 'P') — untuk Gate 1
- * @param {number} params.tahunKejohanan  - Tahun kejohanan — untuk kira kelayakan umur (Gate 3)
+ * @param {string} params.schoolId         - ID tenant (schoolId dari userData)
+ * @param {string} params.noKP             - No. Kad Pengenalan atlet
+ * @param {string} params.tarikhLahir      - Tarikh lahir atlet (YYYY-MM-DD)
+ * @param {string} params.kodSekolah       - Kod sekolah/pasukan atlet
+ * @param {string} params.kejohananId      - ID kejohanan
+ * @param {string} params.aceraId          - ID acara baru yang hendak didaftar
+ * @param {string} params.kategoriId       - Kod kategori acara (A|B|C|D|E|PPKI)
+ * @param {string} params.jenisAcara       - Jenis acara ('relay' atau lain-lain)
+ * @param {string} params.jantina          - Jantina atlet ('L' atau 'P') — untuk Gate 1
+ * @param {number} params.tahunKejohanan   - Tahun kejohanan — untuk kira kelayakan umur (Gate 3)
+ * @param {boolean} params.bypassHeat      - Skip Gate 8 (heat check) jika true
  * @returns {Promise<{valid: boolean, gate: string, mesej: string, had: number, semasa: number}>}
  */
 export async function validasiPendaftaran({
+  schoolId,
   noKP,
   tarikhLahir,
   jantina,
@@ -510,42 +481,41 @@ export async function validasiPendaftaran({
   let result
 
   // GATE 1 — Had acara per atlet (individu + berkumpulan)
-  // Baca isIndividu dari acara baru — tentukan sama ada individu atau berpasukan
-  const acaraBaruDoc = await getDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraId))
+  const acaraBaruDoc = await getDoc(acaraPath(schoolId, kejohananId, aceraId))
   const acaraBaruIsIndividu = acaraBaruDoc.exists()
     ? (acaraBaruDoc.data().isIndividu ?? (acaraBaruDoc.data().jenisAcara !== 'relay'))
     : true
-  result = await gate1_hadAcaraAtlet(noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan)
+  result = await gate1_hadAcaraAtlet(schoolId, noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan)
   if (!result.valid) return result
 
   // GATE 2 — Had atlet per sekolah per acara
-  result = await gate2_hadAtletSekolah(kodSekolah, aceraId, kejohananId)
+  result = await gate2_hadAtletSekolah(schoolId, kodSekolah, aceraId, kejohananId)
   if (!result.valid) return result
 
-  // GATE 3 — Kelayakan umur (WA standard — ikut tahun lahir)
-  result = await gate3_kelayakanUmur(tarikhLahir, kategoriId, tahunKejohanan)
+  // GATE 3 — Kelayakan umur (WA standard — ikut tarikh lahir)
+  result = await gate3_kelayakanUmur(schoolId, tarikhLahir, kategoriId, kejohananId, tahunKejohanan)
   if (!result.valid) return result
 
   // GATE 4 — Jantina match
-  result = await gate4_jantina(noKP, aceraId, kejohananId)
+  result = await gate4_jantina(schoolId, noKP, aceraId, kejohananId)
   if (!result.valid) return result
 
-  // GATE 5 — Kategori sekolah match acara
-  result = await gate5_kategoriSekolah(kodSekolah, aceraId, kejohananId)
+  // GATE 5 — Skip dalam GP (semua atlet dalam tenant = satu organisasi)
+  result = await gate5_kategoriSekolah()
   if (!result.valid) return result
 
   // GATE 6 — Duplikasi check
-  result = await gate6_duplikasi(noKP, aceraId, kejohananId)
+  result = await gate6_duplikasi(schoolId, noKP, aceraId, kejohananId)
   if (!result.valid) return result
 
   // GATE 7 — Konflik jadual (warn sahaja — tidak sekat)
   let gate7Warning = null
-  result = await gate7_konflikJadual(noKP, aceraId, kejohananId)
+  result = await gate7_konflikJadual(schoolId, noKP, aceraId, kejohananId)
   if (result.warning) gate7Warning = result.warning
 
   // GATE 8 — Heat sudah dijana (pendaftaran ditutup) — skip jika bypass aktif
   if (!bypassHeat) {
-    result = await gate8_heatSudahDijana(aceraId, kejohananId)
+    result = await gate8_heatSudahDijana(schoolId, aceraId, kejohananId)
     if (!result.valid) return result
   }
 
@@ -553,23 +523,19 @@ export async function validasiPendaftaran({
 }
 
 /**
- * Dapatkan status slot acara untuk sebuah sekolah.
- * Untuk badge "X/Y slot" atau "PENUH" dalam UI.
- * Baca live dari Firestore.
+ * Dapatkan status slot acara untuk paparan badge "X/Y slot" atau "PENUH" dalam UI.
  *
+ * @param {string} schoolId
  * @param {string} kodSekolah
  * @param {string} aceraId
  * @param {string} kejohananId
  * @returns {Promise<{semasa: number, had: number, penuh: boolean, slotBaki: number}>}
  */
-export async function dapatSlotAcara(kodSekolah, aceraId, kejohananId) {
+export async function dapatSlotAcara(schoolId, kodSekolah, aceraId, kejohananId) {
   const [acaraDoc, pendSnap] = await Promise.all([
-    getDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraId)),
+    getDoc(acaraPath(schoolId, kejohananId, aceraId)),
     getDocs(
-      query(
-        collection(db, 'kejohanan', kejohananId, 'pendaftaran'),
-        where('kodSekolah', '==', kodSekolah),
-      )
+      query(pendCol(schoolId, kejohananId), where('kodSekolah', '==', kodSekolah))
     ),
   ])
 

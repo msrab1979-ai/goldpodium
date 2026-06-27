@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { collection, getCountFromServer, query, where, doc, getDoc } from 'firebase/firestore'
+import { collection, getCountFromServer, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
 
@@ -36,13 +36,15 @@ const QuickLink = ({ label, path, desc }) => (
 
 export default function Dashboard() {
   const { userData, userRole } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [stats,   setStats]   = useState({ atlet: null, sekolah: null, kejohanan: null, aktif: null })
   const [dokumen,      setDokumen]      = useState([])
   const [linkWasap,    setLinkWasap]    = useState('')
   const [linkTelegram, setLinkTelegram] = useState('')
 
   useEffect(() => {
-    getDoc(doc(db, 'tetapan', 'home'))
+    if (!schoolId) return
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       .then(s => {
         if (s.exists()) {
           const d = s.data()
@@ -52,21 +54,24 @@ export default function Dashboard() {
         }
       })
       .catch(() => {})
-  }, [])
+  }, [schoolId])
 
   async function fetchStats() {
+    if (!schoolId) return
     try {
       const [atletSnap, sekolahSnap, kejohananSnap] = await Promise.all([
-        getCountFromServer(collection(db, 'atlet')),
-        getCountFromServer(collection(db, 'sekolah')),
-        getCountFromServer(collection(db, 'kejohanan')),
+        getCountFromServer(collection(db, 'tenants', schoolId, 'atlet')),
+        // sekolah collection removed in GP — derive unique sekolah from atlet by kodSekolah
+        getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+        getCountFromServer(collection(db, 'tenants', schoolId, 'kejohanan')),
       ])
+      const uniqueSekolah = new Set(sekolahSnap.docs.map(d => d.data().kodSekolah).filter(Boolean))
       const aktifSnap = await getCountFromServer(
-        query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
       )
       setStats({
         atlet:     atletSnap.data().count,
-        sekolah:   sekolahSnap.data().count,
+        sekolah:   uniqueSekolah.size,
         kejohanan: kejohananSnap.data().count,
         aktif:     aktifSnap.data().count,
       })
@@ -75,7 +80,7 @@ export default function Dashboard() {
     }
   }
 
-  useEffect(() => { fetchStats() }, [])
+  useEffect(() => { if (schoolId) fetchStats() }, [schoolId])
 
 const isSuperAdmin = userRole === 'superadmin'
 

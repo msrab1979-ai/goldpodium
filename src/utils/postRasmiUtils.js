@@ -2,18 +2,25 @@
  * postRasmiUtils.js
  * ─────────────────
  * Logic post-rasmi yang dikongsi antara KeputusanRasmi (admin) dan
- * InputKeputusan (pencatat — Option C: sahkan rasmi selepas countdown tamat).
+ * InputKeputusan (pencatat).
  *
  * Fungsi utama:
  *   runPostRasmi(db, heatDoc, acaraDoc, kejId, config)
  *
  * Config:
+ *   schoolId          — tenant ID (WAJIB untuk GP multi-tenant)
  *   mataPingat        — { 1: 5, 2: 3, 3: 2, 4: 1 }  (dari kejohanan doc)
  *   bilanganKedudukan — bilangan kedudukan yang dapat medal_tally (default 8)
  *   peringkatKej      — 'D' | 'N' | 'K'  (peringkat kejohanan)
  *   grantMedal        — boolean (adakah heat ini layak bagi medal)
  *   isRelay           — boolean
  *   onPesertaPatch    — callback(pesertaPatched) untuk update UI state (optional)
+ *
+ * GP Paths (multi-tenant):
+ *   tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId}          — heat FLAT
+ *   tenants/{schoolId}/kejohanan/{kejId}/mata_olahragawan/{id}  — mata atlet
+ *   tenants/{schoolId}/kejohanan/{kejId}/medal_tally/{id}       — tally sekolah
+ *   tenants/{schoolId}/rekod/{rekodKey}                         — rekod kejohanan
  */
 
 import {
@@ -47,29 +54,27 @@ export function rekodKeyStr(namaAcara, jantina, kategoriKod, peringkat) {
  */
 export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   const {
+    schoolId          = '',
     mataPingat        = DEFAULT_MATA_PINGAT,
     bilanganKedudukan = 8,
     peringkatKej      = 'D',
     grantMedal        = false,
     isRelay           = acaraDoc.isRelay || acaraDoc.jenisAcara === 'relay',
-    onPesertaPatch    = null,  // callback(pesertaPatched) — untuk update UI state
+    onPesertaPatch    = null,
   } = config
+
+  // ── Path helpers (GP multi-tenant) ──────────────────────────────────────────
+  // schoolId WAJIB ada — jika kosong, postRasmi tidak akan tulis apa-apa ke Firestore
+  const tPath  = (col, id)      => doc(db, 'tenants', schoolId, 'kejohanan', kejId, col, id)
+  const rekodP = (key)          => doc(db, 'tenants', schoolId, 'rekod', key)
 
   const pecahRekodMap      = {} // noKP      → peringkat (individu) — pecah rekod
   const pecahRekodRelayMap = {} // kodSekolah → peringkat (relay) — pecah rekod
   const samaiRekodMap      = {} // noKP      → peringkat (individu) — samai rekod
   const samaiRekodRelayMap = {} // kodSekolah → peringkat (relay) — samai rekod
 
-  // Bina map namaSekolah dari Firestore (backup untuk data lama tanpa namaSekolah)
-  const kodSekolahSet = [...new Set((heatDoc.peserta || []).map(p => p.kodSekolah).filter(Boolean))]
-  const sekolahNamaMap = {}
-  await Promise.all(kodSekolahSet.map(async kod => {
-    try {
-      const snap = await getDoc(doc(db, 'sekolah', kod))
-      if (snap.exists()) sekolahNamaMap[kod] = snap.data().namaSekolah || kod
-    } catch { sekolahNamaMap[kod] = kod }
-  }))
-  const getNamaSekolah = p => p.namaSekolah || sekolahNamaMap[p.kodSekolah] || p.kodSekolah || ''
+  // namaSekolah — guna yang tersimpan dalam peserta terus (GP simpan namaSekolah dalam heat)
+  const getNamaSekolah = p => p.namaSekolah || p.kodSekolah || ''
 
   // Kira rank dari keputusan (on-the-fly — lebih tepat dari rankDalamHeat yang mungkin lapuk)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acaraDoc.jenisAcara)
@@ -124,7 +129,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       const mata      = mataPingat[rank] ?? 0
       const pingat    = NAMA_PINGAT[rank]
       const mId       = `${p.noKP}_${kejId}`
-      const mRef      = doc(db, 'mata_olahragawan', mId)
+      const mRef      = tPath('mata_olahragawan', mId)
       const unitAcara = isPadang ? 'm' : 's'
       const acaraKey  = `acaraDetail_${acaraDoc.id}`
       try {
@@ -163,7 +168,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
     if (grantMedal && p.kodSekolah && rank <= Math.min(bilanganKedudukan, 5) && NAMA_PINGAT[rank]) {
       const pingat     = NAMA_PINGAT[rank]
       const tId        = `${p.kodSekolah}_${kejId}`
-      const tRef       = doc(db, 'medal_tally', tId)
+      const tRef       = tPath('medal_tally', tId)
       // Relay: guna kodSekolah sebagai key unik (noBib/noKP tiada)
       const contribKey = `contrib_${heatDoc.id}_${isRelay ? p.kodSekolah : (p.noKP || p.noBib || rank)}`
       try {
@@ -237,21 +242,19 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           for (const kat of katsToTryI) {
             for (const pr of peringkatToTry) {
               const k = rekodKeyStr(nama, acaraDoc.jantina, kat, pr)
-              const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
+              const [rs, ts] = await Promise.all([getDoc(rekodP(k)), getDoc(rekodP(k + '_tuntutan'))])
               if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break outer }
             }
           }
         }
         // Jika tiada yang jumpa — fetch primary key (return not-exists snap)
         if (!rekodSnap) {
-          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', rKey)), getDoc(doc(db, 'rekod', rKey + '_tuntutan'))])
+          const [rs, ts] = await Promise.all([getDoc(rekodP(rKey)), getDoc(rekodP(rKey + '_tuntutan'))])
           rekodSnap = rs; tuntutanSnap = ts
         }
-        // SENTIASA guna primary key (format baru) untuk tulis rekod baru
-        // supaya PDF dan lookup seterusnya jumpa dengan tepat
         const primaryKey  = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
-        const rekodRef    = doc(db, 'rekod', primaryKey)
-        const tuntutanRef = doc(db, 'rekod', primaryKey + '_tuntutan')
+        const rekodRef    = rekodP(primaryKey)
+        const tuntutanRef = rekodP(primaryKey + '_tuntutan')
         const newPrestasi = Number(p.keputusan)
 
         // Semak rekod sedia ada — dari rekodRef (aktif) atau tuntutanRef (aktif/tuntutan)
@@ -295,7 +298,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           // Simpan dalam mata_olahragawan untuk paparan Olahragawan
           if (p.noKP) {
             const rekodLama = rekodSedia ?? null
-            await setDoc(doc(db, 'mata_olahragawan', `${p.noKP}_${kejId}`), {
+            await setDoc(tPath('mata_olahragawan', `${p.noKP}_${kejId}`), {
               [`rekod_${acaraDoc.id}`]: {
                 namaAcara:        acaraDoc.namaAcara,
                 namaAcaraPendek:  acaraDoc.namaAcaraPendek || acaraDoc.namaAcara,
@@ -347,7 +350,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           // Jika tuntutan lama tersimpan di key lain (format lama) — padam untuk elak orphan
           // JANGAN padam rekod/{rKey} — mungkin rekod lama sudah diluluskan admin
           if (rKey !== primaryKey) {
-            await deleteDoc(doc(db, 'rekod', rKey + '_tuntutan')).catch(() => {})
+            await deleteDoc(rekodP(rKey + '_tuntutan')).catch(() => {})
           }
         }
       } catch (e) { console.warn('rekod_tuntutan:', e.message) }
@@ -378,19 +381,18 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           for (const kat of katsToTryR) {
             for (const pr of peringkatToTryR) {
               const k = rekodKeyStr(nama, acaraDoc.jantina, kat, pr)
-              const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', k)), getDoc(doc(db, 'rekod', k + '_tuntutan'))])
+              const [rs, ts] = await Promise.all([getDoc(rekodP(k)), getDoc(rekodP(k + '_tuntutan'))])
               if (rs.exists() || ts.exists()) { rKey = k; rekodSnap = rs; tuntutanSnap = ts; break outer2 }
             }
           }
         }
         if (!rekodSnap) {
-          const [rs, ts] = await Promise.all([getDoc(doc(db, 'rekod', rKey)), getDoc(doc(db, 'rekod', rKey + '_tuntutan'))])
+          const [rs, ts] = await Promise.all([getDoc(rekodP(rKey)), getDoc(rekodP(rKey + '_tuntutan'))])
           rekodSnap = rs; tuntutanSnap = ts
         }
-        // SENTIASA guna primary key untuk tulis rekod baru relay
         const primaryKeyR = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
-        const rekodRef    = doc(db, 'rekod', primaryKeyR)
-        const tuntutanRef = doc(db, 'rekod', primaryKeyR + '_tuntutan')
+        const rekodRef    = rekodP(primaryKeyR)
+        const tuntutanRef = rekodP(primaryKeyR + '_tuntutan')
         const newPrestasi = Number(p.keputusan)
 
         const rekodSediaRelay = rekodSnap.exists() && rekodSnap.data().statusRekod === 'aktif'
@@ -450,7 +452,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           // Jika tuntutan lama di key format lama — padam untuk elak orphan
           // JANGAN padam rekod/{rKey} — mungkin rekod lama sudah diluluskan admin
           if (rKey !== primaryKeyR) {
-            await deleteDoc(doc(db, 'rekod', rKey + '_tuntutan')).catch(() => {})
+            await deleteDoc(rekodP(rKey + '_tuntutan')).catch(() => {})
           }
         }
       } catch (e) { console.warn('rekod_relay:', e.message) }
@@ -478,7 +480,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         }
         return p
       })
-      const hRef = doc(db, 'kejohanan', kejId, 'acara', acaraDoc.id, 'heat', heatDoc.id)
+      const hRef = tPath('heat', heatDoc.id)
       await updateDoc(hRef, { peserta: pesertaPatched, updatedAt: serverTimestamp() })
       if (onPesertaPatch) onPesertaPatch(pesertaPatched)
     } catch (e) { console.warn('patch rekod flag:', e.message) }

@@ -13,28 +13,29 @@ import {
   serverTimestamp, query, orderBy, where, writeBatch,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 // ─── Konstanta ────────────────────────────────────────────────────────────────
 
-// Padam semua acara + jadual_acara bagi sesebuah kejohanan
-async function deleteAllAcara(kejohananId, onLog = console.log) {
-  if (!kejohananId) return
+// Padam semua acara + jadual bagi sesebuah kejohanan
+async function deleteAllAcara(schoolId, kejohananId, onLog = console.log) {
+  if (!schoolId || !kejohananId) return
   onLog(`⚠️ Padam SEMUA acara + jadual untuk kejohanan: ${kejohananId}`)
   const BATCH = 400
-  const acaraSnap = await getDocs(collection(db, 'kejohanan', kejohananId, 'acara'))
+  const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'acara'))
   let b = writeBatch(db), n = 0
   for (const d of acaraSnap.docs) {
     b.delete(d.ref); n++
     if (n % BATCH === 0) { await b.commit(); b = writeBatch(db) }
   }
   if (n % BATCH !== 0) await b.commit()
-  const jSnap = await getDocs(query(collection(db, 'jadual_acara'), where('kejohananId', '==', kejohananId)))
+  const jSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'jadual'))
   let jb = writeBatch(db), jn = 0
   for (const d of jSnap.docs) {
     jb.delete(d.ref); jn++
     if (jn % BATCH === 0) { await jb.commit(); jb = writeBatch(db) }
   }
   if (jn % BATCH !== 0) await jb.commit()
-  onLog(`🗑️ Padam ${n} acara + ${jn} jadual_acara`)
+  onLog(`🗑️ Padam ${n} acara + ${jn} jadual`)
 }
 
 const STATUS_ACARA = {
@@ -223,7 +224,7 @@ function PadananPanel({ data, onClose, onTetapkan }) {
 
 // ─── Modal Tetapkan Jadual ────────────────────────────────────────────────────
 
-function TetapkanModal({ kejohananId, acaraList, prefillAcara, onClose, onSaved }) {
+function TetapkanModal({ schoolId, kejohananId, acaraList, prefillAcara, onClose, onSaved }) {
   const [form, setForm] = useState({
     aceraId:     prefillAcara ? String(prefillAcara.noAcara || prefillAcara.aceraId || prefillAcara._docId || '') : '',
     tarikhAcara: '',
@@ -244,10 +245,10 @@ function TetapkanModal({ kejohananId, acaraList, prefillAcara, onClose, onSaved 
     if (!form.masaMula)    return setErr('Masa wajib diisi.')
 
     const noAcara = form.aceraId
-    const docId   = `${kejohananId}-${noAcara}`
+    const docId   = noAcara  // doc ID = aceraId, scoped under kejohanan/jadual
     setSaving(true)
     try {
-      await setDoc(doc(db, 'jadual_acara', docId), {
+      await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'jadual', docId), {
         jadualId:    docId,
         aceraId:     noAcara,
         acaraId:     noAcara,
@@ -342,7 +343,7 @@ function formatTarikhPanjang(dateStr) {
   return d.toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-function TukarHariModal({ hari, tarikhAsal, rowsInHari, kejohananId, onClose, onSaved }) {
+function TukarHariModal({ schoolId, hari, tarikhAsal, rowsInHari, kejohananId, onClose, onSaved }) {
   const [tarikhBaru, setTarikhBaru] = useState(tarikhAsal || '')
   const [saving, setSaving]         = useState(false)
   const [progress, setProgress]     = useState(0)

@@ -19,7 +19,8 @@ const StartListSetup     = lazy(() => import('./pages/admin/StartListSetup'))
 const InputKeputusan     = lazy(() => import('./pages/admin/InputKeputusan'))
 const MedalTallySetup   = lazy(() => import('./pages/admin/MedalTallySetup'))
 const LaporanCetakan     = lazy(() => import('./pages/admin/LaporanCetakan'))
-const TeacherDashboard   = lazy(() => import('./pages/teacher/TeacherDashboard'))
+const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard'))
+const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
 
 // ── Spinner ringkas semasa lazy load ─────────────────────────────────────────
@@ -178,10 +179,15 @@ function AppRoutes() {
           </RequireAuth>
         } />
 
-        {/* Teacher */}
+        {/* Pencatat (teacher role) */}
         <Route path="/dashboard" element={
           <RequireAuth roles={['teacher']}>
-            <TeacherDashboard />
+            <PencatatDashboard />
+          </RequireAuth>
+        } />
+        <Route path="/dashboard/kejohanan/:kejId/keputusan" element={
+          <RequireAuth roles={['teacher']}>
+            <PencatatInput />
           </RequireAuth>
         } />
 

@@ -14,6 +14,7 @@ import {
   collection, getDocs, getDoc, doc, query, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -458,6 +459,8 @@ function cetakBorangTeknikal({ acara, allHeatsList, namaKej, cfg }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CetakAcara() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [cfg,          setCfg]          = useState({})
   const [kejohanan,    setKejohanan]    = useState(null)
   const [namaKej,      setNamaKej]      = useState('')
@@ -482,9 +485,10 @@ export default function CetakAcara() {
 
   // ── Load tetapan + kejohanan ──
   useEffect(() => {
+    if (!schoolId) return
     Promise.all([
-      getDoc(doc(db, 'tetapan', 'home')),
-      getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan']))),
+      getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
+      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan']))),
     ]).then(([cfgSnap, kejSnap]) => {
       if (cfgSnap.exists()) setCfg(cfgSnap.data())
       if (!kejSnap.empty) {
@@ -495,13 +499,13 @@ export default function CetakAcara() {
         setPeringkatKod(PERINGKAT_KOD[data.peringkat?.toLowerCase()] || 'D')
       }
     }).finally(() => setLoadingKej(false))
-  }, [])
+  }, [schoolId])
 
   // ── Load jadual apabila kejohanan loaded ──
   useEffect(() => {
-    if (!kejohanan) return
+    if (!kejohanan || !schoolId) return
     getDocs(query(
-      collection(db, 'jadual_acara'),
+      collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'jadual'),
       where('kejohananId', '==', kejohanan.id)
     )).then(snap => {
       const byDay = {}

@@ -14,6 +14,7 @@ import {
   orderBy,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,8 @@ function InfoKotak({ icon = 'ℹ️', children }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ManualPendaftaran() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [loading,      setLoading]      = useState(true)
   const [kategoriList, setKategoriList] = useState([])
   const [acaraList,    setAcaraList]    = useState([])
@@ -78,12 +81,13 @@ export default function ManualPendaftaran() {
   const [err,          setErr]          = useState(null)
 
   useEffect(() => {
+    if (!schoolId) return
     async function load() {
       setLoading(true)
       try {
         // Kejohanan aktif — untuk nama & tahun
         const kejSnap = await getDocs(query(
-          collection(db, 'kejohanan'),
+          collection(db, 'tenants', schoolId, 'kejohanan'),
           where('statusKejohanan', '==', 'aktif')
         ))
         let kejId = null
@@ -99,7 +103,7 @@ export default function ManualPendaftaran() {
 
         // Kategori — had acara individu & beregu (live)
         const katSnap = await getDocs(query(
-          collection(db, 'kategori'),
+          collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'),
           orderBy('umurHad')
         ))
         setKategoriList(katSnap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -107,7 +111,7 @@ export default function ManualPendaftaran() {
         // Acara — had atlet per sekolah (live), dari kejohanan aktif
         if (kejId) {
           const acaraSnap = await getDocs(query(
-            collection(db, 'kejohanan', kejId, 'acara'),
+            collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'),
             orderBy('noAcara')
           ))
           setAcaraList(acaraSnap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -120,7 +124,7 @@ export default function ManualPendaftaran() {
       }
     }
     load()
-  }, [])
+  }, [schoolId])
 
   if (loading) {
     return (
