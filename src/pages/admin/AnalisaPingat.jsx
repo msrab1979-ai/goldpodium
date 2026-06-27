@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, query, where, orderBy, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -29,6 +30,8 @@ function fmtPrestasi(val, unit) {
 function fmtPingat(n) { return n > 0 ? String(n) : '—' }
 
 export default function AnalisaPingat() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState('')
   const [kategoriList, setKategoriList] = useState([])
@@ -58,14 +61,14 @@ export default function AnalisaPingat() {
       setError('')
       try {
         // 1. Kejohanan aktif
-        const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+        const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
         if (kejSnap.empty) { setError('Tiada kejohanan aktif.'); setLoading(false); return }
         const kej   = kejSnap.docs[0]
         const kejId = kej.id
         setNamaKej(kej.data().namaKejohanan || kejId)
 
         // 2. Kategori list
-        const katSnap = await getDocs(query(collection(db, 'kategori'), orderBy('urutan')))
+        const katSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'), orderBy('urutan')))
         const katList = katSnap.docs
           .map(d => ({ kod: d.data().kod || d.id, label: d.data().label || d.data().nama || d.id, order: d.data().urutan ?? 99 }))
           .sort((a, b) => a.order - b.order)
@@ -73,13 +76,13 @@ export default function AnalisaPingat() {
         if (katList.length > 0) setSelKat(katList[0].kod)
         setActiveTab(katList.length > 0 ? katList[0].kod : 'atletTerbaik')
 
-        // 3. Sekolah map
-        const skolSnap = await getDocs(collection(db, 'sekolah'))
+        // 3. Sekolah map dari atlet (GP: tiada sekolah collection berasingan)
+        const skolSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
         const skolMap  = {}
-        skolSnap.docs.forEach(d => { skolMap[d.id] = d.data().namaSekolah || d.id })
+        skolSnap.docs.forEach(d => { const k = d.data().kodSekolah; if (k) skolMap[k] = d.data().namaSekolah || k })
 
         // 4. Rekod dipecah dari mata_olahragawan
-        const mataSnap = await getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
+        const mataSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
         const tuntutanByNoKP = {}
         mataSnap.docs.forEach(d => {
           const data = d.data()
@@ -103,7 +106,7 @@ export default function AnalisaPingat() {
         })
 
         // 5. Load semua acara → heat final → kira pingat
-        const acaraSnap = await getDocs(query(collection(db, 'kejohanan', kejId, 'acara'), orderBy('noAcara')))
+        const acaraSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara')))
         const aMap = {}
 
         for (const aDoc of acaraSnap.docs) {
@@ -111,7 +114,7 @@ export default function AnalisaPingat() {
           if (ad.jenisAcara === 'relay') continue
           const isFinalAcara = !!ad.parentAcaraId
 
-          const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', aDoc.id, 'heat'))
+          const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', aDoc.id)))
           for (const hDoc of heatSnap.docs) {
             const hd = hDoc.data()
             const fasaOk = FASA_FINAL.includes(hd.fasa) || (isFinalAcara && hd.fasa == null)
@@ -166,7 +169,7 @@ export default function AnalisaPingat() {
         setAtletMap(aMap)
 
         // 8. Load tajuk atlet terbaik + calon dari Firestore
-        const tbSnap = await getDoc(doc(db, 'tetapan', 'atletTerbaik'))
+        const tbSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'atletTerbaik'))
         if (tbSnap.exists()) {
           setTajukList(tbSnap.data().tajuk || [])
           setCalonList(tbSnap.data().calon || [])
@@ -179,8 +182,8 @@ export default function AnalisaPingat() {
       }
       setLoading(false)
     }
-    load()
-  }, [])
+    if (schoolId) load()
+  }, [schoolId])
 
   const rows = useMemo(() => {
     if (!selKat) return []
@@ -205,13 +208,13 @@ export default function AnalisaPingat() {
     setAuditLoading(true)
     setAuditResult(null)
     try {
-      const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+      const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
       if (kejSnap.empty) return
       const kejId = kejSnap.docs[0].id
 
-      const mataSnap = await getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
+      const mataSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
 
-      const rekodSnap = await getDocs(collection(db, 'rekod'))
+      const rekodSnap = await getDocs(collection(db, 'tenants', schoolId, 'rekod'))
       const rekodLib     = {}
       const tuntutanLib  = {}
       rekodSnap.docs.forEach(d => {
@@ -293,7 +296,7 @@ export default function AnalisaPingat() {
   async function saveTajuk(newList) {
     setSavingTajuk(true)
     try {
-      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { tajuk: newList }, { merge: true })
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'atletTerbaik'), { tajuk: newList }, { merge: true })
       setTajukList(newList)
     } catch (e) {
       console.error('saveTajuk:', e)
@@ -320,7 +323,7 @@ export default function AnalisaPingat() {
           rekodList:    atlet.rekodList,
         }]
     try {
-      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { calon: newCalon }, { merge: true })
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'atletTerbaik'), { calon: newCalon }, { merge: true })
       setCalonList(newCalon)
     } catch (e) {
       alert('Ralat: ' + e.message)
@@ -333,7 +336,7 @@ export default function AnalisaPingat() {
     setSavingShow(true)
     const newVal = !showAtHome
     try {
-      await setDoc(doc(db, 'tetapan', 'atletTerbaik'), { showAtHome: newVal }, { merge: true })
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'atletTerbaik'), { showAtHome: newVal }, { merge: true })
       setShowAtHome(newVal)
     } catch (e) {
       alert('Ralat: ' + e.message)

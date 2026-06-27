@@ -180,7 +180,7 @@ function downloadTemplateSekolah() {
 
 // ─── Modal: Import Sekolah ────────────────────────────────────────────────────
 
-function ImportSekolahModal({ onClose, onDone }) {
+function ImportSekolahModal({ onClose, onDone, schoolId }) {
   const [step,   setStep]   = useState('idle')   // idle | preview | importing | done
   const [rows,   setRows]   = useState([])
   const [result, setResult] = useState(null)
@@ -233,7 +233,7 @@ function ImportSekolahModal({ onClose, onDone }) {
           const kod = r.kodSekolah.toString().trim().toUpperCase()
           const bf  = [1, 2, 3].includes(Number(r.bibFormat)) ? Number(r.bibFormat) : 3
 
-          batch.set(doc(db, 'sekolah', kod), {
+          batch.set(doc(db, 'tenants', schoolId, 'sekolah', kod), {
             kodSekolah:  kod,
             namaSekolah: r.namaSekolah.toString().trim(),
             kategori:    r.kategori.toString().trim().toUpperCase(),
@@ -468,7 +468,7 @@ const FormField = ({ label, required, hint, children }) => (
 
 // ─── Modal Tambah / Edit ──────────────────────────────────────────────────────
 
-function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FALLBACK }) {
+function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FALLBACK, schoolId }) {
   const isEdit  = !!initial
   const [form,  setForm]  = useState(initial ?? EMPTY_FORM)
   const [busy,  setBusy]  = useState(false)
@@ -494,7 +494,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
     try {
       // Semak kod baru tidak bertindih
       if (!isEdit || kodBerubah) {
-        const snap = await getDoc(doc(db, 'sekolah', kodBaru))
+        const snap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kodBaru))
         if (snap.exists()) {
           setErr(`Kod "${kodBaru}" sudah digunakan. Sila guna kod lain.`)
           setBusy(false)
@@ -508,7 +508,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
       const prefixBerubah = isEdit ? prefixBaru !== (initial?.bibPrefix || '').toUpperCase() : true
       if (prefixBerubah) {
         const prefixSnap = await getDocs(query(
-          collection(db, 'sekolah'),
+          collection(db, 'tenants', schoolId, 'sekolah'),
           where('bibPrefix', '==', prefixBaru)
         ))
         const clash = prefixSnap.docs.find(d =>
@@ -524,7 +524,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
 
       // Block perubahan kodSekolah jika ada atlet berdaftar — elak orphan records
       if (kodBerubah) {
-        const atletSnap = await getDocs(query(collection(db, 'atlet'), where('kodSekolah', '==', kodLama), limit(1)))
+        const atletSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('kodSekolah', '==', kodLama), limit(1)))
         if (!atletSnap.empty) {
           setErr(`Kod sekolah tidak boleh diubah — terdapat atlet yang menggunakan kod "${kodLama}". Sila hubungi pentadbir sistem.`)
           setBusy(false)
@@ -535,7 +535,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
       if (!isEdit) {
         // ── TAMBAH BARU — hash PIN sebelum simpan ────────────────────────────
         const ph = await hashPin(form.pin)
-        await setDoc(doc(db, 'sekolah', kodBaru), {
+        await setDoc(doc(db, 'tenants', schoolId, 'sekolah', kodBaru), {
           kodSekolah:  kodBaru,
           namaSekolah: form.namaSekolah.trim(),
           kategori:    form.kategori,
@@ -552,7 +552,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
 
       } else if (kodBerubah) {
         // ── EDIT + KOD BERUBAH — pindah dokumen, hash PIN baru jika ada ─────
-        const dataLama = (await getDoc(doc(db, 'sekolah', kodLama))).data()
+        const dataLama = (await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kodLama))).data()
         // Guna pinHash baru jika PIN diubah, kekal pinHash lama jika tidak
         const pinHashAktif = form.pin
           ? await hashPin(form.pin)
@@ -560,7 +560,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
 
         const { pin: _drop, ...dataLamaBersih } = dataLama || {}  // buang plain pin lama
         const batch = writeBatch(db)
-        batch.set(doc(db, 'sekolah', kodBaru), {
+        batch.set(doc(db, 'tenants', schoolId, 'sekolah', kodBaru), {
           ...dataLamaBersih,
           kodSekolah:  kodBaru,
           namaSekolah: form.namaSekolah.trim(),
@@ -574,7 +574,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
           pinHash:     pinHashAktif,  // R7: hash sahaja
           updatedAt:   serverTimestamp(),
         })
-        batch.delete(doc(db, 'sekolah', kodLama))
+        batch.delete(doc(db, 'tenants', schoolId, 'sekolah', kodLama))
         await batch.commit()
 
       } else {
@@ -595,7 +595,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
           updateData.pinHash = await hashPin(form.pin)
           updateData.pin     = deleteField()
         }
-        await updateDoc(doc(db, 'sekolah', kodLama), updateData)
+        await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', kodLama), updateData)
       }
 
       onSaved()
@@ -779,7 +779,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
 
 // ─── Modal Reset PIN ──────────────────────────────────────────────────────────
 
-function ResetPinModal({ sekolah, onClose, onSaved }) {
+function ResetPinModal({ sekolah, onClose, onSaved, schoolId }) {
   const [pin,  setPin]  = useState('')
   const [busy, setBusy] = useState(false)
   const [err,  setErr]  = useState('')
@@ -791,7 +791,7 @@ function ResetPinModal({ sekolah, onClose, onSaved }) {
     setErr('')
     try {
       const ph = await hashPin(pin)
-      await updateDoc(doc(db, 'sekolah', sekolah.kodSekolah), {
+      await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', sekolah.kodSekolah), {
         pinHash:   ph,
         pin:       deleteField(),   // buang plain text jika ada
         updatedAt: serverTimestamp(),
@@ -886,7 +886,7 @@ function BibBulkPanel({ list, onUpdated }) {
     try {
       const batch = writeBatch(db)
       list.forEach(s => {
-        batch.update(doc(db, 'sekolah', s.kodSekolah), {
+        batch.update(doc(db, 'tenants', schoolId, 'sekolah', s.kodSekolah), {
           bibFormat:  Number(format),
           bibMula:    Number(mula),
           updatedAt:  serverTimestamp(),
@@ -993,7 +993,8 @@ function BibBulkPanel({ list, onUpdated }) {
 // ─── SekolahSetup (Main) ──────────────────────────────────────────────────────
 
 export default function SekolahSetup() {
-  const { userRole } = useAuth()
+  const { userRole, userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const isSuperAdmin = userRole === 'superadmin'
 
   const [list,    setList]    = useState([])
@@ -1012,28 +1013,30 @@ export default function SekolahSetup() {
 
   // ── Fetch ──
   async function fetchList() {
+    if (!schoolId) return
     setLoading(true)
     try {
-      const snap = await getDocs(query(collection(db, 'sekolah'), orderBy('kodSekolah')))
+      const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'sekolah'), orderBy('kodSekolah')))
       setList(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch { setList([]) }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchList() }, [])
+  useEffect(() => { fetchList() }, [schoolId])
 
   // Load jenis institusi dari kategori collection
   useEffect(() => {
-    getDocs(query(collection(db, 'kategori'), orderBy('urutan')))
+    if (!schoolId) return
+    getDocs(collection(db, 'tenants', schoolId, 'kategori'))
       .then(snap => {
         const jenis = [...new Set(snap.docs.map(d => d.data().jenisSekolah).filter(Boolean))]
         if (jenis.length > 0) setJenisList(jenis)
       }).catch(() => {})
-  }, [])
+  }, [schoolId])
 
   // ── Bypass Deadline (global) ──
   async function doToggleBypass(s) {
-    await updateDoc(doc(db, 'sekolah', s.kodSekolah), {
+    await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', s.kodSekolah), {
       bypassDeadline: !s.bypassDeadline,
       updatedAt: serverTimestamp(),
     })
@@ -1042,7 +1045,7 @@ export default function SekolahSetup() {
 
   // ── Bypass Pengesahan ──
   async function doToggleBypassPengesahan(s) {
-    await updateDoc(doc(db, 'sekolah', s.kodSekolah), {
+    await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', s.kodSekolah), {
       bypassPengesahan: !s.bypassPengesahan,
       updatedAt: serverTimestamp(),
     })
@@ -1060,12 +1063,12 @@ export default function SekolahSetup() {
     setBypassAcaraLoading(true)
     try {
       // Cari kejohanan aktif
-      const kejSnap = await getDocs(query(collection(db, 'kejohanan'),
+      const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'),
         where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
       if (kejSnap.empty) { setAcaraHeat([]); return }
       const kejId = kejSnap.docs[0].id
       // Ambil semua acara yang ada heatDijanaAt
-      const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
       const list = acaraSnap.docs
         .map(d => ({ aceraId: d.id, ...d.data() }))
         .filter(a => a.heatDijanaAt)
@@ -1082,20 +1085,20 @@ export default function SekolahSetup() {
     try {
       if (bukaMap[aceraId]) {
         // Tutup bypass untuk acara ini
-        await updateDoc(doc(db, 'sekolah', sekolah.kodSekolah), {
+        await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', sekolah.kodSekolah), {
           [field]: deleteField(),
           updatedAt: serverTimestamp(),
         })
       } else {
         // Buka bypass untuk acara ini
-        await updateDoc(doc(db, 'sekolah', sekolah.kodSekolah), {
+        await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', sekolah.kodSekolah), {
           [field]: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
       }
       await fetchList()
       // Refresh sekolah dalam modal
-      const updated = await getDoc(doc(db, 'sekolah', sekolah.kodSekolah))
+      const updated = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', sekolah.kodSekolah))
       if (updated.exists()) {
         setBypassAcaraModal({ sekolah: { id: updated.id, ...updated.data() } })
       }
@@ -1106,7 +1109,7 @@ export default function SekolahSetup() {
   // ── Toggle Aktif ──
   async function doToggleAktif() {
     if (!selected) return
-    await updateDoc(doc(db, 'sekolah', selected.kodSekolah), {
+    await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', selected.kodSekolah), {
       isAktif: !selected.isAktif, updatedAt: serverTimestamp(),
     })
     setModal(null)
@@ -1118,7 +1121,7 @@ export default function SekolahSetup() {
     if (!selected) return
     setDeleting(true)
     try {
-      await deleteDoc(doc(db, 'sekolah', selected.kodSekolah))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'sekolah', selected.kodSekolah))
       setModal(null)
       setSelected(null)
       fetchList()
@@ -1165,7 +1168,7 @@ export default function SekolahSetup() {
     setBibSearching(true)
     try {
       const snap = await getDocs(query(
-        collection(db, 'atlet'),
+        collection(db, 'tenants', schoolId, 'atlet'),
         where('noBib', '==', trimmed),
         limit(1)
       ))
@@ -1426,18 +1429,19 @@ export default function SekolahSetup() {
         <ImportSekolahModal
           onClose={() => setShowImport(false)}
           onDone={() => { setShowImport(false); fetchList() }}
+          schoolId={schoolId}
         />
       )}
 
       {/* Modals */}
       {modal === 'tambah' && (
-        <SekolahModal onClose={() => setModal(null)} onSaved={fetchList} jenisList={jenisList} />
+        <SekolahModal onClose={() => setModal(null)} onSaved={fetchList} jenisList={jenisList} schoolId={schoolId} />
       )}
       {modal === 'edit' && selected && (
-        <SekolahModal initial={selected} onClose={() => { setModal(null); setSelected(null) }} onSaved={fetchList} jenisList={jenisList} />
+        <SekolahModal initial={selected} onClose={() => { setModal(null); setSelected(null) }} onSaved={fetchList} jenisList={jenisList} schoolId={schoolId} />
       )}
       {modal === 'resetPin' && selected && (
-        <ResetPinModal sekolah={selected} onClose={() => { setModal(null); setSelected(null) }} onSaved={fetchList} />
+        <ResetPinModal sekolah={selected} onClose={() => { setModal(null); setSelected(null) }} onSaved={fetchList} schoolId={schoolId} />
       )}
       {modal === 'toggleAktif' && selected && (
         <ConfirmDialog

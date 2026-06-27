@@ -15,6 +15,7 @@ import {
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import { selectFinalists } from '../../utils/finalistUtils'
 
 // ─── PDF Generator (sama logik dengan InputKeputusan handleCetakHasil) ─────────
@@ -23,7 +24,7 @@ async function cetakHadiahPDF({
   acara, finalHeat, allHeats,
   sekolahMap, kategoriMap,
   kejohananData, homeCfg, finalSetup,
-  cetakBilangan, peringkatKej,
+  cetakBilangan, peringkatKej, schoolId,
 }) {
   const isPadang  = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isRelay   = acara.jenisAcara === 'relay'
@@ -34,8 +35,8 @@ async function cetakHadiahPDF({
     .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
 
   const [rSnap, rTuntSnap] = await Promise.all([
-    getDoc(doc(db, 'rekod', rKey)).catch(() => null),
-    getDoc(doc(db, 'rekod', rKey + '_tuntutan')).catch(() => null),
+    getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey)).catch(() => null),
+    getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey + '_tuntutan')).catch(() => null),
   ])
 
   let rekodDoc = null, isRekodBaru = false
@@ -342,6 +343,8 @@ const MEDAL_CLR = {
 const MEDAL_LBL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5' }
 
 export default function CetakanHadiah() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   // Kejohanan
   const [kejList,       setKejList]       = useState([])
   const [selKejId,      setSelKejId]      = useState('')
@@ -374,25 +377,34 @@ export default function CetakanHadiah() {
   // ── Load config sekali ────────────────────────────────────────────────────
 
   useEffect(() => {
+    if (!schoolId) return
     Promise.all([
-      getDocs(collection(db, 'sekolah')),
-      getDocs(collection(db, 'kategori')),
-      getDoc(doc(db, 'tetapan', 'home')),
-      getDoc(doc(db, 'tetapan', 'finalSetup')),
-    ]).then(([skSnap, katSnap, homeSnap, fsSnap]) => {
-      const sm = {}; skSnap.forEach(d => { sm[d.id] = d.data().namaSekolah || d.id })
+      getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))),
+      getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
+      getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup')),
+    ]).then(([atletSnap, kejAktifSnap, homeSnap, fsSnap]) => {
+      const sm = {}
+      atletSnap.docs.forEach(d => { const k = d.data().kodSekolah; if (k) sm[k] = d.data().namaSekolah || k })
       setSekolahMap(sm)
-      const km = {}; katSnap.forEach(d => { km[d.id] = d.data().nama || d.id })
-      setKategoriMap(km)
+      // Load kategori from active kejohanan
+      if (!kejAktifSnap.empty) {
+        const akKejId = kejAktifSnap.docs[0].id
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', akKejId, 'kategori'))
+          .then(katSnap => {
+            const km = {}; katSnap.docs.forEach(d => { km[d.id] = d.data().nama || d.id })
+            setKategoriMap(km)
+          }).catch(() => {})
+      }
       if (homeSnap.exists()) setHomeCfg(homeSnap.data())
       if (fsSnap.exists())   setFinalSetup(fsSnap.data())
     })
-  }, [])
+  }, [schoolId])
 
   // ── Load senarai kejohanan ────────────────────────────────────────────────
 
   useEffect(() => {
-    getDocs(query(collection(db, 'kejohanan'), orderBy('tarikhMula', 'desc')))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), orderBy('tarikhMula', 'desc')))
       .then(snap => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         setKejList(list)
@@ -410,7 +422,7 @@ export default function CetakanHadiah() {
     setLoadingAcara(true)
 
     getDocs(query(
-      collection(db, 'kejohanan', selKejId, 'acara'),
+      collection(db, 'tenants', schoolId, 'kejohanan', selKejId, 'acara'),
       where('statusAcara', '==', 'ada_keputusan')
     ))
       .then(snap => {
@@ -435,7 +447,7 @@ export default function CetakanHadiah() {
     try {
       const aceraKey = acara.aceraId || acara.id
       const hSnap = await getDocs(
-        query(collection(db, 'kejohanan', selKejId, 'acara', aceraKey, 'heat'), orderBy('noHeat', 'asc'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', selKejId, 'heat'), where('aceraId', '==', aceraKey))
       )
       const heats = hSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       setAllHeats(heats)
@@ -466,7 +478,7 @@ export default function CetakanHadiah() {
         acara: selAcara, finalHeat, allHeats,
         sekolahMap, kategoriMap,
         kejohananData, homeCfg, finalSetup,
-        cetakBilangan: bilangan, peringkatKej,
+        cetakBilangan: bilangan, peringkatKej, schoolId,
       })
     } catch (e) {
       alert('Ralat cetak: ' + e.message)

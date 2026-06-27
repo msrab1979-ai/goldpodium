@@ -115,7 +115,7 @@ const REKOD_PERINGKAT_META = {
 
 // ─── AtletModal ───────────────────────────────────────────────────────────────
 
-function AtletModal({ atlet, namaKej, katLabelFn, onClose }) {
+function AtletModal({ atlet, namaKej, katLabelFn, onClose, schoolId }) {
   if (!atlet) return null
   const acaraList = getAcaraDetail(atlet)
 
@@ -130,7 +130,7 @@ function AtletModal({ atlet, namaKej, katLabelFn, onClose }) {
     if (!atlet.noKP || !atlet.kejohananId) return
     setRekodLoading(true)
     getDocs(query(
-      collection(db, 'rekod'),
+      collection(db, 'tenants', schoolId, 'rekod'),
       where('noKP', '==', atlet.noKP),
       where('kejohananId', '==', atlet.kejohananId),
     ))
@@ -532,7 +532,7 @@ function AtletRow({ atlet, rank, isDipilih, onPilih, onDetail }) {
       )
       if (rekodCache[key]) continue
       setRekodCache(prev => ({ ...prev, [key]: { loading: true, data: null } }))
-      getDoc(doc(db, 'rekod', key))
+      getDoc(doc(db, 'tenants', schoolId, 'rekod', key))
         .then(snap => setRekodCache(prev => ({ ...prev, [key]: { loading: false, data: snap.exists() ? snap.data() : null } })))
         .catch(() => setRekodCache(prev => ({ ...prev, [key]: { loading: false, data: null } })))
     }
@@ -973,6 +973,7 @@ function MuridTerbaikCard({ jantina, pilihan, liveData, onTukar }) {
 
 export default function Olahragawan() {
   const { userData }  = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [selKej, setSelKej]             = useState('')
   const [namaKej, setNamaKej]           = useState('')
   const [allData, setAllData]           = useState([])
@@ -992,10 +993,11 @@ export default function Olahragawan() {
 
   // ── Kategori dari Firestore ──────────────────────────────────────────────
   useEffect(() => {
-    getDocs(query(collection(db, 'kategori'), orderBy('urutan')))
+    if (!schoolId || !selKej) return
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selKej, 'kategori'), orderBy('urutan')))
       .then(snap => setKategoriList(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
       .catch(() => {})
-  }, [])
+  }, [schoolId, selKej])
 
   // Helpers dinamik (fallback ke hardcode jika Firestore belum loaded)
   function katLabel(kod) {
@@ -1010,7 +1012,8 @@ export default function Olahragawan() {
 
   // ── Kejohanan aktif ──────────────────────────────────────────────────────
   useEffect(() => {
-    getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+    if (!schoolId) return
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]
@@ -1018,7 +1021,7 @@ export default function Olahragawan() {
           setNamaKej(d.data().namaKejohanan || '')
         }
       }).catch(() => {})
-  }, [])
+  }, [schoolId])
 
   // ── Real-time mata_olahragawan ───────────────────────────────────────────
   useEffect(() => {
@@ -1026,7 +1029,7 @@ export default function Olahragawan() {
     if (!selKej) { setAllData([]); return }
     setLoading(true)
     unsubRef.current = onSnapshot(
-      query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', selKej)),
+      query(collection(db, 'tenants', schoolId, 'kejohanan', selKej, 'mata_olahragawan'), where('kejohananId', '==', selKej)),
       snap => {
         setAllData(snap.docs.map(d => ({ id: d.id, ...d.data() })))
         setLastUpdate(new Date())
@@ -1040,7 +1043,7 @@ export default function Olahragawan() {
   // ── Load pilihan admin ───────────────────────────────────────────────────
   useEffect(() => {
     if (!selKej) { setPilihan({}); return }
-    getDocs(query(collection(db, 'pilihan_olahragawan'), where('kejohananId', '==', selKej)))
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selKej, 'pilihan_olahragawan'))
       .then(snap => {
         const map = {}
         snap.docs.forEach(d => {
@@ -1055,7 +1058,7 @@ export default function Olahragawan() {
   // ── Load anugerah custom ─────────────────────────────────────────────────
   useEffect(() => {
     if (!selKej) { setAnugerahCustom([]); return }
-    getDocs(query(collection(db, 'anugerah_custom'), where('kejohananId', '==', selKej), orderBy('cipta')))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selKej, 'anugerah_custom'), orderBy('cipta')))
       .then(snap => setAnugerahCustom(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
       .catch(() => {})
   }, [selKej])
@@ -1077,7 +1080,7 @@ export default function Olahragawan() {
   async function handlePilihByKey(atlet, pilihanKey) {
     if (!selKej || savingPilihan) return
     const docId  = `${selKej}_${pilihanKey}`
-    const ref    = doc(db, 'pilihan_olahragawan', docId)
+    const ref    = doc(db, 'tenants', schoolId, 'kejohanan', selKej, 'pilihan_olahragawan', docId)
     const isSame = pilihan[pilihanKey]?.noKP === atlet.noKP
     setSavingPilihan(true)
     try {
@@ -1114,7 +1117,7 @@ export default function Olahragawan() {
     setSavingAnugerah(true)
     try {
       const id  = `${selKej}_${Date.now()}`
-      const ref = doc(db, 'anugerah_custom', id)
+      const ref = doc(db, 'tenants', schoolId, 'kejohanan', selKej, 'anugerah_custom', id)
       const payload = { id, kejohananId: selKej, nama: nama.trim(), cipta: serverTimestamp() }
       await setDoc(ref, payload)
       setAnugerahCustom(prev => [...prev, payload])
@@ -1127,8 +1130,8 @@ export default function Olahragawan() {
   async function handlePadamAnugerah(anugerah) {
     if (!confirm(`Padam anugerah "${anugerah.nama}"? Pilihan winner turut dipadam.`)) return
     try {
-      await deleteDoc(doc(db, 'anugerah_custom', anugerah.id))
-      await deleteDoc(doc(db, 'pilihan_olahragawan', `${selKej}_CUSTOM_${anugerah.id}`))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', selKej, 'anugerah_custom', anugerah.id))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', selKej, 'pilihan_olahragawan', `${selKej}_CUSTOM_${anugerah.id}`))
       setAnugerahCustom(prev => prev.filter(a => a.id !== anugerah.id))
       setPilihan(p => { const n = { ...p }; delete n[`CUSTOM_${anugerah.id}`]; return n })
       if (activeTab === `CUSTOM_${anugerah.id}`) setSelKat(katAda[0] || '')
@@ -1940,6 +1943,7 @@ export default function Olahragawan() {
           atlet={modalAtlet}
           namaKej={namaKej}
           katLabelFn={katLabel}
+          schoolId={schoolId}
           onClose={() => setModalAtlet(null)}
         />
       )}

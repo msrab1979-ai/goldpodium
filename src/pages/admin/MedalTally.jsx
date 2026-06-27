@@ -11,6 +11,7 @@ import {
   collection, getDocs, query, where, onSnapshot, doc, getDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -221,6 +222,8 @@ function TallyTable({ rows, bilanganKedudukan = 3, showJumlah = false }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function MedalTally() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [selKej, setSelKej]               = useState('')
   const [namaKej, setNamaKej]             = useState('')
   const [bilanganKedudukan, setBilKed]    = useState(3)
@@ -232,26 +235,31 @@ export default function MedalTally() {
   const [expandedGroups, setExpandedGroups] = useState(new Set(['SR', 'SM', 'PPKI']))
   const unsubRef = useRef(null)
 
-  // ── Load sekolah map (jenisSekolah per kodSekolah) ────────────────────────
+  // ── Load sekolah map dari atlet (jenisSekolah per kodSekolah) ───────────
+  // sekolah collection removed in GP — derive from atlet grouped by kodSekolah
   useEffect(() => {
-    getDocs(collection(db, 'sekolah'))
+    if (!schoolId) return
+    getDocs(collection(db, 'tenants', schoolId, 'atlet'))
       .then(snap => {
         const map = {}
         snap.docs.forEach(d => {
           const data = d.data()
-          map[data.kodSekolah || d.id] = {
+          const kod = data.kodSekolah || ''
+          if (!kod || map[kod]) return
+          map[kod] = {
             jenisSekolah: data.jenisSekolah || 'Lain-lain',
-            isAktif: data.isAktif !== false,
+            isAktif: true,
           }
         })
         setSekolahMap(map)
       })
       .catch(() => {})
-  }, [])
+  }, [schoolId])
 
   // ── Load kejohanan aktif ───────────────────────────────────────────────────
   useEffect(() => {
-    getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+    if (!schoolId) return
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]
@@ -262,16 +270,16 @@ export default function MedalTally() {
         }
       })
       .catch(() => {})
-  }, [])
+  }, [schoolId])
 
   // ── Subscribe real-time bila kejohanan bertukar ────────────────────────────
   useEffect(() => {
     if (unsubRef.current) { unsubRef.current(); unsubRef.current = null }
-    if (!selKej) { setTallyList([]); return }
+    if (!selKej || !schoolId) { setTallyList([]); return }
 
     setLoading(true)
     const q = query(
-      collection(db, 'medal_tally'),
+      collection(db, 'tenants', schoolId, 'kejohanan', selKej, 'medal_tally'),
       where('kejohananId', '==', selKej)
     )
     unsubRef.current = onSnapshot(q, snap => {

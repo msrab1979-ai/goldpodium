@@ -15,7 +15,8 @@ import { useAuth } from '../../context/AuthContext'
 import { driveViewUrl } from '../../utils/bukuKongsiUtils'
 
 export default function BukuKongsiPP() {
-  const { userRole } = useAuth()
+  const { userRole, userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const navigate     = useNavigate()
   const [senarai, setSenarai] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,7 +24,7 @@ export default function BukuKongsiPP() {
 
   useEffect(() => {
     const unsub = onSnapshot(
-      doc(db, 'tetapan', 'bukuKongsi'),
+      doc(db, 'tenants', schoolId, 'tetapan', 'bukuKongsi'),
       snap => {
         if (!snap.exists()) {
           setSenarai([])

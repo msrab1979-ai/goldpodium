@@ -19,6 +19,7 @@ import {
   collection, getDocs, query, where, orderBy,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -863,6 +864,8 @@ function TabAnalisisSekolah({ sekolahList, acaraList, pendaftaranDocs, kategoriL
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AnalisisPendaftaran() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [loading,          setLoading]          = useState(true)
   const [err,              setErr]              = useState(null)
   const [namaKej,          setNamaKej]          = useState('')
@@ -883,7 +886,7 @@ export default function AnalisisPendaftaran() {
       try {
         // 1. Kejohanan aktif
         const kejSnap = await getDocs(
-          query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+          query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
         )
         if (cancelled) return
         if (kejSnap.empty) { setErr('Tiada kejohanan aktif.'); setLoading(false); return }
@@ -891,27 +894,29 @@ export default function AnalisisPendaftaran() {
         const kejId  = kejDoc.id
         setNamaKej(kejDoc.data().namaKejohanan || '')
 
-        // 2. Kategori atlet + sekolah (parallel)
-        const [katSnap, sekolahSnap] = await Promise.all([
-          getDocs(query(collection(db, 'kategori'), orderBy('urutan'))),
-          getDocs(collection(db, 'sekolah')),
+        // 2. Kategori + derive sekolah dari atlet (GP: tiada sekolah collection)
+        const [katSnap, atletSnap] = await Promise.all([
+          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'), orderBy('urutan'))),
+          getDocs(collection(db, 'tenants', schoolId, 'atlet')),
         ])
         if (cancelled) return
         const katList   = katSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        const sklList   = sekolahSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        const sklMap    = {}
+        atletSnap.docs.forEach(d => { const k = d.data().kodSekolah; if (k) sklMap[k] = { id: k, kodSekolah: k, namaSekolah: d.data().namaSekolah || k, kategori: d.data().kategoriSekolah || '' } })
+        const sklList   = Object.values(sklMap)
         setKategoriList(katList)
         setSekolahList(sklList)
 
         // 3. Acara
         const acaraSnap = await getDocs(
-          query(collection(db, 'kejohanan', kejId, 'acara'), orderBy('noAcara'))
+          query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara'))
         )
         const acList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         setAcaraList(acList)
 
         // 4. Pendaftaran
         const daftarSnap = await getDocs(
-          collection(db, 'kejohanan', kejId, 'pendaftaran')
+          collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran')
         )
         const daftarDocs = daftarSnap.docs.map(d => d.data())
         if (cancelled) return
@@ -927,9 +932,9 @@ export default function AnalisisPendaftaran() {
       }
     }
 
-    load()
+    if (schoolId) load()
     return () => { cancelled = true }
-  }, [])
+  }, [schoolId])
 
   // ── Render ──────────────────────────────────────────────────────────────────
 

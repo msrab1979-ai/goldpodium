@@ -543,11 +543,14 @@ export default function CetakAcara() {
       if (!aceraId || !kejohanan) return
 
       // Load acara details
-      const acaraDoc = await getDoc(doc(db, 'kejohanan', kejohanan.id, 'acara', aceraId))
+      const acaraDoc = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'acara', aceraId))
       const acaraData = acaraDoc.exists() ? { id: aceraId, ...acaraDoc.data() } : { id: aceraId, ...jadual }
 
-      // Load final heat
-      const heatSnap = await getDocs(collection(db, 'kejohanan', kejohanan.id, 'acara', aceraId, 'heat'))
+      // Load final heat (flat collection)
+      const heatSnap = await getDocs(query(
+        collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'heat'),
+        where('aceraId', '==', aceraId)
+      ))
       const loadedHeats = heatSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (a.heatKe || 0) - (b.heatKe || 0))
       const DONE = ['diterima', 'rasmi']
@@ -569,8 +572,8 @@ export default function CetakAcara() {
       if (acaraData.namaAcara && acaraData.jantina && acaraData.kategoriKod) {
         const rKey = rekodKeyStr(acaraData.namaAcaraPendek || acaraData.namaAcara, acaraData.jantina, acaraData.kategoriKod, peringkatKod)
         const [rSnap, tSnap] = await Promise.all([
-          getDoc(doc(db, 'rekod', rKey)),
-          getDoc(doc(db, 'rekod', rKey + '_tuntutan')),
+          getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey)),
+          getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey + '_tuntutan')),
         ])
         setRekodSemasa(rSnap.exists() && rSnap.data().statusRekod === 'aktif' ? rSnap.data() : null)
         setRekodTuntutan(tSnap.exists() && tSnap.data().statusRekod === 'tuntutan' ? tSnap.data() : null)

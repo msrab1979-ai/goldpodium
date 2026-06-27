@@ -56,6 +56,7 @@ function Section({ title, checks }) {
 
 export default function HealthCheck() {
   const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [running, setRunning]   = useState(false)
   const [result, setResult]     = useState(null)
   const [progress, setProgress] = useState('')
@@ -75,7 +76,7 @@ export default function HealthCheck() {
 
       // Load semua rekod — bina map: jantina_kategoriKod → rekod terbaik { prestasi, unit }
       // Guna kategoriKod+jantina sahaja — nama acara format berbeza-beza
-      const rekodSnap = await getDocs(collection(db, 'rekod'))
+      const rekodSnap = await getDocs(collection(db, 'tenants', schoolId, 'rekod'))
       const rekodMap = {}
       for (const r of rekodSnap.docs) {
         const d = r.data()
@@ -118,14 +119,14 @@ export default function HealthCheck() {
         return n
       }
 
-      const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
       const senarai = []
       for (const acaraDoc of acaraSnap.docs) {
         const ad = acaraDoc.data()
         const rekodKey = `${ad.jantina||''}_${ad.kategoriKod||''}`
         const rekodSemasa = rekodMap[rekodKey] || null
 
-        const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', acaraDoc.id, 'heat'))
+        const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraDoc.id)))
         for (const hDoc of heatSnap.docs) {
           const hd = hDoc.data()
           const peserta = hd.peserta || []
@@ -229,10 +230,10 @@ export default function HealthCheck() {
     setBuangSemuaDone(null)
     try {
       const kejId = await getKejId()
-      const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
       let heatDikemas = 0
       for (const aDoc of acaraSnap.docs) {
-        const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', aDoc.id, 'heat'))
+        const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', aDoc.id)))
         for (const hDoc of heatSnap.docs) {
           const peserta = hDoc.data().peserta || []
           const adaBadge = peserta.some(p => p.pecahRekod || p.samaiRekod)
@@ -259,7 +260,7 @@ export default function HealthCheck() {
     try {
       const kejId = await getKejId()
       // Load semua rekod_tuntutan untuk kejohanan ini
-      const tuntSnap = await getDocs(query(collection(db, 'rekod_tuntutan'), where('kejohananId', '==', kejId)))
+      const tuntSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('kejohananId', '==', kejId)))
       if (tuntSnap.empty) { setPulihDone({ ok: true, heat: 0, nota: 'Tiada rekod_tuntutan dijumpai.' }); setPulihRunning(false); return }
 
       // Group tuntutan by acaraId+heatId
@@ -275,8 +276,8 @@ export default function HealthCheck() {
       let heatDikemas = 0
       for (const [key, tuntList] of Object.entries(tuntByHeat)) {
         const [acaraId, heatId] = key.split('__')
-        const hRef = doc(db, 'kejohanan', kejId, 'acara', acaraId, 'heat', heatId)
-        const hSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat'))
+        const hRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId)
+        const hSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraId)))
         const hDoc = hSnap.docs.find(d => d.id === heatId)
         if (!hDoc) continue
         const peserta = hDoc.data().peserta || []
@@ -311,7 +312,7 @@ export default function HealthCheck() {
     setResetLog([`🔍 Mencari acara ${acaraId}...`])
     try {
       const kejId = await getKejId()
-      const heatSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat'))
+      const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraId)))
       if (heatSnap.empty) { setResetLog(l => [...l, '⚠ Tiada heat dijumpai untuk acara ini.']); setResetting(false); return }
       setResetLog(l => [...l, `✓ Jumpa ${heatSnap.docs.length} heat`])
       for (const hDoc of heatSnap.docs) {
@@ -365,10 +366,10 @@ export default function HealthCheck() {
     setPindahLog([`🔍 Mencari kejohanan aktif...`])
     try {
       const kejId = await getKejId()
-      const dariRef = doc(db, 'kejohanan', kejId, 'acara', acaraId, 'heat', `${acaraId}-H${dariH}`)
-      const keRef   = doc(db, 'kejohanan', kejId, 'acara', acaraId, 'heat', `${acaraId}-H${keH}`)
+      const dariRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', `${acaraId}-H${dariH}`)
+      const keRef   = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', `${acaraId}-H${keH}`)
 
-      const dariDoc = await getDocs(query(collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat')))
+      const dariDoc = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraId)))
       const dariHDoc = dariDoc.docs.find(d => d.id === `${acaraId}-H${dariH}`)
       const keHDoc   = dariDoc.docs.find(d => d.id === `${acaraId}-H${keH}`)
 
@@ -415,7 +416,7 @@ export default function HealthCheck() {
   const [fixing, setFixing]           = useState(false)
 
   async function getKejId() {
-    const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+    const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
     if (kejSnap.empty) throw new Error('Tiada kejohanan aktif.')
     return kejSnap.docs[0].id
   }
@@ -464,12 +465,12 @@ export default function HealthCheck() {
     try {
       const kejId = await getKejId()
       // Cari acara by noAcara
-      const acaraSnap = await getDocs(query(collection(db, 'kejohanan', kejId, 'acara'), where('noAcara', '==', Number(noAcara))))
+      const acaraSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), where('noAcara', '==', Number(noAcara))))
       if (acaraSnap.empty) { setBrkLog([`❌ Acara #${noAcara} tidak dijumpai.`]); setBrkLoading(false); return }
       const acaraData = { id: acaraSnap.docs[0].id, ...acaraSnap.docs[0].data() }
 
       // Cari rekod berkaitan: by namaAcara + kategoriKod + jantina
-      const rekodSnap = await getDocs(collection(db, 'rekod'))
+      const rekodSnap = await getDocs(collection(db, 'tenants', schoolId, 'rekod'))
       const namaAcara = acaraData.namaAcara || ''
       const kategoriKod = acaraData.kategoriKod || ''
       const jantina = acaraData.jantina || ''
@@ -519,12 +520,12 @@ export default function HealthCheck() {
     setBrkLog([`🔧 Mengarkibkan rekod lama...`])
     try {
       const rKey = brkPilihan.id
-      const rekodRef = doc(db, 'rekod', rKey)
+      const rekodRef = doc(db, 'tenants', schoolId, 'rekod', rKey)
       const snapSemasa = await getDoc(rekodRef)
 
       // 1. Arkibkan ke rekod_sejarah
       if (snapSemasa.exists()) {
-        const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+        const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
         await setDoc(sejarahRef, {
           ...snapSemasa.data(),
           rekodId:      rKey,
@@ -555,8 +556,9 @@ export default function HealthCheck() {
       const noKPLama = brkPilihan.noKP
       const noKPBaru = brkForm.noKP.trim()
       const acaraId  = brkSenarai?.acara?.id
+      const mataKejId = brkPilihan.kejohananId || (await getKejId())
       if (acaraId && noKPLama && noKPBaru !== noKPLama) {
-        const mataRefLama = doc(db, 'mata_olahragawan', noKPLama)
+        const mataRefLama = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', noKPLama)
         const mataSnapLama = await getDoc(mataRefLama)
         if (mataSnapLama.exists()) {
           const fieldKey = `rekod_${acaraId}`
@@ -564,7 +566,7 @@ export default function HealthCheck() {
           setBrkLog(l => [...l, `✓ Rekod dibuang dari mata_olahragawan ${noKPLama}`])
         }
         if (noKPBaru) {
-          const mataRefBaru = doc(db, 'mata_olahragawan', noKPBaru)
+          const mataRefBaru = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', noKPBaru)
           await setDoc(mataRefBaru, {
             [`rekod_${acaraId}`]: {
               acaraId,
@@ -580,7 +582,7 @@ export default function HealthCheck() {
         }
       } else if (acaraId && noKPBaru) {
         // Kemaskini nilai dalam mata_olahragawan (noKP sama, prestasi mungkin berubah)
-        const mataRef = doc(db, 'mata_olahragawan', noKPBaru)
+        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', noKPBaru)
         const mataSnap = await getDoc(mataRef)
         if (mataSnap.exists() && mataSnap.data()[`rekod_${acaraId}`]) {
           await updateDoc(mataRef, {
@@ -611,10 +613,10 @@ export default function HealthCheck() {
     setBrkLog([`🗑 Mengarkibkan dan memadam rekod...`])
     try {
       const rKey = brkPilihan.id
-      const rekodRef = doc(db, 'rekod', rKey)
+      const rekodRef = doc(db, 'tenants', schoolId, 'rekod', rKey)
       const snapSemasa = await getDoc(rekodRef)
       if (snapSemasa.exists()) {
-        const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+        const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
         await setDoc(sejarahRef, {
           ...snapSemasa.data(),
           rekodId:      rKey,
@@ -628,8 +630,9 @@ export default function HealthCheck() {
       // Buang dari mata_olahragawan
       const noKP   = brkPilihan.noKP
       const acaraId = brkSenarai?.acara?.id
+      const padamKejId = brkPilihan.kejohananId || (await getKejId())
       if (noKP && acaraId) {
-        const mataRef = doc(db, 'mata_olahragawan', noKP)
+        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', padamKejId, 'mata_olahragawan', noKP)
         const mataSnap = await getDoc(mataRef)
         if (mataSnap.exists()) {
           await updateDoc(mataRef, { [`rekod_${acaraId}`]: deleteField() })
@@ -655,7 +658,7 @@ export default function HealthCheck() {
     setBrkUndoPilihan(null)
     try {
       const snap = await getDocs(query(
-        collection(db, 'rekod_sejarah'),
+        collection(db, 'tenants', schoolId, 'rekod_sejarah'),
         where('rekodId', '==', brkPilihan?.id || '')
       ))
       if (snap.empty) {
@@ -679,12 +682,12 @@ export default function HealthCheck() {
     setBrkLog([`♻ Memulihkan rekod dari arkib...`])
     try {
       const rKey = brkPilihan.id
-      const rekodRef = doc(db, 'rekod', rKey)
+      const rekodRef = doc(db, 'tenants', schoolId, 'rekod', rKey)
       const snapSemasa = await getDoc(rekodRef)
 
       // Arkibkan rekod semasa
       if (snapSemasa.exists()) {
-        const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+        const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
         await setDoc(sejarahRef, {
           ...snapSemasa.data(),
           rekodId:      rKey,
@@ -727,7 +730,7 @@ export default function HealthCheck() {
       const kejId = await getKejId()
       setFixLog(l => [...l, `✓ Kejohanan: ${kejId}`])
       setFixLog(l => [...l, '🔍 Memuatkan pendaftaran dari Firestore...'])
-      const pendSnap = await getDocsFromServer(collection(db, 'kejohanan', kejId, 'pendaftaran'))
+      const pendSnap = await getDocsFromServer(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
       const logs = []
       const targetDocs = pendSnap.docs.filter(d => d.data().noKP === noKP)
       logs.push(`✓ Jumpa ${targetDocs.length} doc dengan noKP=${noKP}`)
@@ -736,7 +739,7 @@ export default function HealthCheck() {
         const data = d.data()
         logs.push(`  Doc ID: ${d.id} | namaAtlet: ${data.namaAtlet} | acaraIds: [${(data.acaraIds||[]).join(', ')}]`)
         if (!aceraId) {
-          await deleteDoc(doc(db, 'kejohanan', kejId, 'pendaftaran', d.id))
+          await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran', d.id))
           logs.push(`  🗑 Doc ${d.id} DIPADAM.`)
         } else {
           const acaraIds = data.acaraIds || []
@@ -745,10 +748,10 @@ export default function HealthCheck() {
           } else {
             const newIds = acaraIds.filter(id => id !== aceraId)
             if (newIds.length === 0) {
-              await deleteDoc(doc(db, 'kejohanan', kejId, 'pendaftaran', d.id))
+              await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran', d.id))
               logs.push(`  🗑 Doc ${d.id} DIPADAM (tiada acara baki).`)
             } else {
-              await updateDoc(doc(db, 'kejohanan', kejId, 'pendaftaran', d.id), { acaraIds: newIds, updatedAt: serverTimestamp() })
+              await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran', d.id), { acaraIds: newIds, updatedAt: serverTimestamp() })
               logs.push(`  ✏ Doc ${d.id} dikemaskini. Acara baki: [${newIds.join(', ')}]`)
             }
           }
@@ -769,7 +772,7 @@ export default function HealthCheck() {
     try {
       const kejId = await getKejId()
       setFixLog(l => [...l, `✓ Kejohanan: ${kejId}`])
-      const pendSnap = await getDocsFromServer(collection(db, 'kejohanan', kejId, 'pendaftaran'))
+      const pendSnap = await getDocsFromServer(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
       const targetDocs = pendSnap.docs.filter(d => d.data().kodSekolah === kodSkl)
       setFixLog(l => [...l, `✓ Jumpa ${targetDocs.length} rekod untuk sekolah ${kodSkl}`])
       if (targetDocs.length === 0) { setFixLog(l => [...l, '⚠ Tiada rekod dijumpai.']); setFixing(false); return }
@@ -793,7 +796,7 @@ export default function HealthCheck() {
     try {
       // ── 0. Cari kejohanan aktif ──────────────────────────────────────────────
       const kejSnap = await getDocs(
-        query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
       )
       if (kejSnap.empty) {
         setResult({ error: 'Tiada kejohanan aktif ditemui.' })
@@ -806,9 +809,9 @@ export default function HealthCheck() {
       // ── 1. Load data utama ───────────────────────────────────────────────────
       setProgress('Memuatkan data pendaftaran, atlet dan acara...')
       const [pendSnap, atletSnap, acaraSnap] = await Promise.all([
-        getDocs(collection(db, 'kejohanan', kejId, 'pendaftaran')),
-        getDocs(collection(db, 'atlet')),
-        getDocs(collection(db, 'kejohanan', kejId, 'acara')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran')),
+        getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara')),
       ])
 
       const pendList  = pendSnap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -831,9 +834,12 @@ export default function HealthCheck() {
 
       // C2 — noBib duplikat dalam pendaftaran (dalam kategori sekolah yang sama sahaja)
       // SK vs SM dibenar sama prefix — duplikat hanya error jika SR+SR atau SM+SM atau PPKI+PPKI
-      const sekolahSnap = await getDocs(collection(db, 'sekolah'))
+      const sekolahSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
       const sekolahKatMap = {}
-      sekolahSnap.docs.forEach(d => { sekolahKatMap[d.id] = d.data().kategori || '' })
+      sekolahSnap.docs.forEach(d => {
+        const k = d.data().kodSekolah
+        if (k) sekolahKatMap[k] = d.data().kategoriSekolah || ''
+      })
 
       // Key = noBib + '|' + kategoriSekolah
       const bibCount = {}
@@ -891,7 +897,7 @@ export default function HealthCheck() {
       // C5, C6, C7 — Heat peserta checks
       for (const acara of acaraList) {
         const heatSnap = await getDocs(
-          collection(db, 'kejohanan', kejId, 'acara', acara.id, 'heat')
+          query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acara.id))
         )
         for (const hDoc of heatSnap.docs) {
           const h = hDoc.data()
@@ -924,7 +930,7 @@ export default function HealthCheck() {
       const statusLama = []
       for (const acara of acaraList) {
         const heatSnap = await getDocs(
-          collection(db, 'kejohanan', kejId, 'acara', acara.id, 'heat')
+          query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acara.id))
         )
         for (const hDoc of heatSnap.docs) {
           const h = hDoc.data()

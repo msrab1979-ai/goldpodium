@@ -211,6 +211,7 @@ function SidebarContent({ userData, userRole, visibleNav, onLogout, onNavClick }
 
 export default function DashboardLayout({ children }) {
   const { userData, userRole, logout } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -227,7 +228,7 @@ export default function DashboardLayout({ children }) {
   const [bukuKongsiAktif, setBukuKongsiAktif]           = useState(false)
   useEffect(() => {
     const unsub1 = onSnapshot(
-      doc(db, 'tetapan', 'sijilPencapaian'),
+      doc(db, 'tenants', schoolId, 'tetapan', 'sijilPencapaian'),
       snap => {
         if (!snap.exists()) { setSijilPencapaianAktif(false); return }
         const a = snap.data().aktif
@@ -237,7 +238,7 @@ export default function DashboardLayout({ children }) {
       () => setSijilPencapaianAktif(false)
     )
     const unsub2 = onSnapshot(
-      doc(db, 'tetapan', 'bukuKongsi'),
+      doc(db, 'tenants', schoolId, 'tetapan', 'bukuKongsi'),
       snap => {
         if (!snap.exists()) { setBukuKongsiAktif(false); return }
         const a = snap.data().aktif
@@ -246,7 +247,7 @@ export default function DashboardLayout({ children }) {
       () => setBukuKongsiAktif(false)
     )
     return () => { unsub1(); unsub2() }
-  }, [])
+  }, [schoolId])
 
   // Jika userRole null (dokumen Firestore tiada / role tidak ditetapkan),
   // masih render sidebar dengan visibleNav kosong supaya mesej ralat nampak.

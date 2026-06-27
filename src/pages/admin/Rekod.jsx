@@ -326,7 +326,7 @@ function ImportRekodModal({ onClose, onDone }) {
             r.kategoriKod.toString().trim(),
             r.peringkat.toString().trim(),
           )
-          const ref = doc(db, 'rekod', key)
+          const ref = doc(db, 'tenants', schoolId, 'rekod', key)
 
           const windSpeed = (r.windSpeed !== '' && r.windSpeed != null)
             ? Number(r.windSpeed) : null
@@ -624,7 +624,7 @@ function CetakModal({ rekodList, kategoriList, onClose }) {
 
 // ─── Modal Tambah / Edit Rekod ────────────────────────────────────────────────
 
-function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved }) {
+function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved, schoolId }) {
   const { userData } = useAuth()
   const isEdit = !!initial?.rekodId
   const [form, setForm] = useState(initial || EMPTY_FORM)
@@ -669,22 +669,22 @@ function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved }) {
       const rKey    = rekodKey(form.namaAcara, form.jantina, form.kategoriKod, form.peringkat)
       const oldKey  = initial?.rekodId || null
       const keyChanged = isEdit && oldKey && oldKey !== rKey
-      const ref  = doc(db, 'rekod', rKey)
+      const ref  = doc(db, 'tenants', schoolId, 'rekod', rKey)
       const snap = await getDoc(ref)
 
       // Kalau edit rekod aktif, archive ke sejarah dulu
       if (isEdit) {
         // Archive dari old key (jika key berubah) atau current ref
-        const archiveSnap = keyChanged ? await getDoc(doc(db, 'rekod', oldKey)) : snap
+        const archiveSnap = keyChanged ? await getDoc(doc(db, 'tenants', schoolId, 'rekod', oldKey)) : snap
         if (archiveSnap.exists() && archiveSnap.data().statusRekod === 'aktif') {
-          const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+          const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
           await setDoc(sejarahRef, { ...archiveSnap.data(), diarchivPada: serverTimestamp() })
         }
         // Padam old key jika key berubah
         if (keyChanged) {
           await Promise.all([
-            deleteDoc(doc(db, 'rekod', oldKey)).catch(() => {}),
-            deleteDoc(doc(db, 'rekod', oldKey + '_tuntutan')).catch(() => {}),
+            deleteDoc(doc(db, 'tenants', schoolId, 'rekod', oldKey)).catch(() => {}),
+            deleteDoc(doc(db, 'tenants', schoolId, 'rekod', oldKey + '_tuntutan')).catch(() => {}),
           ])
         }
       }
@@ -898,6 +898,7 @@ function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved }) {
 
 export default function Rekod() {
   const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const userRole = userData?.role
 
   const canEdit   = ['superadmin', 'pengurus_teknik'].includes(userRole)
@@ -928,10 +929,10 @@ export default function Rekod() {
   const load = useCallback(async () => {
     setLoading(true)
 
-    // rekod library + kategori + kejohanan aktif (acara sahaja — bukan mata_olahragawan)
-    const [rekodSnap, katSnap] = await Promise.allSettled([
-      getDocs(collection(db, 'rekod')),
-      getDocs(query(collection(db, 'kategori'), orderBy('urutan'))),
+    // rekod library + kejohanan aktif
+    const [rekodSnap, kejSnap] = await Promise.allSettled([
+      getDocs(collection(db, 'tenants', schoolId, 'rekod')),
+      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))),
     ])
     if (rekodSnap.status === 'fulfilled') {
       const allRekod = rekodSnap.value.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -942,22 +943,20 @@ export default function Rekod() {
     } else {
       console.error('load rekod gagal:', rekodSnap.reason)
     }
-    if (katSnap.status === 'fulfilled') {
-      setKategoriList(katSnap.value.docs.map(d => ({ id: d.id, ...d.data() })))
-    } else {
-      console.error('load kategori gagal:', katSnap.reason)
-    }
 
     try {
-      const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
-      if (!kejSnap.empty) {
-        const kejId = kejSnap.docs[0].id
+      if (kejSnap.status === 'fulfilled' && !kejSnap.value.empty) {
+        const kejId = kejSnap.value.docs[0].id
         setAktifKejId(kejId)
-        setAktifKejNama(kejSnap.docs[0].data().namaKejohanan || kejId)
-        const aSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+        setAktifKejNama(kejSnap.value.docs[0].data().namaKejohanan || kejId)
+        const [aSnap, katSnap] = await Promise.all([
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara')),
+          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'), orderBy('urutan'))),
+        ])
         const acaraDocs = aSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         acaraDocs.sort((a, b) => (a.kategoriKod || '').localeCompare(b.kategoriKod || ''))
         setAcaraList(acaraDocs)
+        setKategoriList(katSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       }
     } catch (e) { console.error('load kejohanan:', e) }
 
@@ -971,7 +970,7 @@ export default function Rekod() {
   useEffect(() => {
     if (!aktifKejId) return
     let cancelled = false
-    getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', aktifKejId)))
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'mata_olahragawan'))
       .then(snap => {
         if (cancelled) return
         const rekodKej = []
@@ -1010,13 +1009,13 @@ export default function Rekod() {
   async function handleSahkan(tuntutan) {
     if (!confirm(`Sahkan rekod baru?\n${tuntutan.namaAcara} ${tuntutan.jantina} ${tuntutan.kategoriKod}\nPrestasi: ${formatPrestasi(tuntutan.prestasi, tuntutan.unit)}`)) return
     try {
-      const rekodRef    = doc(db, 'rekod', tuntutan.rekodAsal)
-      const tuntutanRef = doc(db, 'rekod', tuntutan.id)
+      const rekodRef    = doc(db, 'tenants', schoolId, 'rekod', tuntutan.rekodAsal)
+      const tuntutanRef = doc(db, 'tenants', schoolId, 'rekod', tuntutan.id)
       const rekodSnap   = await getDoc(rekodRef)
 
       // Archive rekod lama ke rekod_sejarah
       if (rekodSnap.exists()) {
-        const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+        const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
         await setDoc(sejarahRef, {
           ...rekodSnap.data(),
           dipecahOleh: {
@@ -1053,7 +1052,7 @@ export default function Rekod() {
   async function handleTolak(tuntutan) {
     if (!confirm('Tolak tuntutan rekod ini?')) return
     try {
-      await deleteDoc(doc(db, 'rekod', tuntutan.id))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', tuntutan.id))
       // Bersihkan badge pecahRekod dari heat & field rekod dari mata_olahragawan
       await autoCleanKesanRekod(tuntutan)
       setMsg({ type: 'ok', text: 'Tuntutan ditolak dan dibuang.' })
@@ -1081,13 +1080,13 @@ export default function Rekod() {
 
     for (const tuntutan of tuntutanList) {
       try {
-        const rekodRef    = doc(db, 'rekod', tuntutan.rekodAsal)
-        const tuntutanRef = doc(db, 'rekod', tuntutan.id)
+        const rekodRef    = doc(db, 'tenants', schoolId, 'rekod', tuntutan.rekodAsal)
+        const tuntutanRef = doc(db, 'tenants', schoolId, 'rekod', tuntutan.id)
         const rekodSnap   = await getDoc(rekodRef)
 
         // Archive rekod lama
         if (rekodSnap.exists()) {
-          const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+          const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
           await setDoc(sejarahRef, {
             ...rekodSnap.data(),
             dipecahOleh: {
@@ -1140,13 +1139,13 @@ export default function Rekod() {
     setAuditResult(null)
     try {
       // 1. Ambil semua acara untuk kejohanan aktif
-      const acaraSnap = await getDocs(collection(db, 'kejohanan', aktifKejId, 'acara'))
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'acara'))
       const semuaAcara = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
       // 2. Ambil tuntutan & mata_olahragawan untuk cross-check
       const [tuntutanSnap, mataSnap] = await Promise.all([
-        getDocs(collection(db, 'rekod')),
-        getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', aktifKejId))),
+        getDocs(collection(db, 'tenants', schoolId, 'rekod')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'mata_olahragawan')),
       ])
       const tuntutanSet = new Set(
         tuntutanSnap.docs.filter(d => d.id.endsWith('_tuntutan')).map(d => d.id.replace('_tuntutan', ''))
@@ -1176,7 +1175,7 @@ export default function Rekod() {
         if (acara.parentAcaraId && fasa !== 'final' && fasa !== 'terus_final') continue
 
         const heatSnap = await getDocs(
-          collection(db, 'kejohanan', aktifKejId, 'acara', acara.id, 'heat')
+          query(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'heat'), where('aceraId', '==', acara.id))
         )
 
         for (const heatDoc of heatSnap.docs) {
@@ -1344,12 +1343,12 @@ export default function Rekod() {
     let kemaskini = 0, skip = 0
     try {
       // 1. Ambil kejohananId aktif
-      const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+      const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
       if (kejSnap.empty) { setRefreshResult({ err: 'Tiada kejohanan aktif.' }); return }
       const kejId = kejSnap.docs[0].data().kejohananId || kejSnap.docs[0].id
 
       // 2. Ambil semua mata_olahragawan untuk kejohanan ini
-      const mataSnap = await getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
+      const mataSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan'))
 
       for (const mataDoc of mataSnap.docs) {
         const mataData = mataDoc.data()
@@ -1367,7 +1366,7 @@ export default function Rekod() {
           // Kita nak rekod SEBELUM yang ini — iaitu rekod yang wujud
           // Untuk rekod pertama yang pernah dihantar, rekod library sekarang = rekod baru itu sendiri
           // Kita skip jika prestasiBaru == prestasi dalam library (bermakna atlet ini ADALAH rekod semasa)
-          const rekodSnap = await getDoc(doc(db, 'rekod', rKey))
+          const rekodSnap = await getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey))
           if (!rekodSnap.exists()) { skip++; continue }
           const lib = rekodSnap.data()
 
@@ -1376,7 +1375,7 @@ export default function Rekod() {
           if (samaPrestasi) {
             // Cuba cari rekod_sejarah untuk acara ini
             const sejarahSnap = await getDocs(
-              query(collection(db, 'rekod_sejarah'), where('rekodId', '==', rKey))
+              query(collection(db, 'tenants', schoolId, 'rekod_sejarah'), where('rekodId', '==', rKey))
             )
             if (!sejarahSnap.empty) {
               const sorted = sejarahSnap.docs.slice().sort((a, b) => (b.data().diarchivPada?.seconds ?? 0) - (a.data().diarchivPada?.seconds ?? 0))
@@ -1410,7 +1409,7 @@ export default function Rekod() {
         }
 
         if (Object.keys(patch).length > 0) {
-          await setDoc(doc(db, 'mata_olahragawan', mataDoc.id), patch, { merge: true })
+          await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan', mataDoc.id), patch, { merge: true })
         }
       }
       setRefreshResult({ kemaskini, skip })
@@ -1425,9 +1424,9 @@ export default function Rekod() {
     if (!confirm(`Padam rekod ${rekod.namaAcara} ${rekod.jantina} ${rekod.kategoriKod}?\nTindakan ini tidak boleh dibatalkan.`)) return
     try {
       // Archive ke sejarah
-      const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+      const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
       await setDoc(sejarahRef, { ...rekod, dipadamPada: serverTimestamp() })
-      await deleteDoc(doc(db, 'rekod', rekod.id))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', rekod.id))
       setMsg({ type: 'ok', text: 'Rekod dipadam dan diarkibkan.' })
       load()
     } catch (e) {
@@ -1445,7 +1444,7 @@ export default function Rekod() {
 
     try {
       // 1. Cari acara yang match (namaAcara/Pendek + kategoriKod + jantina)
-      const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
       const matchAcara = acaraSnap.docs.find(a => {
         const d = a.data()
         const namaA = (d.namaAcaraPendek || d.namaAcara || '').trim().toUpperCase()
@@ -1460,10 +1459,9 @@ export default function Rekod() {
       const fieldKey = `rekod_${acaraId}`
 
       // 2. Padam field rekod_{acaraId} dari mata_olahragawan
-      const mataSnap = await getDocs(query(
-        collection(db, 'mata_olahragawan'),
-        where('kejohananId', '==', kejId)
-      ))
+      const mataSnap = await getDocs(
+        collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan')
+      )
       let mataCount = 0
       for (const d of mataSnap.docs) {
         if (d.data()[fieldKey] !== undefined) {
@@ -1474,7 +1472,7 @@ export default function Rekod() {
 
       // 3. Buang flag pecahRekod/samaiRekod dari heat.peserta
       const heatSnap = await getDocs(
-        collection(db, 'kejohanan', kejId, 'acara', acaraId, 'heat')
+        query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraId))
       )
       let heatCount = 0
       for (const h of heatSnap.docs) {
@@ -1517,10 +1515,10 @@ export default function Rekod() {
     }
     try {
       // Archive ke sejarah
-      const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+      const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
       await setDoc(sejarahRef, { ...rekod, dipadamPada: serverTimestamp() })
-      await deleteDoc(doc(db, 'rekod', rekod.id))
-      await deleteDoc(doc(db, 'rekod', rekod.id + '_tuntutan')).catch(() => {})
+      await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', rekod.id))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', rekod.id + '_tuntutan')).catch(() => {})
       // Auto-clean kesan: mata_olahragawan + heat.peserta badges
       const cleaned = await autoCleanKesanRekod(rekod)
       setMsg({ type: 'ok', text: `✅ Rekod dipadam. Dibersihkan: ${cleaned.mataCount} atlet, ${cleaned.heatCount} heat.` })
@@ -1554,11 +1552,11 @@ export default function Rekod() {
     if (!ok) return
     try {
       // Archive nilai semasa ke sejarah dulu
-      const sejarahRef = doc(collection(db, 'rekod_sejarah'))
+      const sejarahRef = doc(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
       await setDoc(sejarahRef, { ...rekod, dipadamPada: serverTimestamp(), sebab: 'restored_to_lama' })
 
       // Patch ke nilai lama
-      await updateDoc(doc(db, 'rekod', rekod.id), {
+      await updateDoc(doc(db, 'tenants', schoolId, 'rekod', rekod.id), {
         prestasi:     Number(rekod.prestasiLama),
         namaAtlet:    rekod.namaLama || '—',
         namaSekolah:  rekod.lokasiLama || '—',
@@ -1579,7 +1577,7 @@ export default function Rekod() {
         updatedAt:    serverTimestamp(),
       })
       // Padam tuntutan version (kalau ada)
-      await deleteDoc(doc(db, 'rekod', rekod.id + '_tuntutan')).catch(() => {})
+      await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', rekod.id + '_tuntutan')).catch(() => {})
       // Auto-clean kesan: mata_olahragawan + heat.peserta badges
       const cleaned = await autoCleanKesanRekod(rekod)
       setMsg({ type: 'ok', text: `✅ Rekod lama dikembalikan. Dibersihkan: ${cleaned.mataCount} atlet, ${cleaned.heatCount} heat.` })
@@ -1608,7 +1606,7 @@ export default function Rekod() {
 
     setBaikiSaving(true)
     try {
-      const newRef  = doc(db, 'rekod', newKey)
+      const newRef  = doc(db, 'tenants', schoolId, 'rekod', newKey)
       const newSnap = await getDoc(newRef)
 
       if (newSnap.exists()) {
@@ -1617,7 +1615,7 @@ export default function Rekod() {
           `Rekod dengan key "${newKey}" sudah wujud dalam sistem.\n\n` +
           `Padam orphan ini sahaja dan kekalkan rekod sedia ada?`
         )) { setBaikiSaving(false); return }
-        await deleteDoc(doc(db, 'rekod', oldKey))
+        await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', oldKey))
         setMsg({ type: 'ok', text: 'Orphan dipadam. Rekod sedia ada dikekalkan.' })
       } else {
         // Selamat — pindah ke key baru, kemaskini namaAcara + kategoriKod
@@ -1630,7 +1628,7 @@ export default function Rekod() {
           kategoriKod:      targetKatKod,
           updatedAt:        serverTimestamp(),
         })
-        await deleteDoc(doc(db, 'rekod', oldKey))
+        await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', oldKey))
         setMsg({ type: 'ok', text: `Rekod berjaya dipindah: ${oldKey} → ${newKey}` })
       }
 
@@ -1654,16 +1652,16 @@ export default function Rekod() {
       `Data rekod dikekalkan, hanya key diubah.`
     )) return
     try {
-      const newRef  = doc(db, 'rekod', x.rKeyBaru)
+      const newRef  = doc(db, 'tenants', schoolId, 'rekod', x.rKeyBaru)
       const newSnap = await getDoc(newRef)
       if (newSnap.exists()) {
         if (!confirm(`Key "${x.rKeyBaru}" sudah wujud.\nPadam rekod lama (${x.rKey}) sahaja?`)) return
-        await deleteDoc(doc(db, 'rekod', x.rKey))
+        await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', x.rKey))
         setMsg({ type: 'ok', text: 'Rekod lama dipadam. Rekod baru dikekalkan.' })
       } else {
         const { id: _id, rekodId: _rId, ...rest } = x.rekodItem
         await setDoc(newRef, { ...rest, rekodId: x.rKeyBaru, updatedAt: serverTimestamp() })
-        await deleteDoc(doc(db, 'rekod', x.rKey))
+        await deleteDoc(doc(db, 'tenants', schoolId, 'rekod', x.rKey))
         setMsg({ type: 'ok', text: `Key dikemas: ${x.rKey} → ${x.rKeyBaru}` })
       }
       load()

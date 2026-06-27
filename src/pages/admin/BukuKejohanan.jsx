@@ -21,6 +21,7 @@ import {
   collection, getDocs, getDocsFromServer, getDoc, setDoc, doc, query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 
 // ─── Helper: Kompres gambar cover supaya muat dalam Firestore (1MB limit) ────
 function kompresGambarCover(dataUrl) {
@@ -76,6 +77,8 @@ function rekodKey(namaAcara, jantina, kategoriKod, peringkat) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function BukuKejohanan() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [loading,  setLoading]  = useState(false)
   const [msg,      setMsg]      = useState(null)
   const [preview,  setPreview]  = useState(null)
@@ -89,9 +92,10 @@ export default function BukuKejohanan() {
   const [coverMsg, setCoverMsg]     = useState('')
 
   useEffect(() => {
+    if (!schoolId) return
     async function loadCover() {
       try {
-        const snap = await getDoc(doc(db, 'tetapan', 'bukuKejohanan'))
+        const snap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'bukuKejohanan'))
         if (!snap.exists()) return
         const d = snap.data()
         if (d.jenisCover) setJenisCover(d.jenisCover)
@@ -99,7 +103,7 @@ export default function BukuKejohanan() {
       } catch {}
     }
     loadCover()
-  }, [])
+  }, [schoolId])
 
   async function handleUploadCover(e) {
     const file = e.target.files?.[0]
@@ -122,7 +126,7 @@ export default function BukuKejohanan() {
         setCoverMsg('Sila muat naik template dahulu untuk pilihan Custom.')
         setSavingCover(false); return
       }
-      await setDoc(doc(db, 'tetapan', 'bukuKejohanan'), {
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'bukuKejohanan'), {
         jenisCover,
         coverImg:   jenisCover === 'custom' ? coverImg : null,
         updatedAt:  serverTimestamp(),
@@ -147,18 +151,18 @@ export default function BukuKejohanan() {
     setProgress('Memuatkan tetapan…')
     try {
       // 1. Tetapan & config
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
 
       // 1b. Tetapan Buku Kejohanan (cover)
-      const bukuCfgSnap = await getDoc(doc(db, 'tetapan', 'bukuKejohanan'))
+      const bukuCfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'bukuKejohanan'))
       const bukuCfg = bukuCfgSnap.exists() ? bukuCfgSnap.data() : {}
       const useCustomCover = bukuCfg.jenisCover === 'custom' && !!bukuCfg.coverImg
 
       // 2. Kejohanan aktif
       setProgress('Memuatkan data kejohanan…')
       const kejSnap = await getDocs(query(
-        collection(db, 'kejohanan'),
+        collection(db, 'tenants', schoolId, 'kejohanan'),
         where('statusKejohanan', '==', 'aktif')
       ))
       if (kejSnap.empty) {
@@ -171,16 +175,21 @@ export default function BukuKejohanan() {
       const namaKej = cfg.tajukUtama || kej.namaKejohanan || 'Kejohanan Olahraga'
       const peringkatKej = { daerah: 'D', negeri: 'N', kebangsaan: 'K' }[kej.peringkat] || 'D'
 
-      // 3. Sekolah
+      // 3. Sekolah (derive dari atlet)
       setProgress('Memuatkan senarai sekolah…')
-      const sklSnap  = await getDocs(collection(db, 'sekolah'))
-      const sekolahList = sklSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const sklSnap  = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+      const sklMap = {}
+      sklSnap.docs.forEach(d => {
+        const k = d.data().kodSekolah
+        if (k) sklMap[k] = { id: k, kodSekolah: k, namaSekolah: d.data().namaSekolah || k, kategori: d.data().kategoriSekolah || '' }
+      })
+      const sekolahList = Object.values(sklMap)
         .sort((a, b) => (a.kategori || '').localeCompare(b.kategori || '') || (a.namaSekolah || '').localeCompare(b.namaSekolah || '', 'ms'))
 
       // 4. Jadual acara
       setProgress('Memuatkan jadual acara…')
       const jadualSnap = await getDocs(
-        query(collection(db, 'jadual_acara'), orderBy('tarikhAcara'), orderBy('masaMula'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual'), orderBy('tarikhAcara'), orderBy('masaMula'))
       )
       const jadualList = jadualSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
@@ -189,7 +198,7 @@ export default function BukuKejohanan() {
       // 5. Semua acara dalam kejohanan
       setProgress('Memuatkan senarai acara…')
       const acaraSnap = await getDocs(
-        query(collection(db, 'kejohanan', kejId, 'acara'), orderBy('noAcara'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara'))
       )
       const acaraList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       const acaraMap  = Object.fromEntries(acaraList.map(a => [a.id, a]))
@@ -199,7 +208,7 @@ export default function BukuKejohanan() {
       const heatResults = await Promise.all(
         acaraList.map(async a => {
           const hSnap = await getDocs(
-            collection(db, 'kejohanan', kejId, 'acara', a.id, 'heat')
+            query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', a.id))
           )
           const heats = hSnap.docs.map(d => ({ id: d.id, ...d.data() }))
           const final = heats.find(h =>
@@ -220,7 +229,7 @@ export default function BukuKejohanan() {
       // 7. Rekod semasa
       setProgress('Memuatkan rekod semasa…')
       const rekodSnap = await getDocs(
-        query(collection(db, 'rekod'), where('statusRekod', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'rekod'), where('statusRekod', '==', 'aktif'))
       )
       const rekodList = rekodSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       const rekodMap  = Object.fromEntries(rekodList.map(r => [r.id, r]))
@@ -230,7 +239,7 @@ export default function BukuKejohanan() {
       const rekodDipecahList = []
       // mataSnap diload kemudian (step 9) — load awal untuk rekod dipecah
       const mataSnapRekod = await getDocsFromServer(
-        query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId))
+        collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan')
       )
       mataSnapRekod.docs.forEach(d => {
         const data = d.data()
@@ -257,7 +266,7 @@ export default function BukuKejohanan() {
 
       // 8. Atlet Terbaik dari tetapan/atletTerbaik (AnalisaPingat)
       setProgress('Memuatkan atlet terbaik…')
-      const tbSnap = await getDoc(doc(db, 'tetapan', 'atletTerbaik'))
+      const tbSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'atletTerbaik'))
       const tajukList = tbSnap.exists() ? (tbSnap.data().tajuk || []) : []
 
       // 9. Mata olahragawan — guna semula mataSnapRekod (dah diload dalam 7b)
@@ -268,17 +277,17 @@ export default function BukuKejohanan() {
       })
 
       // 10. Kategori
-      const katSnap = await getDocs(query(collection(db, 'kategori'), orderBy('urutan')))
+      const katSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'), orderBy('urutan')))
       const katList = katSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
       // 11. Pendaftaran
       setProgress('Memuatkan data pendaftaran…')
-      const daftarSnap = await getDocs(collection(db, 'kejohanan', kejId, 'pendaftaran'))
+      const daftarSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
       const pendaftaranDocs = daftarSnap.docs.map(d => d.data())
 
       // 12. Medal Tally
       setProgress('Memuatkan medal tally…')
-      const tallySnap = await getDocs(collection(db, 'medal_tally'))
+      const tallySnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'))
       const medalTallyDocs = tallySnap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(t => (t.emas || 0) > 0 || (t.perak || 0) > 0 || (t.gangsa || 0) > 0)
 

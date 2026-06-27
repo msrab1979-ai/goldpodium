@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import { isValidDriveUrl, extractDriveFileId } from '../../utils/bukuKongsiUtils'
 
 const MAX_BUKU = 10
@@ -23,6 +24,8 @@ function newBukuId() {
 }
 
 export default function BukuKongsiSetup() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [aktif, setAktif]       = useState(true)
   const [senarai, setSenarai]   = useState([])  // [{ id, tajuk, url, createdAt }]
   const [saving, setSaving]     = useState(false)
@@ -31,7 +34,7 @@ export default function BukuKongsiSetup() {
   useEffect(() => {
     async function load() {
       try {
-        const snap = await getDoc(doc(db, 'tetapan', 'bukuKongsi'))
+        const snap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'bukuKongsi'))
         if (!snap.exists()) return
         const d = snap.data()
         if (typeof d.aktif === 'boolean') setAktif(d.aktif)
@@ -39,7 +42,7 @@ export default function BukuKongsiSetup() {
       } catch {}
     }
     load()
-  }, [])
+  }, [schoolId])
 
   function tambahBuku() {
     if (senarai.length >= MAX_BUKU) return
@@ -88,7 +91,7 @@ export default function BukuKongsiSetup() {
           setSaving(false); return
         }
       }
-      await setDoc(doc(db, 'tetapan', 'bukuKongsi'), {
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'bukuKongsi'), {
         aktif:     !!aktif,
         senarai:   bersih,
         updatedAt: serverTimestamp(),

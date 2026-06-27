@@ -152,7 +152,7 @@ function isoToLocalDT(isoStr) {
 
 // ─── Modal Form ───────────────────────────────────────────────────────────────
 
-function KejohananModal({ mode, initial, onClose, onSaved }) {
+function KejohananModal({ mode, initial, onClose, onSaved, schoolId }) {
   const { user: currentUser } = useAuth()
   const [form, setForm] = useState(initial)
   const [saving, setSaving] = useState(false)
@@ -195,7 +195,7 @@ function KejohananModal({ mode, initial, onClose, onSaved }) {
       }
 
       if (isEdit) {
-        await updateDoc(doc(db, 'kejohanan', initial.kejohananId), {
+        await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', initial.kejohananId), {
           namaKejohanan:      form.namaKejohanan.trim(),
           tahun:              Number(form.tahun),
           peringkat:          form.peringkat,
@@ -215,7 +215,7 @@ function KejohananModal({ mode, initial, onClose, onSaved }) {
         })
       } else {
         const id = generateKejohananId(form.tahun)
-        await setDoc(doc(db, 'kejohanan', id), {
+        await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', id), {
           kejohananId:        id,
           namaKejohanan:      form.namaKejohanan.trim(),
           tahun:              Number(form.tahun),
@@ -632,6 +632,8 @@ function KejohananCard({ k, onEdit, onStatusChange }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function KejohananSetup() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [kejohananList, setKejohananList] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)       // null | { mode, data }
@@ -639,9 +641,10 @@ export default function KejohananSetup() {
   const [filterStatus, setFilterStatus] = useState('semua')
 
   const fetchKejohanan = useCallback(async () => {
+    if (!schoolId) return
     setLoading(true)
     try {
-      const snap = await getDocs(query(collection(db, 'kejohanan'), orderBy('createdAt', 'desc')))
+      const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), orderBy('createdAt', 'desc')))
       setKejohananList(snap.docs.map(d => ({ ...d.data() })))
     } catch {
       setKejohananList([])
@@ -669,20 +672,20 @@ export default function KejohananSetup() {
         kejohananList
           .filter(x => x.statusKejohanan === 'aktif' && x.kejohananId !== k.kejohananId)
           .forEach(x => {
-            batch.update(doc(db, 'kejohanan', x.kejohananId), {
+            batch.update(doc(db, 'tenants', schoolId, 'kejohanan', x.kejohananId), {
               statusKejohanan: 'persediaan',
               isAktif: false,
               updatedAt: serverTimestamp(),
             })
           })
-        batch.update(doc(db, 'kejohanan', k.kejohananId), {
+        batch.update(doc(db, 'tenants', schoolId, 'kejohanan', k.kejohananId), {
           statusKejohanan: 'aktif',
           isAktif: true,
           updatedAt: serverTimestamp(),
         })
         await batch.commit()
       } else {
-        await updateDoc(doc(db, 'kejohanan', k.kejohananId), {
+        await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', k.kejohananId), {
           statusKejohanan: newStatus,
           isAktif: false,
           updatedAt: serverTimestamp(),
@@ -829,6 +832,7 @@ export default function KejohananSetup() {
         <KejohananModal
           mode={modal.mode}
           initial={modal.data}
+          schoolId={schoolId}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); fetchKejohanan() }}
         />

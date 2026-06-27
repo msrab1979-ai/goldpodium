@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import jsPDF from 'jspdf'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -209,6 +210,8 @@ function DraggableLabel({ fieldCfg, pos, style, sampleText, containerRef, onPosC
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function ESijil() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [template, setTemplate]           = useState(null)
   const [namaKejohanan, setNamaKejohanan] = useState('')
   const [tarikhKejohanan, setTarikh]      = useState('')
@@ -224,7 +227,7 @@ export default function ESijil() {
   useEffect(() => {
     async function load() {
       try {
-        const snap = await getDoc(doc(db, 'tetapan', 'sijil'))
+        const snap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijil'))
         if (!snap.exists()) return
         const d = snap.data()
         if (d.templateImg)      setTemplate(d.templateImg)
@@ -242,7 +245,7 @@ export default function ESijil() {
       } catch {}
     }
     load()
-  }, [])
+  }, [schoolId])
 
   async function handleUpload(e) {
     const file = e.target.files?.[0]
@@ -266,7 +269,7 @@ export default function ESijil() {
     if (!template) { setMsg('Sila muat naik template dahulu.'); return }
     setSaving(true); setMsg('')
     try {
-      await setDoc(doc(db, 'tetapan', 'sijil'), {
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijil'), {
         templateImg:      template,
         namaKejohanan,
         tarikhKejohanan,

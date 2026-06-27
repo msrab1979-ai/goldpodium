@@ -51,6 +51,7 @@ function PingatBadge({ rank }) {
 
 export default function SijilPencapaianPP() {
   const { userData, userRole } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const navigate    = useNavigate()
   const kodSekolah  = userData?.kodSekolah  || ''
   const namaSekolah = userData?.namaSekolah || kodSekolah
@@ -73,7 +74,7 @@ export default function SijilPencapaianPP() {
   async function load() {
     setLoading(true); setErr('')
     try {
-      const sijilSnap = await getDoc(doc(db, 'tetapan', 'sijilPencapaian'))
+      const sijilSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijilPencapaian'))
       if (!sijilSnap.exists() || !sijilSnap.data().templateImg) {
         setErr('Tetapan Sijil Pencapaian belum dikonfigurasi oleh admin.')
         setLoading(false); return
@@ -90,7 +91,7 @@ export default function SijilPencapaianPP() {
       setSijilCfg(cfg)
 
       const kejSnap = await getDocs(
-        query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
       )
       if (kejSnap.empty) {
         setErr('Tiada kejohanan aktif.')
@@ -100,7 +101,7 @@ export default function SijilPencapaianPP() {
       setKejohanan(kej)
 
       const had = Number(cfg.hadKedudukan) || 5
-      const list = await ambilSenaraiPencapaian(db, kej.id, had, kodSekolah)
+      const list = await ambilSenaraiPencapaian(db, schoolId, kej.id, had, kodSekolah)
       setSenarai(list)
     } catch (e) {
       setErr('Ralat memuatkan: ' + e.message)

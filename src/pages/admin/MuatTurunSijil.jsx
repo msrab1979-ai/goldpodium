@@ -10,6 +10,7 @@ import {
   collection, getDocs, doc, getDoc, query, where, orderBy,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { janaSijilPDF, namaFail } from '../../utils/sijilUtils'
@@ -28,6 +29,8 @@ function Spinner({ size = 'w-5 h-5' }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function MuatTurunSijil() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [tab, setTab] = useState('sekolah')  // 'sekolah' | 'semua'
 
   // Shared state
@@ -48,13 +51,13 @@ export default function MuatTurunSijil() {
   const [progSemua, setProgSemua] = useState(null)  // null | { done, total }
   const [zippingSemua, setZippingSemua] = useState(false)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => { if (schoolId) init() }, [schoolId])
 
   async function init() {
     setLoadingInit(true); setErrInit('')
     try {
       // Tetapan sijil
-      const sijilSnap = await getDoc(doc(db, 'tetapan', 'sijil'))
+      const sijilSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijil'))
       if (!sijilSnap.exists() || !sijilSnap.data().templateImg) {
         setErrInit('Tetapan sijil belum dikonfigurasi. Pergi ke Setup E-Sijil dahulu.')
         setLoadingInit(false)
@@ -64,7 +67,7 @@ export default function MuatTurunSijil() {
 
       // Kejohanan aktif
       const kejSnap = await getDocs(
-        query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
       )
       if (kejSnap.empty) {
         setErrInit('Tiada kejohanan aktif pada masa ini.')
@@ -74,11 +77,16 @@ export default function MuatTurunSijil() {
       const kej = { id: kejSnap.docs[0].id, ...kejSnap.docs[0].data() }
       setKejohanan(kej)
 
-      // Senarai sekolah aktif
-      const sklSnap = await getDocs(collection(db, 'sekolah'))
-      const skl = sklSnap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(s => s.isAktif !== false)
+      // Senarai sekolah — derive dari atlet (sekolah collection removed in GP)
+      const atletAllSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+      const sklMap = {}
+      atletAllSnap.docs.forEach(d => {
+        const data = d.data()
+        const kod = data.kodSekolah || ''
+        if (!kod || sklMap[kod]) return
+        sklMap[kod] = { id: kod, kodSekolah: kod, namaSekolah: data.namaSekolah || kod }
+      })
+      const skl = Object.values(sklMap)
         .sort((a, b) => (a.namaSekolah || a.id).localeCompare(b.namaSekolah || b.id))
       setSekolahList(skl)
     } catch (e) {
@@ -98,10 +106,10 @@ export default function MuatTurunSijil() {
     setLoadingSkl(true)
     try {
       const atletSnap = await getDocs(
-        query(collection(db, 'atlet'), where('kodSekolah', '==', kodSekolah))
+        query(collection(db, 'tenants', schoolId, 'atlet'), where('kodSekolah', '==', kodSekolah))
       )
       const pendSnap = await getDocs(
-        query(collection(db, 'kejohanan', kejohanan.id, 'pendaftaran'), where('kodSekolah', '==', kodSekolah))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran'), where('kodSekolah', '==', kodSekolah))
       )
       const bibMap = {}
       pendSnap.docs.forEach(d => { bibMap[d.id] = d.data().noBib || '' })
@@ -148,11 +156,11 @@ export default function MuatTurunSijil() {
     setZippingSemua(true)
     setProgSemua({ done: 0, total: 0 })
     try {
-      const atletSnap = await getDocs(collection(db, 'atlet'))
+      const atletSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
       const atletAll = atletSnap.docs.map(d => ({ noKP: d.id, nama: d.data().nama || d.id }))
 
       // Ambil bibMap dari pendaftaran
-      const pendSnap = await getDocs(collection(db, 'kejohanan', kejohanan.id, 'pendaftaran'))
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran'))
       const bibMap = {}
       pendSnap.docs.forEach(d => { bibMap[d.id] = d.data().noBib || '' })
 

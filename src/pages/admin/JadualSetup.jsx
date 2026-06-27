@@ -360,14 +360,14 @@ function TukarHariModal({ schoolId, hari, tarikhAsal, rowsInHari, kejohananId, o
     try {
       let done = 0
       for (const row of rowsInHari) {
-        await updateDoc(doc(db, 'jadual_acara', row.jadualId), {
+        await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'jadual', row.jadualId), {
           tarikhAcara: tarikhBaru,
           updatedAt:   serverTimestamp(),
         })
         // Sync ke acara subcollection supaya AcaraSetup & JadualSetup sentiasa selari
         try {
           await updateDoc(
-            doc(db, 'kejohanan', kejohananId, 'acara', String(row.noAcara)),
+            doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'acara', String(row.noAcara)),
             { tarikhAcara: tarikhBaru, updatedAt: serverTimestamp() }
           )
         } catch { /* acara doc mungkin tiada — abaikan */ }
@@ -461,7 +461,7 @@ function TukarHariModal({ schoolId, hari, tarikhAsal, rowsInHari, kejohananId, o
 
 // ─── Modal Edit Jadual — dengan Smart Renumber ────────────────────────────────
 
-function EditModal({ row, onClose, onSaved, allRows, kejId }) {
+function EditModal({ schoolId, row, onClose, onSaved, allRows, kejId }) {
   const [form, setForm] = useState({
     tarikhAcara: row.tarikhAcara || '',
     masaMula:    row.masaMula    || '08:00',
@@ -497,13 +497,13 @@ function EditModal({ row, onClose, onSaved, allRows, kejId }) {
     return String(next)
   }, [hariChanged, newHari, allRows, row.jadualId])
 
-  // Load bilangan heat untuk acara ini
+  // Load bilangan heat untuk acara ini (flat heat collection)
   useEffect(() => {
-    if (!kejId || !row.noAcara || row.noAcara === '—') { setHeatCount(0); return }
-    getDocs(collection(db, 'kejohanan', kejId, 'acara', String(row.noAcara), 'heat'))
+    if (!schoolId || !kejId || !row.noAcara || row.noAcara === '—') { setHeatCount(0); return }
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', String(row.noAcara))))
       .then(snap => setHeatCount(snap.size))
       .catch(() => setHeatCount(0))
-  }, [row.noAcara, kejId])
+  }, [schoolId, row.noAcara, kejId])
 
   // Reset renumber bila hari tak berubah
   useEffect(() => { if (!hariChanged) setRenumber(false) }, [hariChanged])
@@ -519,11 +519,11 @@ function EditModal({ row, onClose, onSaved, allRows, kejId }) {
         const newJadualId = `${kejId}-${proposedNoAcara}`
 
         // 1. Baca data jadual lama
-        const oldSnap = await getDoc(doc(db, 'jadual_acara', row.jadualId))
+        const oldSnap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual', row.jadualId))
         const oldData = oldSnap.exists() ? oldSnap.data() : {}
 
         // 2. Cipta jadual baru dengan No Acara baru
-        await setDoc(doc(db, 'jadual_acara', newJadualId), {
+        await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual', newJadualId), {
           ...oldData,
           jadualId:    newJadualId,
           noAcara:     proposedNoAcara,
@@ -537,12 +537,12 @@ function EditModal({ row, onClose, onSaved, allRows, kejId }) {
         })
 
         // 3. Padam jadual lama
-        await deleteDoc(doc(db, 'jadual_acara', row.jadualId))
+        await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual', row.jadualId))
 
         // 4. Kemaskini field noAcara + jadual dalam acara subcollection
         try {
           await updateDoc(
-            doc(db, 'kejohanan', kejId, 'acara', String(row.noAcara)),
+            doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', String(row.noAcara)),
             {
               noAcara:     proposedNoAcara,
               tarikhAcara: form.tarikhAcara,
@@ -563,7 +563,7 @@ function EditModal({ row, onClose, onSaved, allRows, kejId }) {
         }
         // Kemaskini hari jika tarikh bertukar ke hari yang dikenali
         if (form.tarikhAcara !== row.tarikhAcara && newHari) updates.hari = newHari
-        await updateDoc(doc(db, 'jadual_acara', row.jadualId), updates)
+        await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual', row.jadualId), updates)
 
         // Sync ke acara subcollection supaya AcaraSetup & JadualSetup sentiasa selari
         try {
@@ -575,7 +575,7 @@ function EditModal({ row, onClose, onSaved, allRows, kejId }) {
           }
           if (form.tarikhAcara !== row.tarikhAcara && newHari) acaraUpdates.hari = newHari
           await updateDoc(
-            doc(db, 'kejohanan', kejId, 'acara', String(row.noAcara)),
+            doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', String(row.noAcara)),
             acaraUpdates
           )
         } catch { /* acara doc mungkin tiada — abaikan */ }
@@ -715,13 +715,13 @@ function EditModal({ row, onClose, onSaved, allRows, kejId }) {
 
 // ─── Modal Padam Satu Jadual ──────────────────────────────────────────────────
 
-function PadamSatuModal({ row, onClose, onDeleted }) {
+function PadamSatuModal({ schoolId, kejId, row, onClose, onDeleted }) {
   const [deleting, setDeleting] = useState(false)
 
   async function handleDelete() {
     setDeleting(true)
     try {
-      await deleteDoc(doc(db, 'jadual_acara', row.jadualId))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual', row.jadualId))
       onDeleted()
       onClose()
     } catch (e) {
@@ -762,6 +762,8 @@ function PadamSatuModal({ row, onClose, onDeleted }) {
 // ─── Halaman Utama ────────────────────────────────────────────────────────────
 
 export default function JadualSetup() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [selectedKej,   setSelectedKej]   = useState('')
   const [namaKej,       setNamaKej]       = useState('')
   const [rows,          setRows]          = useState([])
@@ -784,7 +786,8 @@ export default function JadualSetup() {
 
   // ── Load kejohanan aktif + showJadual ─────────────────────────────────────
   useEffect(() => {
-    getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+    if (!schoolId) return
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]
@@ -793,17 +796,17 @@ export default function JadualSetup() {
         }
       }).catch(console.error)
 
-    getDoc(doc(db, 'tetapan', 'home'))
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       .then(s => { if (s.exists()) setShowJadual(s.data().showJadual ?? true) })
       .catch(console.error)
-  }, [])
+  }, [schoolId])
 
   // ── Toggle show/hide jadual di Home ───────────────────────────────────────
   async function toggleShowJadual() {
     const next = !showJadual
     setSavingToggle(true)
     try {
-      await setDoc(doc(db, 'tetapan', 'home'), { showJadual: next }, { merge: true })
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'), { showJadual: next }, { merge: true })
       setShowJadual(next)
     } catch (e) {
       console.error(e)
@@ -812,16 +815,16 @@ export default function JadualSetup() {
     }
   }
 
-  // ── Load bilangan heat (parallel, non-blocking) ───────────────────────────
+  // ── Load bilangan heat (parallel, non-blocking) — flat heat collection ─────
   async function loadHeatCounts(acaraRows, kejId) {
-    if (!kejId || acaraRows.length === 0) return
+    if (!schoolId || !kejId || acaraRows.length === 0) return
     setLoadingHeat(true)
     try {
       const results = await Promise.all(
         acaraRows.map(r => {
           const key = String(r.noAcara)
           if (!key || key === '—') return Promise.resolve({ key, count: 0, hasFinal: false })
-          return getDocs(collection(db, 'kejohanan', kejId, 'acara', key, 'heat'))
+          return getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', key)))
             .then(snap => ({
               key,
               count:    snap.size,
@@ -841,10 +844,10 @@ export default function JadualSetup() {
   // ── Padam semua ───────────────────────────────────────────────────────────
   async function handlePadamSemua() {
     if (!selectedKej) return
-    if (!window.confirm(`⚠️ PADAM SEMUA ACARA?\n\n"${namaKej || selectedKej}"\n\nTermasuk semua acara + jadual_acara.\nTindakan ini TIDAK BOLEH dibatalkan.`)) return
+    if (!window.confirm(`⚠️ PADAM SEMUA ACARA?\n\n"${namaKej || selectedKej}"\n\nTermasuk semua acara + jadual.\nTindakan ini TIDAK BOLEH dibatalkan.`)) return
     setPadamLog([]); setPadamDone(false); setPadamRunning(true)
     try {
-      await deleteAllAcara(selectedKej, msg => setPadamLog(prev => [...prev, msg]))
+      await deleteAllAcara(schoolId, selectedKej, msg => setPadamLog(prev => [...prev, msg]))
       setPadamDone(true)
       fetchData()
     } catch (e) {
@@ -856,13 +859,13 @@ export default function JadualSetup() {
 
   // ── Fetch + join + padanan + heat counts ──────────────────────────────────
   const fetchData = useCallback(async () => {
-    if (!selectedKej) { setRows([]); setAcaraList([]); setPadananData(null); return }
+    if (!schoolId || !selectedKej) { setRows([]); setAcaraList([]); setPadananData(null); return }
     setLoading(true)
     setHeatCountMap({})
     try {
       const [jadualSnap, acaraSnap] = await Promise.all([
-        getDocs(query(collection(db, 'jadual_acara'), where('kejohananId', '==', selectedKej))),
-        getDocs(collection(db, 'kejohanan', selectedKej, 'acara')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'jadual')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'acara')),
       ])
 
       const acaraMap = buildAcaraMap(acaraSnap)
@@ -929,7 +932,7 @@ export default function JadualSetup() {
     } finally {
       setLoading(false)
     }
-  }, [selectedKej]) // eslint-disable-line
+  }, [schoolId, selectedKej]) // eslint-disable-line
 
   useEffect(() => { fetchData() }, [fetchData])
 

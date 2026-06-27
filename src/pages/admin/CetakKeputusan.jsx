@@ -14,6 +14,7 @@ import {
   collection, getDocs, getDoc, doc, query, where, orderBy,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ const PINGAT_UI  = { 1: '🥇', 2: '🥈', 3: '🥉' }  // untuk web preview sah
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CetakKeputusan() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [loadingInit, setLoadingInit] = useState(true)
   const [generating,  setGenerating]  = useState(false)
   const [progress,    setProgress]    = useState('')
@@ -89,12 +92,13 @@ export default function CetakKeputusan() {
   // ── Init: load data asas sekali ───────────────────────────────────────────
 
   useEffect(() => {
+    if (!schoolId) return
     async function init() {
       setLoadingInit(true)
       try {
         const [cfgSnap, kejSnap] = await Promise.all([
-          getDoc(doc(db, 'tetapan', 'home')),
-          getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan']))),
+          getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
+          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan']))),
         ])
         const cfgData = cfgSnap.exists() ? cfgSnap.data() : {}
         setCfg(cfgData)
@@ -112,16 +116,20 @@ export default function CetakKeputusan() {
         setBilanganKedudukan(kData.bilanganKedudukan ?? 8)
 
         // Jadual & acara
-        const [jadualSnap, acaraSnap, rekodSnap, tuntSnap, skolSnap] = await Promise.all([
-          getDocs(query(collection(db, 'jadual_acara'), where('kejohananId', '==', kej.id))),
-          getDocs(query(collection(db, 'kejohanan', kej.id, 'acara'), orderBy('noAcara'))),
-          getDocs(query(collection(db, 'rekod'), where('statusRekod', '==', 'aktif'))),
-          getDocs(query(collection(db, 'rekod'), where('kejohananId', '==', kej.id))).catch(() => ({ docs: [] })),
-          getDocs(collection(db, 'sekolah')),
+        const [jadualSnap, acaraSnap, rekodSnap, tuntSnap, pendaftaranSnap] = await Promise.all([
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'jadual')),
+          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'), orderBy('noAcara'))),
+          getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('statusRekod', '==', 'aktif'))),
+          getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('kejohananId', '==', kej.id))).catch(() => ({ docs: [] })),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'pendaftaran')),
         ])
 
+        // Derive sekolah map from pendaftaran (no sekolah collection in GP)
         const sMap = {}
-        skolSnap.docs.forEach(d => { sMap[d.id] = d.data().namaSekolah || d.id })
+        pendaftaranSnap.docs.forEach(d => {
+          const p = d.data()
+          if (p.kodSekolah) sMap[p.kodSekolah] = p.namaSekolah || p.kodSekolah
+        })
         setSkolMap(sMap)
 
         const aMap = {}
@@ -172,7 +180,10 @@ export default function CetakKeputusan() {
         jadualIdsRef.current = jadualIds
         const heatResults = await Promise.allSettled(
           jadualIds.map(async aId => {
-            const snap = await getDocs(collection(db, 'kejohanan', kej.id, 'acara', aId, 'heat'))
+            const snap = await getDocs(query(
+              collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'heat'),
+              where('aceraId', '==', aId)
+            ))
             const heats = snap.docs.map(d => ({ id: d.id, ...d.data() }))
             const finalHeat = heats.find(
               h => ['final', 'terus_final'].includes(h.fasa) && SELESAI.includes(h.statusKeputusan)
@@ -194,20 +205,23 @@ export default function CetakKeputusan() {
       } finally { setLoadingInit(false) }
     }
     init()
-  }, [])
+  }, [schoolId])
 
   // ── Muat Semula: reload semua heats via 1 query ───────────────────────────
 
   async function reloadHeats() {
     const kId = kejIdRef.current
     const acaraIds = jadualIdsRef.current
-    if (!kId || !acaraIds.length || reloadingHeats) return
+    if (!kId || !acaraIds.length || reloadingHeats || !schoolId) return
     setReloadingHeats(true)
     try {
       const SELESAI = ['diterima', 'rasmi']
       const results = await Promise.allSettled(
         acaraIds.map(async aId => {
-          const snap = await getDocs(collection(db, 'kejohanan', kId, 'acara', aId, 'heat'))
+          const snap = await getDocs(query(
+            collection(db, 'tenants', schoolId, 'kejohanan', kId, 'heat'),
+            where('aceraId', '==', aId)
+          ))
           const heats = snap.docs.map(d => ({ id: d.id, ...d.data() }))
           const finalHeat = heats.find(
             h => ['final', 'terus_final'].includes(h.fasa) && SELESAI.includes(h.statusKeputusan)
@@ -247,10 +261,7 @@ export default function CetakKeputusan() {
       const { jsPDF }              = await import('jspdf')
       const { default: autoTable } = await import('jspdf-autotable')
 
-      // Load nama sekolah
-      const skolSnap = await getDocs(collection(db, 'sekolah'))
-      const skolMap  = {}
-      skolSnap.docs.forEach(d => { skolMap[d.id] = d.data().namaSekolah || d.id })
+      // Derive nama sekolah from skolMap state (loaded from pendaftaran during init)
       const getNamaSkol = kod => skolMap[kod] || kod || '—'
 
       const pdf  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -506,10 +517,12 @@ export default function CetakKeputusan() {
     try {
       const XLSX = await import('xlsx')
 
-      // Load nama sekolah
-      const skolSnap2 = await getDocs(collection(db, 'sekolah'))
+      // Nama sekolah dari atlet collection (GP: tiada sekolah collection berasingan)
+      const skolSnap2 = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
       const skolMap2  = {}
-      skolSnap2.docs.forEach(d => { skolMap2[d.id] = d.data().namaSekolah || d.id })
+      skolSnap2.docs.forEach(d => {
+        const k = d.data().kodSekolah; if (k) skolMap2[k] = d.data().namaSekolah || k
+      })
       const getNamaSkol2 = kod => skolMap2[kod] || kod || ''
 
       const rows = []

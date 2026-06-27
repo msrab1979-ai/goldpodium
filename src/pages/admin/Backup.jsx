@@ -12,29 +12,19 @@ import {
   collection, getDocs, doc, writeBatch, setDoc, query, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import * as XLSX from 'xlsx'
 
 // ─── Konfigurasi ──────────────────────────────────────────────────────────────
 
 const APP_VERSION = '1.1'
 
-// Koleksi rata — tiada sub-collection
+// Koleksi rata (tenant-level) — tiada sub-collection
 const FLAT_COLS = [
-  { id: 'sekolah',             label: 'Sekolah' },
-  { id: 'atlet',               label: 'Atlet' },
-  { id: 'rekod',               label: 'Rekod' },
-  { id: 'rekod_sejarah',       label: 'Rekod Sejarah' },
-  { id: 'rekod_tuntutan',      label: 'Rekod Tuntutan' },
-  { id: 'medal_tally',         label: 'Medal Tally' },
-  { id: 'medal_tally_kat',     label: 'Medal Tally Kat' },
-  { id: 'mata_olahragawan',    label: 'Mata Olahragawan' },
-  { id: 'pilihan_olahragawan', label: 'Pilihan Olahragawan' },
-  { id: 'tetapan',             label: 'Tetapan' },
-  { id: 'kategori',            label: 'Kategori' },
-  { id: 'jadual_acara',        label: 'Jadual Acara' },
-  { id: 'wa_config',           label: 'WA Config' },
-  { id: 'anugerah_custom',     label: 'Anugerah Custom' },
-  { id: 'bantahan',            label: 'Bantahan' },
+  { id: 'atlet',         label: 'Atlet' },
+  { id: 'rekod',         label: 'Rekod' },
+  { id: 'rekod_sejarah', label: 'Rekod Sejarah' },
+  { id: 'tetapan',       label: 'Tetapan' },
 ]
 
 // ─── Jana Sheet Excel ─────────────────────────────────────────────────────────
@@ -43,10 +33,11 @@ function setCellWidth(ws, cols) {
   ws['!cols'] = cols.map(w => ({ wch: w }))
 }
 
-async function janaSheetExcel(addLog) {
+async function janaSheetExcel(schoolId, addLog) {
+  if (!schoolId) throw new Error('schoolId tidak dijumpai — sila log masuk semula.')
   // 1. Kejohanan aktif
   addLog('Mencari kejohanan aktif...')
-  const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+  const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
   if (kejSnap.empty) throw new Error('Tiada kejohanan aktif.')
   const kej = { id: kejSnap.docs[0].id, ...kejSnap.docs[0].data() }
   const namaKej = kej.namaKejohanan || kej.id
@@ -55,15 +46,20 @@ async function janaSheetExcel(addLog) {
 
   // 2. Fetch semua data
   addLog('Mengambil data Firestore...')
-  const [sekolahSnap, acaraSnap, pendSnap, katSnap] = await Promise.all([
-    getDocs(collection(db, 'sekolah')),
-    getDocs(collection(db, 'kejohanan', kej.id, 'acara')),
-    getDocs(collection(db, 'kejohanan', kej.id, 'pendaftaran')),
-    getDocs(collection(db, 'kategori')),
+  const [atletSnap, acaraSnap, pendSnap, katSnap] = await Promise.all([
+    getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara')),
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'pendaftaran')),
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'kategori')),
   ])
 
-  const sekolahAll = sekolahSnap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
+  // Derive sekolah from atlet
+  const sklMap = {}
+  atletSnap.docs.forEach(d => {
+    const k = d.data().kodSekolah
+    if (k) sklMap[k] = { id: k, namaSekolah: d.data().namaSekolah || k, kategori: d.data().kategoriSekolah || '' }
+  })
+  const sekolahAll = Object.values(sklMap)
     .filter(s => s.isAktif !== false)
     .sort((a, b) => (a.namaSekolah || a.id).localeCompare(b.namaSekolah || b.id))
 
@@ -283,14 +279,14 @@ async function janaSheetExcel(addLog) {
 
 // ─── Export helpers ───────────────────────────────────────────────────────────
 
-async function ambilKoleksi(colPath) {
-  const snap = await getDocs(collection(db, colPath))
+async function ambilKoleksi(schoolId, ...pathSegments) {
+  const snap = await getDocs(collection(db, 'tenants', schoolId, ...pathSegments))
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }))
 }
 
-async function ambilKejohananLengkap(addLog) {
+async function ambilKejohananLengkap(schoolId, addLog) {
   addLog('Mengambil senarai kejohanan...')
-  const kejSnap = await getDocs(collection(db, 'kejohanan'))
+  const kejSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan'))
   const hasil = []
 
   for (const kejDoc of kejSnap.docs) {
@@ -298,40 +294,36 @@ async function ambilKejohananLengkap(addLog) {
     addLog(`  Kejohanan ${kejDoc.id}...`)
 
     // Acara
-    const acaraSnap = await getDocs(collection(db, 'kejohanan', kejDoc.id, 'acara'))
-    const acaraList = []
+    const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'acara'))
+    const acaraList = acaraSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
 
-    for (const acaraDoc of acaraSnap.docs) {
-      const acaraData = { _id: acaraDoc.id, ...acaraDoc.data() }
-
-      // Heat
-      const heatSnap = await getDocs(
-        collection(db, 'kejohanan', kejDoc.id, 'acara', acaraDoc.id, 'heat')
-      )
-      const heatList = []
-
-      for (const heatDoc of heatSnap.docs) {
-        const heatData = { _id: heatDoc.id, ...heatDoc.data() }
-
-        // Keputusan (dalam heat)
-        const kpSnap = await getDocs(
-          collection(db, 'kejohanan', kejDoc.id, 'acara', acaraDoc.id, 'heat', heatDoc.id, 'keputusan')
-        )
-        heatData._keputusan = kpSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
-        heatList.push(heatData)
-      }
-
-      acaraData._heat = heatList
-      acaraList.push(acaraData)
-    }
+    // Heat (flat)
+    const heatSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'heat'))
+    kejData._heat = heatSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
 
     // Pendaftaran
-    const pendSnap = await getDocs(collection(db, 'kejohanan', kejDoc.id, 'pendaftaran'))
+    const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'pendaftaran'))
     kejData._pendaftaran = pendSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
 
     // Pengesahan
-    const pengesSnap = await getDocs(collection(db, 'kejohanan', kejDoc.id, 'pengesahan'))
+    const pengesSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'pengesahan'))
     kejData._pengesahan = pengesSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
+
+    // Kategori per-kejohanan
+    const katSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'kategori'))
+    kejData._kategori = katSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
+
+    // Jadual per-kejohanan
+    const jadualSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'jadual'))
+    kejData._jadual = jadualSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
+
+    // Medal tally per-kejohanan
+    const medalSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'medal_tally'))
+    kejData._medal_tally = medalSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
+
+    // Mata olahragawan per-kejohanan
+    const mataSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejDoc.id, 'mata_olahragawan'))
+    kejData._mata_olahragawan = mataSnap.docs.map(d => ({ _id: d.id, ...d.data() }))
 
     kejData._acara = acaraList
     hasil.push(kejData)
@@ -362,6 +354,8 @@ async function batchTulis(items, addLog, label, merge = false) {
 // ─── Komponen Utama ───────────────────────────────────────────────────────────
 
 export default function Backup() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [tab, setTab] = useState('muat_turun')
 
   // Export state
@@ -393,15 +387,17 @@ export default function Backup() {
     try {
       const data = {}
 
+      if (!schoolId) throw new Error('schoolId tidak dijumpai — sila log masuk semula.')
+
       // Flat collections
       for (const col of FLAT_COLS) {
         addLog(`Mengambil ${col.label}...`)
-        data[col.id] = await ambilKoleksi(col.id)
+        data[col.id] = await ambilKoleksi(schoolId, col.id)
         addLog(`  ✓ ${col.label}: ${data[col.id].length} rekod`)
       }
 
       // Kejohanan (deep)
-      data.kejohanan = await ambilKejohananLengkap(addLog)
+      data.kejohanan = await ambilKejohananLengkap(schoolId, addLog)
 
       // Stats untuk preview semasa import
       let totalAcara = 0, totalHeat = 0, totalPend = 0
@@ -452,7 +448,7 @@ export default function Backup() {
     const log = []
     const addLog = msg => { log.push(msg); setSheetLog([...log]) }
     try {
-      await janaSheetExcel(addLog)
+      await janaSheetExcel(schoolId, addLog)
     } catch (e) {
       addLog(`❌ Ralat: ${e.message}`)
     } finally {
@@ -501,15 +497,16 @@ export default function Backup() {
     const merge = modRestore === 'gabung'
 
     try {
+      if (!schoolId) throw new Error('schoolId tidak dijumpai — sila log masuk semula.')
       const { data } = backupData
 
-      // Flat collections
+      // Flat collections (tenant-level)
       for (const col of FLAT_COLS) {
         const docs = data[col.id] || []
         if (!docs.length) { addLog(`Skip ${col.label} (kosong)`); continue }
         addLog(`Menulis ${col.label}: ${docs.length} rekod...`)
         await batchTulis(
-          docs.map(({ _id, ...rest }) => ({ ref: doc(db, col.id, _id), data: rest })),
+          docs.map(({ _id, ...rest }) => ({ ref: doc(db, 'tenants', schoolId, col.id, _id), data: rest })),
           addLog, col.label, merge
         )
         addLog(`  ✓ ${col.label} selesai`)
@@ -520,45 +517,39 @@ export default function Backup() {
       addLog(`\nMenulis ${kejList.length} kejohanan (lengkap)...`)
 
       for (const kej of kejList) {
-        const { _id: kejId, _acara = [], _pendaftaran = [], _pengesahan = [], ...kejData } = kej
+        const {
+          _id: kejId, _acara = [], _pendaftaran = [], _pengesahan = [],
+          _heat = [], _kategori = [], _jadual = [], _medal_tally = [], _mata_olahragawan = [],
+          ...kejData
+        } = kej
         addLog(`  Kejohanan ${kejId}...`)
 
         // Dokumen kejohanan
-        await setDoc(doc(db, 'kejohanan', kejId), kejData, merge ? { merge: true } : {})
+        await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId), kejData, merge ? { merge: true } : {})
 
-        // Acara + Heat + Keputusan
-        const acaraItems = [], heatItems = [], kpItems = []
-        for (const acara of _acara) {
-          const { _id: aId, _heat = [], ...aData } = acara
-          acaraItems.push({ ref: doc(db, 'kejohanan', kejId, 'acara', aId), data: aData })
-          for (const heat of _heat) {
-            const { _id: hId, _keputusan = [], ...hData } = heat
-            heatItems.push({ ref: doc(db, 'kejohanan', kejId, 'acara', aId, 'heat', hId), data: hData })
-            for (const kp of _keputusan) {
-              const { _id: kpId, ...kpData } = kp
-              kpItems.push({ ref: doc(db, 'kejohanan', kejId, 'acara', aId, 'heat', hId, 'keputusan', kpId), data: kpData })
-            }
-          }
+        // Acara
+        if (_acara.length) {
+          await batchTulis(
+            _acara.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', _id), data: r })),
+            addLog, 'Acara', merge
+          )
+          addLog(`    ✓ ${_acara.length} acara`)
         }
 
-        if (acaraItems.length) {
-          await batchTulis(acaraItems, addLog, `Acara`, merge)
-          addLog(`    ✓ ${acaraItems.length} acara`)
-        }
-        if (heatItems.length) {
-          await batchTulis(heatItems, addLog, `Heat`, merge)
-          addLog(`    ✓ ${heatItems.length} heat`)
-        }
-        if (kpItems.length) {
-          await batchTulis(kpItems, addLog, `Keputusan`, merge)
-          addLog(`    ✓ ${kpItems.length} keputusan`)
+        // Heat (flat)
+        if (_heat.length) {
+          await batchTulis(
+            _heat.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', _id), data: r })),
+            addLog, 'Heat', merge
+          )
+          addLog(`    ✓ ${_heat.length} heat`)
         }
 
         // Pendaftaran
         if (_pendaftaran.length) {
           await batchTulis(
-            _pendaftaran.map(({ _id, ...r }) => ({ ref: doc(db, 'kejohanan', kejId, 'pendaftaran', _id), data: r })),
-            addLog, `Pendaftaran`, merge
+            _pendaftaran.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran', _id), data: r })),
+            addLog, 'Pendaftaran', merge
           )
           addLog(`    ✓ ${_pendaftaran.length} pendaftaran`)
         }
@@ -566,8 +557,40 @@ export default function Backup() {
         // Pengesahan
         if (_pengesahan.length) {
           await batchTulis(
-            _pengesahan.map(({ _id, ...r }) => ({ ref: doc(db, 'kejohanan', kejId, 'pengesahan', _id), data: r })),
-            addLog, `Pengesahan`, merge
+            _pengesahan.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'pengesahan', _id), data: r })),
+            addLog, 'Pengesahan', merge
+          )
+        }
+
+        // Kategori
+        if (_kategori.length) {
+          await batchTulis(
+            _kategori.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori', _id), data: r })),
+            addLog, 'Kategori', merge
+          )
+        }
+
+        // Jadual
+        if (_jadual.length) {
+          await batchTulis(
+            _jadual.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual', _id), data: r })),
+            addLog, 'Jadual', merge
+          )
+        }
+
+        // Medal Tally
+        if (_medal_tally.length) {
+          await batchTulis(
+            _medal_tally.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally', _id), data: r })),
+            addLog, 'Medal Tally', merge
+          )
+        }
+
+        // Mata Olahragawan
+        if (_mata_olahragawan.length) {
+          await batchTulis(
+            _mata_olahragawan.map(({ _id, ...r }) => ({ ref: doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan', _id), data: r })),
+            addLog, 'Mata Olahragawan', merge
           )
         }
       }

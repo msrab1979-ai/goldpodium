@@ -12,6 +12,7 @@
 import { useState, useEffect } from 'react'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none ' +
   'focus:ring-2 focus:ring-[#003399]/30 focus:border-[#003399] bg-white transition-colors'
@@ -42,7 +43,9 @@ function validateUrl(url) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function AksesPantasSetup({ docId, title, icon, gradient, description, urlPlaceholder, contohPenerangan }) {
+export default function AksesPantasSetup({ docId, kejId, title, icon, gradient, description, urlPlaceholder, contohPenerangan }) {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [aktif,        setAktif]        = useState(false)
   const [url,          setUrl]          = useState('')
   const [penerangan,   setPenerangan]   = useState('')
@@ -54,7 +57,7 @@ export default function AksesPantasSetup({ docId, title, icon, gradient, descrip
     async function load() {
       setLoading(true)
       try {
-        const snap = await getDoc(doc(db, 'tetapan', docId))
+        const snap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'tetapan', docId))
         if (snap.exists()) {
           const d = snap.data()
           if (typeof d.aktif === 'boolean') setAktif(d.aktif)
@@ -67,7 +70,7 @@ export default function AksesPantasSetup({ docId, title, icon, gradient, descrip
       setLoading(false)
     }
     load()
-  }, [docId])
+  }, [docId, schoolId, kejId])
 
   const urlValidation = validateUrl(url)
 
@@ -84,7 +87,7 @@ export default function AksesPantasSetup({ docId, title, icon, gradient, descrip
     }
     setSaving(true)
     try {
-      await setDoc(doc(db, 'tetapan', docId), {
+      await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'tetapan', docId), {
         aktif:      !!aktif,
         url:        url.trim(),
         penerangan: penerangan.trim(),

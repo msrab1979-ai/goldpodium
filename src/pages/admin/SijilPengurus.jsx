@@ -23,6 +23,7 @@ import { janaSijilPDF, namaFail } from '../../utils/sijilUtils'
 
 export default function SijilPengurus() {
   const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const kodSekolah = userData?.kodSekolah || ''
   const namaSekolah = userData?.namaSekolah || kodSekolah
 
@@ -43,7 +44,7 @@ export default function SijilPengurus() {
     setLoading(true); setErr('')
     try {
       // 1. Tetapan sijil
-      const sijilSnap = await getDoc(doc(db, 'tetapan', 'sijil'))
+      const sijilSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijil'))
       if (!sijilSnap.exists() || !sijilSnap.data().templateImg) {
         setErr('Tetapan sijil belum dikonfigurasi oleh admin. Sila hubungi admin.')
         setLoading(false)
@@ -54,7 +55,7 @@ export default function SijilPengurus() {
 
       // 2. Cari kejohanan aktif
       const kejSnap = await getDocs(
-        query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
       )
       if (kejSnap.empty) {
         setErr('Tiada kejohanan aktif pada masa ini.')
@@ -66,7 +67,7 @@ export default function SijilPengurus() {
 
       // 3. Dapatkan semua atlet sekolah ini dari koleksi atlet
       const atletSnap = await getDocs(
-        query(collection(db, 'atlet'), where('kodSekolah', '==', kodSekolah))
+        query(collection(db, 'tenants', schoolId, 'atlet'), where('kodSekolah', '==', kodSekolah))
       )
 
       if (atletSnap.empty) {
@@ -78,7 +79,7 @@ export default function SijilPengurus() {
       // 4. Dapatkan noBib dari pendaftaran (jika ada) — optional
       const pendSnap = await getDocs(
         query(
-          collection(db, 'kejohanan', kej.id, 'pendaftaran'),
+          collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'pendaftaran'),
           where('kodSekolah', '==', kodSekolah)
         )
       )

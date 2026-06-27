@@ -147,6 +147,7 @@ async function batchDelete(refs) {
 
 export default function ResetSistem() {
   const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
 
   const [kejId,    setKejId]    = useState('')
   const [namaKej,  setNamaKej]  = useState('')
@@ -165,43 +166,37 @@ export default function ResetSistem() {
   // ── Load kejohanan + counts ──────────────────────────────────────────────
 
   const loadCounts = useCallback(async (kId) => {
+    if (!schoolId) return
     const c = {}
     try {
       // Pendaftaran — atlet dengan noBib + pendaftaran docs
       const [atletSnap, pendSnap] = await Promise.all([
-        getDocs(query(collection(db, 'atlet'), where('noBib', '!=', ''))),
-        getDocs(collection(db, 'kejohanan', kId, 'pendaftaran')),
+        getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('noBib', '!=', ''))),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'pendaftaran')),
       ])
       c.pendaftaran = atletSnap.size + pendSnap.size
 
       // Jadual
-      const jadSnap = await getDocs(
-        query(collection(db, 'jadual_acara'), where('kejohananId', '==', kId))
-      )
+      const jadSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'jadual'))
       c.jadual = jadSnap.size
 
-      // Keputusan & Heat — kira semua heat dari semua acara
-      const acaraSnap = await getDocs(collection(db, 'kejohanan', kId, 'acara'))
-      let heatCount = 0
-      await Promise.all(acaraSnap.docs.map(async a => {
-        const hSnap = await getDocs(collection(db, 'kejohanan', kId, 'acara', a.id, 'heat'))
-        heatCount += hSnap.size
-      }))
-      const bantSnap = await getDocs(query(collection(db, 'bantahan'), where('kejohananId', '==', kId)))
-      c.keputusan = heatCount + bantSnap.size
+      // Keputusan & Heat — flat heat collection
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'acara'))
+      const heatSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'heat'))
+      c.keputusan = heatSnap.size
 
       // Rekod Baru Kejohanan
-      const rekodBaruSnap = await getDocs(query(collection(db, 'rekod'), where('kejohananId', '==', kId)))
+      const rekodBaruSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('kejohananId', '==', kId)))
       c.rekod_baru = rekodBaruSnap.size
 
       // Medal
-      const medalSnap = await getDocs(query(collection(db, 'medal_tally'), where('kejohananId', '==', kId)))
+      const medalSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'medal_tally'))
       c.medal = medalSnap.size
 
       // Olahragawan
       const [mataSnap, pilSnap] = await Promise.all([
-        getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kId))),
-        getDocs(query(collection(db, 'pilihan_olahragawan'), where('kejohananId', '==', kId))),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'mata_olahragawan')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'pilihan_olahragawan')),
       ])
       c.olahragawan = mataSnap.size + pilSnap.size
 
@@ -209,26 +204,28 @@ export default function ResetSistem() {
       c.acara = acaraSnap.size
 
       // Kategori
-      const katSnap = await getDocs(collection(db, 'kategori'))
+      const katSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'kategori'))
       c.kategori = katSnap.size
 
-      // Sekolah
-      const sekolahSnap = await getDocs(collection(db, 'sekolah'))
-      c.sekolah = sekolahSnap.size
+      // Sekolah (derive from atlet unique kodSekolah)
+      const sklSet = new Set()
+      acaraSnap.docs.forEach(() => {}) // no-op, just to not confuse
+      const allAtletSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+      allAtletSnap.docs.forEach(d => { const k = d.data().kodSekolah; if (k) sklSet.add(k) })
+      c.sekolah = sklSet.size
 
       // Atlet (master)
-      const atletMasterSnap = await getDocs(collection(db, 'atlet'))
-      c.atlet = atletMasterSnap.size
+      c.atlet = allAtletSnap.size
 
     } catch (e) { console.error('loadCounts:', e) }
     setCounts(c)
-  }, [])
+  }, [schoolId])
 
   useEffect(() => {
     async function init() {
       setLoading(true)
       try {
-        const snap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+        const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
         if (!snap.empty) {
           const d = snap.docs[0]
           setKejId(d.id)
@@ -277,9 +274,9 @@ export default function ResetSistem() {
       if (selected.has('pendaftaran')) {
         log('Memuatkan data atlet…')
         const [atletSnap, pendSnap, counterSnap] = await Promise.all([
-          getDocs(query(collection(db, 'atlet'), where('noBib', '!=', ''))),
-          getDocs(collection(db, 'kejohanan', kejId, 'pendaftaran')),
-          getDocs(query(collection(db, 'pendaftaran_counter'), where('kejohananId', '==', kejId))),
+          getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('noBib', '!=', ''))),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran')),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran_counter')),
         ])
         // Clear noBib field — batch update
         const SIZE = 400
@@ -302,7 +299,7 @@ export default function ResetSistem() {
       // ── Jadual ──
       if (selected.has('jadual')) {
         log('Memadam jadual acara…')
-        const snap = await getDocs(query(collection(db, 'jadual_acara'), where('kejohananId', '==', kejId)))
+        const snap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual'))
         await batchDelete(snap.docs.map(d => d.ref))
         log(`✓ Jadual — ${snap.size} rekod dipadam`, true)
       }
@@ -310,21 +307,16 @@ export default function ResetSistem() {
       // ── Keputusan & Heat ──
       if (selected.has('keputusan')) {
         log('Memadam heat & keputusan…')
-        const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
-        let heatTotal = 0
-        await Promise.all(acaraSnap.docs.map(async aDoc => {
-          const hSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', aDoc.id, 'heat'))
-          await batchDelete(hSnap.docs.map(d => d.ref))
-          heatTotal += hSnap.size
-          // Reset statusAcara
-          await updateDoc(aDoc.ref, {
-            statusAcara: 'akan_datang',
-            updatedAt: new Date(),
-          }).catch(() => {})
-        }))
+        const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
+        const heatAllSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'))
+        const heatTotal = heatAllSnap.size
+        await batchDelete(heatAllSnap.docs.map(d => d.ref))
+        await Promise.all(acaraSnap.docs.map(async aDoc =>
+          updateDoc(aDoc.ref, { statusAcara: 'akan_datang', updatedAt: new Date() }).catch(() => {})
+        ))
         const [bantSnap, pengesahanSnap] = await Promise.all([
-          getDocs(query(collection(db, 'bantahan'), where('kejohananId', '==', kejId))),
-          getDocs(collection(db, 'kejohanan', kejId, 'pengesahan')),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'bantahan')),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pengesahan')),
         ])
         await Promise.all([
           batchDelete(bantSnap.docs.map(d => d.ref)),
@@ -336,7 +328,7 @@ export default function ResetSistem() {
       // ── Rekod Baru Kejohanan ──
       if (selected.has('rekod_baru')) {
         log('Memadam rekod pecah kejohanan…')
-        const snap = await getDocs(query(collection(db, 'rekod'), where('kejohananId', '==', kejId)))
+        const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('kejohananId', '==', kejId)))
         await batchDelete(snap.docs.map(d => d.ref))
         log(`✓ Rekod Pecah Kejohanan — ${snap.size} rekod dipadam`, true)
       }
@@ -344,7 +336,7 @@ export default function ResetSistem() {
       // ── Medal ──
       if (selected.has('medal')) {
         log('Memadam medal tally…')
-        const snap = await getDocs(query(collection(db, 'medal_tally'), where('kejohananId', '==', kejId)))
+        const snap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'))
         await batchDelete(snap.docs.map(d => d.ref))
         log(`✓ Medal Tally — ${snap.size} rekod dipadam`, true)
       }
@@ -353,8 +345,8 @@ export default function ResetSistem() {
       if (selected.has('olahragawan')) {
         log('Memadam mata & pilihan olahragawan…')
         const [mataSnap, pilSnap] = await Promise.all([
-          getDocs(query(collection(db, 'mata_olahragawan'), where('kejohananId', '==', kejId))),
-          getDocs(query(collection(db, 'pilihan_olahragawan'), where('kejohananId', '==', kejId))),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan')),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pilihan_olahragawan')),
         ])
         await Promise.all([
           batchDelete(mataSnap.docs.map(d => d.ref)),
@@ -366,14 +358,10 @@ export default function ResetSistem() {
       // ── Acara Setup (cascade) ──
       if (selected.has('acara')) {
         log('Memadam setup acara (cascade heat)…')
-        const acaraSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara'))
-        let total = acaraSnap.size
-        // Delete heats first (subcollection)
-        await Promise.all(acaraSnap.docs.map(async aDoc => {
-          const hSnap = await getDocs(collection(db, 'kejohanan', kejId, 'acara', aDoc.id, 'heat'))
-          await batchDelete(hSnap.docs.map(d => d.ref))
-          total += hSnap.size
-        }))
+        const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
+        const heatAcaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'))
+        const total = acaraSnap.size + heatAcaraSnap.size
+        await batchDelete(heatAcaraSnap.docs.map(d => d.ref))
         await batchDelete(acaraSnap.docs.map(d => d.ref))
         log(`✓ Acara Setup — ${total} rekod dipadam (cascade)`, true)
       }
@@ -381,7 +369,7 @@ export default function ResetSistem() {
       // ── Kategori ──
       if (selected.has('kategori')) {
         log('Memadam kategori…')
-        const snap = await getDocs(collection(db, 'kategori'))
+        const snap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'))
         await batchDelete(snap.docs.map(d => d.ref))
         log(`✓ Kategori — ${snap.size} rekod dipadam`, true)
       }
@@ -389,15 +377,15 @@ export default function ResetSistem() {
       // ── Sekolah ──
       if (selected.has('sekolah')) {
         log('Memadam sekolah…')
-        const snap = await getDocs(collection(db, 'sekolah'))
-        await batchDelete(snap.docs.map(d => d.ref))
-        log(`✓ Sekolah — ${snap.size} rekod dipadam`, true)
+        const snap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+        const kodSet = new Set(snap.docs.map(d => d.data().kodSekolah).filter(Boolean))
+        log(`✓ Sekolah — ${kodSet.size} sekolah unik (sekolah dikesan dari atlet, tiada koleksi sekolah berasingan)`, true)
       }
 
       // ── Padam Master Atlet ──
       if (selected.has('atlet')) {
         log('Memadam semua rekod atlet…')
-        const snap = await getDocs(collection(db, 'atlet'))
+        const snap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
         await batchDelete(snap.docs.map(d => d.ref))
         log(`✓ Master Atlet — ${snap.size} rekod dipadam`, true)
       }
@@ -406,7 +394,7 @@ export default function ResetSistem() {
       log('Menyimpan log audit…')
       try {
         const { addDoc, serverTimestamp } = await import('firebase/firestore')
-        await addDoc(collection(db, 'log_reset'), {
+        await addDoc(collection(db, 'tenants', schoolId, 'log_reset'), {
           kejohananId: kejId,
           namaKejohanan: namaKej,
           toggles: [...selected],
@@ -439,13 +427,13 @@ export default function ResetSistem() {
     const log = (text) => setSyncLog(prev => [...prev, text])
     try {
       log('Membaca data atlet…')
-      const atletSnap = await getDocs(query(collection(db, 'atlet'), where('noBib', '!=', '')))
+      const atletSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('noBib', '!=', '')))
       const atletMap = {}
       atletSnap.docs.forEach(d => { atletMap[d.id] = d.data() })
       log(`${atletSnap.size} atlet dengan noBib dijumpai.`)
 
       log('Membaca pendaftaran docs…')
-      const pendSnap = await getDocs(collection(db, 'kejohanan', kejId, 'pendaftaran'))
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
       log(`${pendSnap.size} rekod pendaftaran dijumpai.`)
 
       const batch = writeBatch(db)

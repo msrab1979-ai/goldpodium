@@ -13,6 +13,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { useAuth } from '../../context/AuthContext'
 import jsPDF from 'jspdf'
 import { labelKedudukan, janaSijilPencapaianPDF } from '../../utils/sijilPencapaianUtils'
 
@@ -228,6 +229,8 @@ function DraggableLabel({ fieldCfg, pos, style, sampleText, containerRef, onPosC
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function ESijilPencapaian() {
+  const { userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [aktif, setAktif]                 = useState(true)  // default ON
   const [template, setTemplate]           = useState(null)
   const [namaKejohanan, setNamaKejohanan] = useState('')
@@ -244,7 +247,7 @@ export default function ESijilPencapaian() {
   useEffect(() => {
     async function load() {
       try {
-        const snap = await getDoc(doc(db, 'tetapan', 'sijilPencapaian'))
+        const snap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijilPencapaian'))
         if (!snap.exists()) return
         const d = snap.data()
         if (typeof d.aktif === 'boolean') setAktif(d.aktif)
@@ -319,7 +322,7 @@ export default function ESijilPencapaian() {
     setSaving(true); setMsg('')
     try {
       const tempatBersih = tempatKejohanan.map(t => t.trim()).filter(Boolean)
-      await setDoc(doc(db, 'tetapan', 'sijilPencapaian'), {
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijilPencapaian'), {
         aktif:           !!aktif,
         templateImg:     template || null,
         namaKejohanan,
