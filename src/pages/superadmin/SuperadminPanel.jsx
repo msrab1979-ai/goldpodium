@@ -75,7 +75,7 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
   const HARI_INI = new Date().toISOString().split('T')[0]
   const [borang, setBorang] = useState({
     namaSekolah: '', daerah: '', emelAdmin: '', namaAdmin: '',
-    pakej: 'school', tarikhMula: HARI_INI,
+    pakej: 'school', tarikhMula: HARI_INI, slugCustom: '',
   })
   const [muatTurun, setMuatTurun] = useState(false)
   const [ralat,     setRalat]     = useState('')
@@ -93,7 +93,7 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
 
     setMuatTurun(true)
     try {
-      const r = await createAdminAccount(borang)
+      const r = await createAdminAccount({ ...borang, slugCustom: borang.slugCustom.trim() || '' })
       setHasil(r)
       onSimpan()
     } catch (err) {
@@ -137,7 +137,7 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
               Akaun admin telah dicipta. Kongsikan maklumat berikut kepada pentadbir sekolah.
             </div>
             {[
-              { label: 'URL Login',          nilai: hasil.loginUrl,     kunci: 'url' },
+              { label: 'URL Sekolah',        nilai: hasil.loginUrl,     kunci: 'url' },
               { label: 'Emel',               nilai: hasil.email,        kunci: 'emel' },
               { label: 'Password Sementara', nilai: hasil.tempPassword, kunci: 'pass' },
               { label: 'Tarikh Expiry',      nilai: hasil.tarikhExpiry, kunci: 'exp' },
@@ -154,7 +154,7 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
               </div>
             ))}
             <button onClick={() => copyTeks(
-              `🏆 GOLD PODIUM — Maklumat Log Masuk\n\nURL: ${hasil.loginUrl}\nEmel: ${hasil.email}\nPassword: ${hasil.tempPassword}\nExpiry: ${hasil.tarikhExpiry}\n\nSila tukar password selepas log masuk pertama.`,
+              `🏆 GOLD PODIUM — Maklumat Log Masuk\n\nURL Sekolah: ${hasil.loginUrl}\nEmel: ${hasil.email}\nPassword: ${hasil.tempPassword}\nExpiry: ${hasil.tarikhExpiry}\n\nSila tukar password selepas log masuk pertama.`,
               'semua'
             )} className="w-full bg-[#003399] hover:bg-[#002277] text-white font-bold py-3 rounded-xl text-sm transition-colors">
               {salin === 'semua' ? '✓ Disalin!' : '📋 Salin Semua Maklumat'}
@@ -194,6 +194,17 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
                   required placeholder="En. Ahmad"
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50" />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
+                URL Sekolah (Slug)
+                <span className="ml-1 text-gray-300 normal-case font-normal">— goldpodium.web.app/<span className="font-mono text-blue-400">{borang.slugCustom || '...'}</span></span>
+              </label>
+              <input type="text" value={borang.slugCustom} onChange={e => set('slugCustom', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                placeholder="cth: sk-astana (auto-jana jika kosong)"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50" />
+              <p className="text-[10px] text-gray-400 mt-1">Hanya huruf kecil, angka, dan sempang (-). Biarkan kosong untuk jana secara automatik.</p>
             </div>
 
             <div>

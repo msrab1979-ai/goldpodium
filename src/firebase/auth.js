@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth'
 import {
   doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp,
-  collection, query, where, getCountFromServer,
+  collection, query, where, getCountFromServer, getDocs, limit,
 } from 'firebase/firestore'
 import { auth, db, SUPERADMIN_EMAIL, secondaryAuth, APP_URL } from './config'
 import { alertFailedLogin, alertSuperadminNewDevice } from './telegram'
@@ -230,11 +230,44 @@ export function generateTempPassword() {
 
 // ── Superadmin create akaun admin sekolah ────────────────────────────────────
 
-export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, daerah, pakej, tarikhMula }) {
+// Jana slug dari nama sekolah (cth: "SK Astana" → "sk-astana")
+function janaSlug(nama) {
+  return nama
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')   // buang aksara khas
+    .replace(/\s+/g, '-')        // spasi → tanda sempang
+    .replace(/-+/g, '-')         // double sempang → satu
+    .replace(/^-|-$/g, '')       // buang sempang tepi
+    .slice(0, 30)                 // had 30 aksara
+}
+
+// Semak jika slug sudah digunakan — tambah suffix nombor jika perlu
+async function slugUnik(slug) {
+  const snap = await getDocs(
+    query(collection(db, 'slugIndex'), where('slug', '==', slug), limit(1))
+  )
+  if (snap.empty) return slug
+
+  // Cuba dengan nombor suffix
+  for (let i = 2; i <= 99; i++) {
+    const percubaan = `${slug}-${i}`
+    const s = await getDocs(
+      query(collection(db, 'slugIndex'), where('slug', '==', percubaan), limit(1))
+    )
+    if (s.empty) return percubaan
+  }
+  return `${slug}-${Date.now()}`
+}
+
+export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, daerah, pakej, tarikhMula, slugCustom }) {
   const emailClean = emelAdmin.trim().toLowerCase()
 
   // Jana schoolId unik
   const schoolId = `skl_${Date.now()}`
+
+  // Jana slug unik
+  const slugAsas = slugCustom ? janaSlug(slugCustom) : janaSlug(namaSekolah)
+  const slug = await slugUnik(slugAsas)
 
   // Jana password sementara
   const tempPassword = generateTempPassword()
@@ -280,6 +313,7 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
     emelAdmin:      emailClean,
     namaAdmin:      namaAdmin.trim(),
     pakej,
+    slug,
     tarikhMula:     Timestamp.fromDate(mula),
     tarikhExpiry:   Timestamp.fromDate(expiry),
     status:         'active',
@@ -287,12 +321,23 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
     createdAt:      serverTimestamp(),
   })
 
+  // Simpan slugIndex — data awam sahaja (tiada data sensitif)
+  await setDoc(doc(db, 'slugIndex', slug), {
+    slug,
+    schoolId,
+    namaSekolah: namaSekolah.trim(),
+    daerah:      daerah.trim(),
+    aktif:       true,
+    createdAt:   serverTimestamp(),
+  })
+
   return {
     uid,
     schoolId,
+    slug,
     email:        emailClean,
     tempPassword,
-    loginUrl:     `${APP_URL}/login`,
+    loginUrl:     `${APP_URL}/${slug}`,
     tarikhExpiry: expiry.toLocaleDateString('ms-MY'),
   }
 }

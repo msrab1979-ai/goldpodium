@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getLockStatus } from '../firebase/auth'
 
@@ -49,6 +49,10 @@ function MasaKunci({ lockedUntil }) {
 export default function Login() {
   const { login, user, userRole } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Boleh datang dari SchoolLanding dengan state { schoolSlug, namaSekolah }
+  const namaSekolahDariSlug = location.state?.namaSekolah || ''
 
   const [emel,     setEmel]     = useState('')
   const [katalaluan, setKatalaluan] = useState('')
@@ -115,7 +119,11 @@ export default function Login() {
           </svg>
         </div>
         <h1 className="text-2xl font-black text-white tracking-wider">GOLD PODIUM</h1>
-        <p className="text-sm text-white/60 mt-1">Pengurusan Kejohanan Sukan</p>
+        {namaSekolahDariSlug ? (
+          <p className="text-sm text-white font-semibold mt-1">{namaSekolahDariSlug}</p>
+        ) : (
+          <p className="text-sm text-white/60 mt-1">Pengurusan Kejohanan Sukan</p>
+        )}
       </div>
 
       {/* Kad Log Masuk */}

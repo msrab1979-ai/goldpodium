@@ -121,6 +121,16 @@ service cloud.firestore {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // SLUG INDEX — lookup awam untuk URL per sekolah (/ska, /skb, dll)
+    // Tiada data sensitif: hanya namaSekolah, daerah, slug, aktif
+    // ══════════════════════════════════════════════════════════════════════════
+
+    match /slugIndex/{slug} {
+      allow read:  if true;
+      allow write: if isSuperadmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // DEMO — data awam untuk demo/landing
     // ══════════════════════════════════════════════════════════════════════════
 

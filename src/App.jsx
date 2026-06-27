@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
+import SchoolLanding from './pages/SchoolLanding'
 import Demo from './pages/Demo'
 import SuperadminPanel from './pages/superadmin/SuperadminPanel'
 import AdminPanel from './pages/admin/AdminPanel'
@@ -153,6 +154,9 @@ function AppRoutes() {
           <TeacherDashboard />
         </RequireAuth>
       } />
+
+      {/* URL per sekolah — goldpodium.web.app/:slug */}
+      <Route path="/:slug" element={<SchoolLanding />} />
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />
