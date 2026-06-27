@@ -330,14 +330,14 @@ export default function LaporanCetakan() {
       atsSnap.docs.forEach(d => { map[d.id] = { ...d.data(), sekolah: namaSekolah } })
       setAtletMap(map)
 
-      // Muat semua heat
-      const heatPromises = semuaAcara.map(a =>
-        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', a.id, 'heat'))
-          .then(snap => ({ aId: a.id, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })) }))
-      )
-      const results = await Promise.all(heatPromises)
+      // Muat semua heat — 1 query (flat collection)
+      const heatSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'))
       const hMap = {}
-      results.forEach(r => { hMap[r.aId] = r.heats })
+      heatSnap.docs.forEach(d => {
+        const h = { id: d.id, ...d.data() }
+        const aId = h.aceraId || h.acaraId
+        if (aId) { if (!hMap[aId]) hMap[aId] = []; hMap[aId].push(h) }
+      })
       setHeatsMap(hMap)
     } catch { /* langkau */ }
     setMuatTurun(false)

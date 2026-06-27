@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, getDocs, doc, updateDoc, onSnapshot, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { createAdminAccount } from '../../firebase/auth'
 import { useAuth } from '../../context/AuthContext'
@@ -73,9 +73,10 @@ function KadStatistik({ label, nilai, sub, warna = 'biru' }) {
 
 function ModalTambahSekolah({ onTutup, onSimpan }) {
   const HARI_INI = new Date().toISOString().split('T')[0]
+  const EXPIRY_DEFAULT = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split('T')[0] })()
   const [borang, setBorang] = useState({
     namaSekolah: '', daerah: '', emelAdmin: '', namaAdmin: '',
-    pakej: 'school', tarikhMula: HARI_INI, slugCustom: '',
+    tarikhMula: HARI_INI, tarikhExpiry: EXPIRY_DEFAULT, slugCustom: '',
   })
   const [muatTurun, setMuatTurun] = useState(false)
   const [ralat,     setRalat]     = useState('')
@@ -89,7 +90,9 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
     if (!borang.namaSekolah.trim()) return setRalat('Nama sekolah diperlukan.')
     if (!borang.daerah.trim())      return setRalat('Daerah diperlukan.')
     if (!borang.emelAdmin.trim())   return setRalat('Emel admin diperlukan.')
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(borang.emelAdmin.trim())) return setRalat('Format emel tidak sah. Contoh: admin@sekolah.edu.my')
     if (!borang.namaAdmin.trim())   return setRalat('Nama admin diperlukan.')
+    if (!borang.tarikhExpiry)       return setRalat('Tarikh tamat langganan diperlukan.')
 
     setMuatTurun(true)
     try {
@@ -109,11 +112,6 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
     setTimeout(() => setSalin(''), 2000)
   }
 
-  const tarikhExpiry = (() => {
-    const d = new Date(borang.tarikhMula || new Date())
-    d.setFullYear(d.getFullYear() + 1)
-    return d.toLocaleDateString('ms-MY')
-  })()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6 overflow-y-auto"
@@ -136,11 +134,36 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
             <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-xs text-green-700 font-medium">
               Akaun admin telah dicipta. Kongsikan maklumat berikut kepada pentadbir sekolah.
             </div>
+            {/* URL Sekolah — boleh klik */}
+            <div className="border border-blue-100 bg-blue-50 rounded-xl p-3">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">URL Sekolah</p>
+              <div className="flex items-center justify-between gap-2">
+                <a href={hasil.loginUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-sm font-mono text-[#003399] underline break-all hover:text-blue-800">
+                  {hasil.loginUrl}
+                </a>
+                <button onClick={() => copyTeks(hasil.loginUrl, 'url')}
+                  className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-white border border-blue-200 hover:bg-[#003399] hover:text-white transition-colors">
+                  {salin === 'url' ? '✓ Salin' : 'Salin'}
+                </button>
+              </div>
+            </div>
+
+            {/* Tarikh mula & tamat */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="border border-gray-100 rounded-xl p-3">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Tarikh Mula</p>
+                <p className="text-sm font-semibold text-gray-700">{hasil.tarikhMula || '—'}</p>
+              </div>
+              <div className="border border-gray-100 rounded-xl p-3">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Tarikh Tamat</p>
+                <p className="text-sm font-semibold text-gray-700">{hasil.tarikhExpiry}</p>
+              </div>
+            </div>
+
             {[
-              { label: 'URL Sekolah',        nilai: hasil.loginUrl,     kunci: 'url' },
               { label: 'Emel',               nilai: hasil.email,        kunci: 'emel' },
               { label: 'Password Sementara', nilai: hasil.tempPassword, kunci: 'pass' },
-              { label: 'Tarikh Expiry',      nilai: hasil.tarikhExpiry, kunci: 'exp' },
             ].map(item => (
               <div key={item.kunci} className="border border-gray-100 rounded-xl p-3">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{item.label}</p>
@@ -154,7 +177,7 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
               </div>
             ))}
             <button onClick={() => copyTeks(
-              `🏆 GOLD PODIUM — Maklumat Log Masuk\n\nURL Sekolah: ${hasil.loginUrl}\nEmel: ${hasil.email}\nPassword: ${hasil.tempPassword}\nExpiry: ${hasil.tarikhExpiry}\n\nSila tukar password selepas log masuk pertama.`,
+              `🏆 GOLD PODIUM — Maklumat Log Masuk\n\nURL Sekolah: ${hasil.loginUrl}\nEmel: ${hasil.email}\nPassword: ${hasil.tempPassword}\nTarikh Mula: ${hasil.tarikhMula || '—'}\nTarikh Tamat: ${hasil.tarikhExpiry}\n\nSila tukar password selepas log masuk pertama.`,
               'semua'
             )} className="w-full bg-[#003399] hover:bg-[#002277] text-white font-bold py-3 rounded-xl text-sm transition-colors">
               {salin === 'semua' ? '✓ Disalin!' : '📋 Salin Semua Maklumat'}
@@ -207,22 +230,6 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
               <p className="text-[10px] text-gray-400 mt-1">Hanya huruf kecil, angka, dan sempang (-). Biarkan kosong untuk jana secara automatik.</p>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Pakej</label>
-              <div className="flex gap-2">
-                {PAKEJ_LIST.map(p => (
-                  <button key={p.id} type="button" onClick={() => set('pakej', p.id)}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all ${
-                      borang.pakej === p.id
-                        ? 'border-[#003399] bg-[#003399] text-white'
-                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                    }`}>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Tarikh Mula</label>
@@ -230,10 +237,10 @@ function ModalTambahSekolah({ onTutup, onSimpan }) {
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Expiry (Auto)</label>
-                <div className="w-full border border-gray-100 rounded-xl px-3 py-2.5 text-sm bg-gray-50 text-gray-400">
-                  {tarikhExpiry}
-                </div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Tarikh Tamat</label>
+                <input type="date" value={borang.tarikhExpiry} onChange={e => set('tarikhExpiry', e.target.value)}
+                  min={borang.tarikhMula || HARI_INI}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50" />
               </div>
             </div>
 
@@ -432,6 +439,18 @@ export default function SuperadminPanel() {
     setMuatTurunTindakan(null)
   }
 
+  async function padamSekolah(s) {
+    if (!confirm(`PADAM "${s.namaSekolah}"?\n\nTindakan ini TIDAK BOLEH dibatalkan. Semua data sekolah akan hilang.`)) return
+    if (!confirm(`Sahkan sekali lagi — padam "${s.namaSekolah}" secara kekal?`)) return
+    setMuatTurunTindakan(s.id)
+    try {
+      await deleteDoc(doc(db, 'tenants', s.id))
+      if (s.slug) await deleteDoc(doc(db, 'slugIndex', s.slug)).catch(() => {})
+      setSekolah(list => list.filter(x => x.id !== s.id))
+    } catch { alert('Gagal padam. Sila cuba semula.') }
+    setMuatTurunTindakan(null)
+  }
+
   function handlePerbaharuiBerjaya(id, kemaskini) {
     setSekolah(list => list.map(x => x.id === id ? { ...x, ...kemaskini } : x))
   }
@@ -570,7 +589,7 @@ export default function SuperadminPanel() {
                     <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
                       <th className="px-4 py-3 text-left">Sekolah</th>
                       <th className="px-3 py-3 text-left hidden sm:table-cell">Daerah</th>
-                      <th className="px-3 py-3 text-center hidden md:table-cell">Pakej</th>
+                      <th className="px-3 py-3 text-left hidden md:table-cell">URL</th>
                       <th className="px-3 py-3 text-center hidden lg:table-cell">Expiry</th>
                       <th className="px-3 py-3 text-center">Status</th>
                       <th className="px-4 py-3 text-right">Tindakan</th>
@@ -586,10 +605,13 @@ export default function SuperadminPanel() {
                             <p className="text-[10px] text-gray-400">{s.emelAdmin || '—'}</p>
                           </td>
                           <td className="px-3 py-3 text-xs text-gray-500 hidden sm:table-cell">{s.daerah || '—'}</td>
-                          <td className="px-3 py-3 text-center hidden md:table-cell">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${WARNA_PAKEJ[s.pakej] || 'bg-gray-100 text-gray-500'}`}>
-                              {LABEL_PAKEJ[s.pakej] || '—'}
-                            </span>
+                          <td className="px-3 py-3 hidden md:table-cell">
+                            {s.slug ? (
+                              <a href={`https://goldpodium.web.app/${s.slug}`} target="_blank" rel="noopener noreferrer"
+                                className="text-[10px] font-mono text-[#003399] hover:underline">
+                                /{s.slug}
+                              </a>
+                            ) : <span className="text-[10px] text-gray-300">—</span>}
                           </td>
                           <td className="px-3 py-3 text-center hidden lg:table-cell">
                             <p className={`text-[10px] ${warnaExpiry(baki)}`}>
@@ -624,6 +646,11 @@ export default function SuperadminPanel() {
                                     Aktifkan
                                   </button>
                                 )}
+                                <button onClick={() => padamSekolah(s)}
+                                  className="text-[10px] font-bold text-gray-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+                                  title="Padam sekolah">
+                                  🗑
+                                </button>
                               </div>
                             )}
                           </td>

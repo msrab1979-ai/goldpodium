@@ -47,8 +47,8 @@ export function AuthProvider({ children }) {
             if (data.isAktif !== false) {
               const session = {
                 uid:      firebaseUser.uid,
-                email:    data.email || firebaseUser.email,
-                name:     data.name || data.nama || '',
+                email:    firebaseUser.email,
+                name:     firebaseUser.displayName || data.name || data.nama || '',
                 role:     data.role,
                 schoolId: data.schoolId || '',
                 isAktif:  true,

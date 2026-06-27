@@ -259,7 +259,7 @@ async function slugUnik(slug) {
   return `${slug}-${Date.now()}`
 }
 
-export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, daerah, pakej, tarikhMula, slugCustom }) {
+export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, daerah, tarikhMula, tarikhExpiry, slugCustom }) {
   const emailClean = emelAdmin.trim().toLowerCase()
 
   // Jana schoolId unik
@@ -272,10 +272,8 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
   // Jana password sementara
   const tempPassword = generateTempPassword()
 
-  // Kira tarikh expiry (+1 tahun dari tarikhMula)
-  const mula   = tarikhMula ? new Date(tarikhMula) : new Date()
-  const expiry = new Date(mula)
-  expiry.setFullYear(expiry.getFullYear() + 1)
+  const mula   = tarikhMula   ? new Date(tarikhMula)   : new Date()
+  const expiry = tarikhExpiry ? new Date(tarikhExpiry) : (() => { const d = new Date(mula); d.setFullYear(d.getFullYear() + 1); return d })()
 
   // Cipta Firebase Auth user guna secondaryAuth (superadmin tidak log keluar)
   let cred
@@ -296,8 +294,6 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
   // Simpan dalam Firestore — users doc
   await setDoc(doc(db, 'users', uid), {
     uid,
-    email:              emailClean,
-    name:               namaAdmin || namaSekolah,
     role:               'admin',
     schoolId,
     isAktif:            true,
@@ -312,7 +308,6 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
     daerah:         daerah.trim(),
     emelAdmin:      emailClean,
     namaAdmin:      namaAdmin.trim(),
-    pakej,
     slug,
     tarikhMula:     Timestamp.fromDate(mula),
     tarikhExpiry:   Timestamp.fromDate(expiry),
@@ -321,14 +316,11 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
     createdAt:      serverTimestamp(),
   })
 
-  // Simpan slugIndex — data awam sahaja (tiada data sensitif)
+  // slugIndex — pointer sahaja, tiada data redundant
   await setDoc(doc(db, 'slugIndex', slug), {
-    slug,
     schoolId,
-    namaSekolah: namaSekolah.trim(),
-    daerah:      daerah.trim(),
-    aktif:       true,
-    createdAt:   serverTimestamp(),
+    aktif:     true,
+    createdAt: serverTimestamp(),
   })
 
   return {
@@ -338,6 +330,7 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
     email:        emailClean,
     tempPassword,
     loginUrl:     `${APP_URL}/${slug}`,
+    tarikhMula:   mula.toLocaleDateString('ms-MY'),
     tarikhExpiry: expiry.toLocaleDateString('ms-MY'),
   }
 }

@@ -20,7 +20,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc,
-  serverTimestamp, query, orderBy, writeBatch, deleteField,
+  serverTimestamp, query, where, orderBy, writeBatch, deleteField,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -46,8 +46,8 @@ function getKejContext() {
 }
 
 const acaraColPath = (sId, kId)            => `tenants/${sId}/kejohanan/${kId}/acara`
-const heatColPath  = (sId, kId, aId)       => `tenants/${sId}/kejohanan/${kId}/acara/${aId}/heat`
-const heatDocPath  = (sId, kId, aId, hId)  => `tenants/${sId}/kejohanan/${kId}/acara/${aId}/heat/${hId}`
+const heatColPath  = (sId, kId)            => `tenants/${sId}/kejohanan/${kId}/heat`
+const heatDocPath  = (sId, kId, hId)       => `tenants/${sId}/kejohanan/${kId}/heat/${hId}`
 const pendColPath  = (sId, kId)            => `tenants/${sId}/kejohanan/${kId}/pendaftaran`
 const atletColPath = (sId)                 => `tenants/${sId}/atlet`
 const waDocPath    = (sId, kId)            => [`tenants/${sId}/kejohanan/${kId}/tetapan`, 'waConfig']
@@ -239,8 +239,8 @@ function JanaHeatModal({ acara, peserta, schoolId, kejId, onClose, onDone }) {
     setSaving(true)
     const aceraKey = acara.aceraId || acara.id
     try {
-      // Padam heat lama
-      const existSnap = await getDocs(collection(db, heatColPath(schoolId, kejId, aceraKey)))
+      // Padam heat lama untuk acara ini
+      const existSnap = await getDocs(query(collection(db, heatColPath(schoolId, kejId)), where('aceraId', '==', aceraKey)))
       if (!existSnap.empty) {
         const del = writeBatch(db)
         existSnap.docs.forEach(d => del.delete(d.ref))
@@ -250,7 +250,7 @@ function JanaHeatModal({ acara, peserta, schoolId, kejId, onClose, onDone }) {
       const batch = writeBatch(db)
       for (const h of preview.heats) {
         const heatId = buatHeatId(aceraKey, h.fasa, h.noHeat)
-        const ref    = doc(db, heatColPath(schoolId, kejId, aceraKey), heatId)
+        const ref    = doc(db, heatColPath(schoolId, kejId), heatId)
         batch.set(ref, {
           heatId, aceraId: aceraKey,
           schoolId, kejId,
@@ -406,7 +406,7 @@ function EditLorongModal({ heat, acara, schoolId, kejId, onClose, onSaved }) {
     try {
       const aceraKey = acara.aceraId || acara.id
       await setDoc(
-        doc(db, heatColPath(schoolId, kejId, aceraKey), heat.heatId),
+        doc(db, heatColPath(schoolId, kejId), heat.heatId),
         { peserta, updatedAt: serverTimestamp() },
         { merge: true }
       )
@@ -467,7 +467,7 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
     setLoading(true)
     try {
       const [heatSnap, pendSnap] = await Promise.all([
-        getDocs(query(collection(db, heatColPath(schoolId, kejId, aceraKey)), orderBy('noHeat'))),
+        getDocs(query(collection(db, heatColPath(schoolId, kejId)), where('aceraId', '==', aceraKey), orderBy('noHeat'))),
         getDocs(collection(db, pendColPath(schoolId, kejId))),
       ])
       setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -483,7 +483,7 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
     if (!window.confirm('Padam semua heat acara ini?')) return
     try {
       const batch = writeBatch(db)
-      heatList.forEach(h => batch.delete(doc(db, heatColPath(schoolId, kejId, aceraKey), h.heatId)))
+      heatList.forEach(h => batch.delete(doc(db, heatColPath(schoolId, kejId), h.heatId)))
       await batch.commit()
       await updateDoc(doc(db, acaraColPath(schoolId, kejId), aceraKey), { finalDijanaKe: deleteField() }).catch(()=>{})
       setHeatList([])
@@ -496,7 +496,7 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
     try {
       cetakStartListPDF(acara, [heat], namaKej, atletMap, kategoriList)
       await updateDoc(
-        doc(db, heatColPath(schoolId, kejId, aceraKey), heat.heatId),
+        doc(db, heatColPath(schoolId, kejId), heat.heatId),
         { bilanganCetak: (heat.bilanganCetak || 0) + 1, tarikhCetak: serverTimestamp() }
       )
       setHeatList(prev => prev.map(h =>
@@ -713,14 +713,13 @@ export default function StartListSetup() {
       })
       setPesertaCountMap(pm)
 
-      // Heat count per acara
+      // Heat count per acara — 1 query sahaja (flat collection)
       const hm = {}
-      await Promise.all(acara.map(a => {
-        const aid = a.aceraId || a.id
-        return getDocs(collection(db, heatColPath(schoolId, kejId, aid)))
-          .then(s => { hm[aid] = s.size })
-          .catch(() => { hm[aid] = 0 })
-      }))
+      const allHeatSnap = await getDocs(collection(db, heatColPath(schoolId, kejId))).catch(() => ({ docs: [] }))
+      allHeatSnap.docs.forEach(d => {
+        const aid = d.data().aceraId
+        if (aid) hm[aid] = (hm[aid] || 0) + 1
+      })
       setHeatCountMap(hm)
     } catch (ex) { console.error(ex) }
     finally { setLoading(false) }

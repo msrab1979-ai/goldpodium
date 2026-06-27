@@ -246,13 +246,9 @@ export default function MedalTallySetup() {
       )
       const semuaAcara = aSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-      // Muat semua heat dari semua acara
-      const heatPromises = semuaAcara.map(a =>
-        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', a.id, 'heat'))
-          .then(snap => snap.docs.map(d => ({ id: d.id, acaraId: a.id, ...d.data() })))
-      )
-      const heatArrays  = await Promise.all(heatPromises)
-      const semuaHeats  = heatArrays.flat()
+      // Muat semua heat — 1 query (flat collection)
+      const heatSnap   = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'))
+      const semuaHeats = heatSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
       // Muat atlet map (key = noKP = doc ID)
       const atsSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))

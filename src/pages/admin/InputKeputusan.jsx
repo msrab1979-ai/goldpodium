@@ -10,14 +10,14 @@
  *   relay         — masa, lorong
  *
  * Firestore paths:
- *   tenants/{sId}/kejohanan/{kId}/acara/{aId}/heat/{hId}
+ *   tenants/{sId}/kejohanan/{kId}/heat/{hId}  (flat — acaraId field)
  *   tenants/{sId}/atlet/{atletId}
  */
 
 import { useState, useEffect, useCallback } from 'react'
 import {
   collection, getDocs, doc, updateDoc,
-  serverTimestamp, query, orderBy,
+  serverTimestamp, query, where, orderBy,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -151,7 +151,7 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
     setSimpan({ loading: true, ok: false, err: '' })
     try {
       const withRank    = kiraRankLorong(rows)
-      const hRef        = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', acara.id, 'heat', heat.id)
+      const hRef        = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heat.id)
       await updateDoc(hRef, {
         peserta:         withRank,
         windSpeed:       adaAngin ? (windGlobal || '') : '',
@@ -327,7 +327,7 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
     setSimpan({ loading: true, ok: false, err: '' })
     try {
       const withRank = kiraRankPadang(rows)
-      const hRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', acara.id, 'heat', heat.id)
+      const hRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heat.id)
       await updateDoc(hRef, {
         peserta:         withRank,
         statusKeputusan: 'ada_keputusan',
@@ -476,7 +476,7 @@ function AcaraHeatPanel({ acara, atletMap, schoolId, kejId, onRefresh }) {
     try {
       const snap = await getDocs(
         query(
-          collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', acara.id, 'heat'),
+          query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acara.id)),
           orderBy('noHeat')
         )
       )

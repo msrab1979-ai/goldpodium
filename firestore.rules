@@ -90,25 +90,26 @@ service cloud.firestore {
     }
 
     // ── Kejohanan ─────────────────────────────────────────────────────────────
+    // Baca asas (nama, tarikh, status, lokasi) dibenar awam — untuk landing page sekolah
     match /tenants/{schoolId}/kejohanan/{kejId} {
+      allow read:  if true;
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Heat — flat di bawah kejohanan (bukan nested dalam acara) ────────────
+    match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
       allow read:  if canReadSchool(schoolId);
       allow write: if canAccessSchool(schoolId);
     }
 
-    // ── Semua subcollection dalam kejohanan ───────────────────────────────────
-    // (kategori, acara, acara/heat, pendaftaran, jadualKhas, tetapan)
+    // ── Semua subcollection lain dalam kejohanan ──────────────────────────────
+    // (kategori, acara, pendaftaran, jadualKhas, tetapan)
     match /tenants/{schoolId}/kejohanan/{kejId}/{subcol}/{docId} {
       allow read:  if canReadSchool(schoolId);
       allow write: if canAccessSchool(schoolId);
     }
 
-    // Heat (acara subcollection 3 peringkat dalam)
-    match /tenants/{schoolId}/kejohanan/{kejId}/acara/{acaraId}/heat/{heatId} {
-      allow read:  if canReadSchool(schoolId);
-      allow write: if canAccessSchool(schoolId);
-    }
-
-    // Wildcard untuk subcollection dalam kejohanan yang lebih dalam
+    // Wildcard untuk subcollection yang lebih dalam jika ada
     match /tenants/{schoolId}/kejohanan/{kejId}/{path=**} {
       allow read:  if canReadSchool(schoolId);
       allow write: if canAccessSchool(schoolId);
