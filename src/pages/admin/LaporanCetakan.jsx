@@ -201,15 +201,15 @@ function cetakKeputusanAcara(acara, heats, atletMap, namaKej) {
   const pdf    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const lebar  = pdf.internal.pageSize.getWidth()
   const tarikh = new Date().toLocaleDateString('ms-MY', { day: '2-digit', month: 'long', year: 'numeric' })
-  const isPadang = acara.jenis === 'padang_lompat' || acara.jenis === 'padang_balin'
-  const isRelay  = acara.jenis === 'relay'
+  const isPadang = (acara.jenisAcara || acara.jenis) === 'padang_lompat' || (acara.jenisAcara || acara.jenis) === 'padang_balin'
+  const isRelay  = (acara.jenisAcara || acara.jenis) === 'relay'
 
   pdf.setFillColor(0, 51, 153)
   pdf.rect(0, 0, lebar, 28, 'F')
   pdf.setFontSize(13)
   pdf.setFont('helvetica', 'bold')
   pdf.setTextColor(255, 255, 255)
-  pdf.text(acara.nama || 'Acara', 14, 12)
+  pdf.text(acara.namaAcara || acara.nama || 'Acara', 14, 12)
   pdf.setFontSize(9)
   pdf.setFont('helvetica', 'normal')
   pdf.text(`${namaKej || 'Kejohanan'} · ${acara.kategori || ''} ${acara.jantina || ''}`, 14, 19)
@@ -284,7 +284,7 @@ function cetakKeputusanAcara(acara, heats, atletMap, namaKej) {
     pdf.text(`${i} / ${nHalaman}`, lebar - 14, h - 8, { align: 'right' })
   }
 
-  pdf.save(`keputusan-${(acara.nama||'acara').replace(/\s+/g,'-').toLowerCase()}.pdf`)
+  pdf.save(`keputusan-${(acara.namaAcara||acara.nama||'acara').replace(/\s+/g,'-').toLowerCase()}.pdf`)
 }
 
 // ─── Komponen Utama ───────────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ export default function LaporanCetakan() {
   async function handleBukuKejohanan() {
     setCetakLoad('buku')
     try {
-      cetakBukuKejohanan(acara, heatsMap, atletMap, kej.nama || kejData?.nama, kejData?.namaSekolah || '')
+      cetakBukuKejohanan(acara, heatsMap, atletMap, kej.namaKejohanan || kej.nama || kejData?.namaKejohanan || kejData?.nama, kejData?.namaSekolah || '')
     } finally {
       setCetakLoad('')
     }
@@ -363,7 +363,7 @@ export default function LaporanCetakan() {
     setCetakLoad('acara')
     try {
       const a = acara.find(x => x.id === selAcara)
-      cetakKeputusanAcara(a, heatsMap[selAcara] || [], atletMap, kej.nama || kejData?.nama)
+      cetakKeputusanAcara(a, heatsMap[selAcara] || [], atletMap, kej.namaKejohanan || kej.nama || kejData?.namaKejohanan || kejData?.nama)
     } finally {
       setCetakLoad('')
     }
@@ -435,7 +435,7 @@ export default function LaporanCetakan() {
 
         {/* Status ringkasan */}
         <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3 shadow-sm">
-          <p className="text-xs font-bold text-gray-800 mb-2">{kej.nama || 'Kejohanan'}</p>
+          <p className="text-xs font-bold text-gray-800 mb-2">{kej.namaKejohanan || kej.nama || 'Kejohanan'}</p>
           <div className="flex gap-4">
             <div className="text-center">
               <p className="text-xl font-black text-[#003399]">{acara.length}</p>

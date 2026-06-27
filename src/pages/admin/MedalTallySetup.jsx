@@ -352,7 +352,7 @@ export default function MedalTallySetup() {
               </button>
             ))}
             <button
-              onClick={() => cetakPDF(tally, pemenang, kej.nama)}
+              onClick={() => cetakPDF(tally, pemenang, kej.namaKejohanan || kej.nama)}
               className="m-2 px-3 py-1.5 bg-[#003399] hover:bg-[#002277] text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 transition-colors">
               {Ikon.pdf} PDF
             </button>
