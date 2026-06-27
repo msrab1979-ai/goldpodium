@@ -69,6 +69,9 @@ export default function KejohananDetail() {
     if (modulId === 'kategori')     { navigate(`/admin/kejohanan/${kejId}/kategori`);    return }
     if (modulId === 'pendaftaran')  { navigate(`/admin/kejohanan/${kejId}/pendaftaran`); return }
     if (modulId === 'startlist')    { navigate(`/admin/kejohanan/${kejId}/startlist`);   return }
+    if (modulId === 'keputusan')   { navigate(`/admin/kejohanan/${kejId}/keputusan`);  return }
+    if (modulId === 'medal')       { navigate(`/admin/kejohanan/${kejId}/medal`);       return }
+    if (modulId === 'laporan')     { navigate(`/admin/kejohanan/${kejId}/laporan`);     return }
     alert(`Modul "${MODUL.find(m => m.id === modulId)?.label}" akan dibina tidak lama lagi.`)
   }
 
@@ -164,11 +167,11 @@ export default function KejohananDetail() {
           </div>
         </div>
 
-        {/* Coming Soon notice */}
-        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-center">
-          <p className="text-xs font-bold text-blue-700 mb-1">🚀 Modul Sedang Dibina</p>
-          <p className="text-[10px] text-blue-500">
-            Setiap modul akan dibina dan diaktifkan satu persatu. Semak semula tidak lama lagi.
+        {/* Semua modul aktif */}
+        <div className="bg-green-50 border border-green-100 rounded-2xl p-4 text-center">
+          <p className="text-xs font-bold text-green-700 mb-1">✅ Semua Modul Aktif</p>
+          <p className="text-[10px] text-green-600">
+            Pendaftaran → Kategori → Start List → Input Keputusan → Medal Tally → Laporan
           </p>
         </div>
 

@@ -12,6 +12,9 @@ import KategoriSetup from './pages/admin/KategoriSetup'
 import AcaraSetup from './pages/admin/AcaraSetup'
 import PendaftaranSetup from './pages/admin/PendaftaranSetup'
 import StartListSetup from './pages/admin/StartListSetup'
+import InputKeputusan from './pages/admin/InputKeputusan'
+import MedalTallySetup from './pages/admin/MedalTallySetup'
+import LaporanCetakan from './pages/admin/LaporanCetakan'
 import TeacherDashboard from './pages/teacher/TeacherDashboard'
 import SuperadminSetup from './pages/superadmin/SuperadminSetup'
 import ForceChangePassword from './pages/ForceChangePassword'
@@ -140,6 +143,21 @@ function AppRoutes() {
       <Route path="/admin/kejohanan/:kejId/acara" element={
         <RequireAuth roles={['admin', 'superadmin']}>
           <AcaraSetup />
+        </RequireAuth>
+      } />
+      <Route path="/admin/kejohanan/:kejId/keputusan" element={
+        <RequireAuth roles={['admin', 'superadmin']}>
+          <InputKeputusan />
+        </RequireAuth>
+      } />
+      <Route path="/admin/kejohanan/:kejId/medal" element={
+        <RequireAuth roles={['admin', 'superadmin']}>
+          <MedalTallySetup />
+        </RequireAuth>
+      } />
+      <Route path="/admin/kejohanan/:kejId/laporan" element={
+        <RequireAuth roles={['admin', 'superadmin']}>
+          <LaporanCetakan />
         </RequireAuth>
       } />
       <Route path="/admin/*" element={
