@@ -16,12 +16,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  collection, getDocs, doc, updateDoc,
+  collection, getDocs, doc, getDoc, updateDoc,
   serverTimestamp, query, where, orderBy,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { runPostRasmi } from '../../utils/postRasmiUtils'
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -119,10 +120,10 @@ const Ikon = {
 
 // ─── Modal Input Lorong / Mass Start / Relay ──────────────────────────────────
 
-function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, onTutup, onSimpan }) {
-  const isMass   = acara.jenis === 'mass_start'
-  const adaAngin = acara.jenis === 'lorong' || acara.jenis === 'relay'
-  const isRelay  = acara.jenis === 'relay'
+function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTutup, onSimpan }) {
+  const isMass   = acara.jenisAcara === 'mass_start'
+  const adaAngin = acara.jenisAcara === 'lorong' || acara.jenisAcara === 'relay'
+  const isRelay  = acara.jenisAcara === 'relay'
 
   const [rows,       setRows]       = useState(() =>
     (heat.peserta || []).map(p => ({
@@ -158,6 +159,16 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
         statusKeputusan: 'ada_keputusan',
         dikemaskinPada:  serverTimestamp(),
       })
+      // runPostRasmi — kira medal_tally, rekod, mata olahragawan
+      const heatDoc  = { id: heat.id, peserta: withRank, windSpeed: windGlobal || '' }
+      const acaraDoc = { ...acara, id: acara.id }
+      await runPostRasmi(db, heatDoc, acaraDoc, kejId, {
+        schoolId,
+        mataPingat:        kejDoc?.mataPingat        || { 1: 5, 2: 3, 3: 2, 4: 1 },
+        peringkatKej:      kejDoc?.peringkatKej      || 'D',
+        grantMedal:        heat.fasa === 'final' || heat.fasa === 'terus_final',
+        isRelay,
+      }).catch(e => console.warn('postRasmi:', e.message))
       setSimpan({ loading: false, ok: true, err: '' })
       onSimpan()
       setTimeout(onTutup, 700)
@@ -176,7 +187,7 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
 
         <div className="bg-[#003399] px-5 py-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-white">{acara.nama}</p>
+            <p className="text-xs font-bold text-white">{acara.namaAcara || acara.namaAcaraPendek}</p>
             <p className="text-[10px] text-white/60">{FASA_FULL[heat.fasa] || heat.fasa} {heat.noHeat} · {rows.length} peserta</p>
           </div>
           <button onClick={onTutup} className="text-white/50 hover:text-white">
@@ -283,8 +294,8 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
 
 // ─── Modal Input Padang (Lompat / Balin) ─────────────────────────────────────
 
-function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, onTutup, onSimpan }) {
-  const adaAngin = acara.jenis === 'padang_lompat'
+function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTutup, onSimpan }) {
+  const adaAngin = acara.jenisAcara === 'padang_lompat'
   const nCubaan  = acara.nCubaan || 3
 
   const [rows,   setRows]   = useState(() =>
@@ -333,6 +344,16 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
         statusKeputusan: 'ada_keputusan',
         dikemaskinPada:  serverTimestamp(),
       })
+      // runPostRasmi — kira medal_tally, rekod, mata olahragawan
+      const heatDoc  = { id: heat.id, peserta: withRank }
+      const acaraDoc = { ...acara, id: acara.id }
+      await runPostRasmi(db, heatDoc, acaraDoc, kejId, {
+        schoolId,
+        mataPingat:   kejDoc?.mataPingat   || { 1: 5, 2: 3, 3: 2, 4: 1 },
+        peringkatKej: kejDoc?.peringkatKej || 'D',
+        grantMedal:   heat.fasa === 'final' || heat.fasa === 'terus_final',
+        isRelay:      false,
+      }).catch(e => console.warn('postRasmi:', e.message))
       setSimpan({ loading: false, ok: true, err: '' })
       onSimpan()
       setTimeout(onTutup, 700)
@@ -348,7 +369,7 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
 
         <div className="bg-[#003399] px-5 py-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-white">{acara.nama}</p>
+            <p className="text-xs font-bold text-white">{acara.namaAcara || acara.namaAcaraPendek}</p>
             <p className="text-[10px] text-white/60">
               {FASA_FULL[heat.fasa] || heat.fasa} · {rows.length} peserta · {nCubaan} cubaan
               {adaAngin && ' · Angin per cubaan'}
@@ -465,11 +486,11 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, onTutup, onS
 
 // ─── Panel heat untuk setiap acara ───────────────────────────────────────────
 
-function AcaraHeatPanel({ acara, atletMap, schoolId, kejId, onRefresh }) {
+function AcaraHeatPanel({ acara, atletMap, schoolId, kejId, kejDoc, onRefresh }) {
   const [heats,     setHeats]     = useState([])
   const [muatTurun, setMuatTurun] = useState(true)
   const [modal,     setModal]     = useState(null)
-  const isPadang = acara.jenis === 'padang_lompat' || acara.jenis === 'padang_balin'
+  const isPadang = acara.jenisAcara === 'padang_lompat' || acara.jenisAcara === 'padang_balin'
 
   const muatHeats = useCallback(async () => {
     setMuatTurun(true)
@@ -560,7 +581,7 @@ function AcaraHeatPanel({ acara, atletMap, schoolId, kejId, onRefresh }) {
                             {p.dns || p.dnf || p.dq ? '—' : (p.kedudukan || i+1)}
                           </td>
                           <td className="py-1 pr-2 text-gray-700 truncate max-w-[150px]">
-                            {namaPeserta(p, atletMap, acara.jenis === 'relay')}
+                            {namaPeserta(p, atletMap, acara.jenisAcara === 'relay')}
                           </td>
                           <td className="py-1 text-right font-mono text-gray-600">
                             {p.dns ? <span className="text-red-400 text-[10px] font-bold">DNS</span>
@@ -587,14 +608,14 @@ function AcaraHeatPanel({ acara, atletMap, schoolId, kejId, onRefresh }) {
         isPadang ? (
           <ModalInputPadang
             acara={acara} heat={modal}
-            atletMap={atletMap} schoolId={schoolId} kejId={kejId}
+            atletMap={atletMap} schoolId={schoolId} kejId={kejId} kejDoc={kejDoc}
             onTutup={() => setModal(null)}
             onSimpan={() => { setModal(null); muatHeats(); onRefresh() }}
           />
         ) : (
           <ModalInputLorong
             acara={acara} heat={modal}
-            atletMap={atletMap} schoolId={schoolId} kejId={kejId}
+            atletMap={atletMap} schoolId={schoolId} kejId={kejId} kejDoc={kejDoc}
             onTutup={() => setModal(null)}
             onSimpan={() => { setModal(null); muatHeats(); onRefresh() }}
           />
@@ -621,6 +642,7 @@ export default function InputKeputusan() {
 
   const [acara,       setAcara]       = useState([])
   const [atletMap,    setAtletMap]    = useState({})
+  const [kejDoc,      setKejDoc]      = useState(null)
   const [bukaAcara,   setBukaAcara]   = useState({})
   const [muatTurun,   setMuatTurun]   = useState(true)
   const [carian,      setCarian]      = useState('')
@@ -634,15 +656,17 @@ export default function InputKeputusan() {
     async function muatData() {
       setMuatTurun(true)
       try {
-        const [aSnap, atsSnap] = await Promise.all([
-          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('nama'))),
+        const [aSnap, atsSnap, kSnap] = await Promise.all([
+          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara'))),
           getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+          getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId)),
         ])
         if (!aktif) return
         setAcara(aSnap.docs.map(d => ({ id: d.id, ...d.data() })))
         const map = {}
         atsSnap.docs.forEach(d => { map[d.id] = d.data() })
         setAtletMap(map)
+        if (kSnap.exists()) setKejDoc({ id: kSnap.id, ...kSnap.data() })
       } catch { /* langkau */ }
       if (aktif) setMuatTurun(false)
     }
@@ -655,8 +679,8 @@ export default function InputKeputusan() {
   }
 
   const acaraTapis = acara.filter(a => {
-    const cocokCarian = !carian || (a.nama || '').toLowerCase().includes(carian.toLowerCase())
-    const cocokJenis  = filterJenis === 'semua' || a.jenis === filterJenis
+    const cocokCarian = !carian || (a.namaAcara || '').toLowerCase().includes(carian.toLowerCase())
+    const cocokJenis  = filterJenis === 'semua' || a.jenisAcara === filterJenis
     return cocokCarian && cocokJenis
   })
 
@@ -748,8 +772,8 @@ export default function InputKeputusan() {
           <div className="space-y-2">
             {acaraTapis.map(a => {
               const buka       = !!bukaAcara[a.id]
-              const jenisLabel = LABEL_JENIS[a.jenis] || a.jenis || ''
-              const jenisWarna = WARNA_JENIS[a.jenis]  || 'bg-gray-100 text-gray-500 border-gray-200'
+              const jenisLabel = LABEL_JENIS[a.jenisAcara] || a.jenisAcara || ''
+              const jenisWarna = WARNA_JENIS[a.jenisAcara]  || 'bg-gray-100 text-gray-500 border-gray-200'
 
               return (
                 <div key={a.id} className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
@@ -762,9 +786,9 @@ export default function InputKeputusan() {
                     </span>
 
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-800 truncate">{a.nama}</p>
+                      <p className="text-sm font-bold text-gray-800 truncate">{a.namaAcara || a.namaAcaraPendek}</p>
                       <p className="text-[10px] text-gray-400 truncate">
-                        {a.kategori}
+                        {a.kategoriKod}
                         {a.jantina ? ` · ${a.jantina === 'L' ? 'Lelaki' : a.jantina === 'P' ? 'Perempuan' : a.jantina}` : ''}
                         {a.unit    ? ` · ${a.unit}` : ''}
                       </p>
@@ -783,6 +807,7 @@ export default function InputKeputusan() {
                         atletMap={atletMap}
                         schoolId={schoolId}
                         kejId={kejId}
+                        kejDoc={kejDoc}
                         onRefresh={() => setRefresh(r => r + 1)}
                       />
                     </div>

@@ -18,6 +18,7 @@ import {
   query, where, orderBy, serverTimestamp, onSnapshot,
 } from 'firebase/firestore'
 import { selectFinalists, assignLorong, getFinalistSetup } from '../../utils/finalistUtils'
+import { runPostRasmi } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -980,6 +981,18 @@ export default function PencatatInputKeputusan() {
 
       await updateDoc(heatRef, { statusKeputusan: 'diterima', bantahanDiterima: false, updatedAt: serverTimestamp() })
       await updateDoc(acaraRef, { statusAcara: 'ada_keputusan', updatedAt: serverTimestamp() }).catch(() => {})
+
+      // runPostRasmi — kira medal_tally, rekod, mata olahragawan
+      const pesertaDenganRank = buildUpdatedPeserta(selectedAcara, selectedHeat, keputusan)
+      const heatDocForPost = { id: selectedHeat.heatId, peserta: pesertaDenganRank, windSpeed: selectedHeat.windSpeed ?? '' }
+      const acaraDocForPost = { ...selectedAcara, id: selectedAcara.acaraId }
+      await runPostRasmi(db, heatDocForPost, acaraDocForPost, kejId, {
+        schoolId,
+        mataPingat:   kejData?.mataPingat   || { 1: 5, 2: 3, 3: 2, 4: 1 },
+        peringkatKej: kejData?.peringkatKej || 'D',
+        grantMedal:   selectedHeat.fasa === 'final' || selectedHeat.fasa === 'terus_final',
+        isRelay:      selectedAcara.jenisAcara === 'relay',
+      }).catch(e => console.warn('postRasmi:', e.message))
 
       const patch = { statusKeputusan: 'diterima' }
       setSelectedHeat(prev => ({ ...prev, ...patch }))
