@@ -251,7 +251,8 @@ function HomePreview({ cfg }) {
 // ─── TetapanHome (Main) ───────────────────────────────────────────────────────
 
 export default function TetapanHome() {
-  const { user } = useAuth()
+  const { user, userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   const [cfg,          setCfg]         = useState(TETAPAN_DEFAULTS)
   const [busy,         setBusy]        = useState(false)
   const [saved,        setSaved]       = useState(false)
@@ -262,7 +263,8 @@ export default function TetapanHome() {
   const [konfirmTutup, setKonfirmTutup] = useState(false)
 
   useEffect(() => {
-    getDoc(doc(db, 'tetapan', 'home'))
+    if (!schoolId) { setLoading(false); return }
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       .then(snap => {
         if (snap.exists()) {
           setCfg({ ...TETAPAN_DEFAULTS, ...snap.data() })
@@ -272,12 +274,12 @@ export default function TetapanHome() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [schoolId])
 
   async function handleToggleSistem(tutup) {
     setToggling(true)
     try {
-      await updateDoc(doc(db, 'tetapan', 'home'), {
+      await updateDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'), {
         sistemTutup: tutup,
         mesejTutup:  mesejTutup.trim(),
         updatedAt:   serverTimestamp(),
@@ -295,7 +297,7 @@ export default function TetapanHome() {
     e.preventDefault()
     setBusy(true); setSaved(false)
     try {
-      await setDoc(doc(db, 'tetapan', 'home'), {
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'), {
         ...cfg, updatedAt: serverTimestamp(), updatedBy: user?.uid || '',
       })
       setSaved(true)

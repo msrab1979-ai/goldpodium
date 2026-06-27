@@ -294,7 +294,7 @@ function FasaBadge({ fasa }) {
 
 // ─── Modal: Tetapan Generate Heat ─────────────────────────────────────────────
 
-function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {} }) {
+function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, schoolId = '' }) {
   const isPadang  = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass    = acara.jenisAcara === 'mass_start'
   const isRelay   = acara.jenisAcara === 'relay'
@@ -366,12 +366,12 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {} }
   }
 
   async function handleGenerate(kejohananId) {
-    if (!preview) return
+    if (!preview || !schoolId) return
     setGen(true)
     const aceraKey = acara.aceraId || acara.id
     try {
       // Padam heat lama dulu (supaya heat lama tidak kekal bersama heat baru)
-      const existSnap = await getDocs(collection(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat'))
+      const existSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat'), where('aceraId', '==', aceraKey)))
       if (!existSnap.empty) {
         const delBatch = writeBatch(db)
         existSnap.docs.forEach(d => delBatch.delete(d.ref))
@@ -381,7 +381,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {} }
       const batch = writeBatch(db)
       for (const h of preview.heats) {
         const heatId = buatHeatId(aceraKey, h.fasa, h.noHeat)
-        const ref = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', heatId)
+        const ref = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
         batch.set(ref, {
           heatId,
           aceraId: aceraKey,
@@ -425,7 +425,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {} }
       }
       await batch.commit()
       // Rekod masa heat dijana — untuk gate pendaftaran PP
-      await updateDoc(doc(db, 'kejohanan', kejohananId, 'acara', aceraKey), {
+      await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'acara', aceraKey), {
         heatDijanaAt: serverTimestamp()
       }).catch(() => {})
       onGenerated()
@@ -586,7 +586,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {} }
 
 // ─── Modal: Edit Lorong/Giliran manual ────────────────────────────────────────
 
-function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMap = {} }) {
+function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMap = {}, schoolId = '' }) {
   const isPadang = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
   const [peserta, setPeserta] = useState(
@@ -602,7 +602,7 @@ function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMa
     setSaving(true)
     try {
       await setDoc(
-        doc(db, 'kejohanan', kejohananId, 'acara', acara.aceraId || acara.id, 'heat', heat.heatId),
+        doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heat.heatId),
         { peserta, updatedAt: serverTimestamp() },
         { merge: true }
       )
@@ -647,7 +647,7 @@ function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMa
 
 // ─── Helper: Jana heat untuk satu acara (boleh guna batch atau individual) ────
 
-async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, caraDraw, skipJikaAda, namaSekolahMap = {} }) {
+async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap = {} }) {
   const aceraKey = acara.aceraId || acara.id
   // Tapis peserta untuk acara ini
   const peserta = pesertaAll.filter(p => (p.acaraIds || []).includes(aceraKey))
@@ -655,11 +655,11 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, caraDraw,
 
   // Semak heat sedia ada
   if (skipJikaAda) {
-    const existSnap = await getDocs(collection(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat'))
+    const existSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat'), where('aceraId', '==', aceraKey)))
     if (!existSnap.empty) return { status: 'skip', sebab: 'heat sedia ada' }
   } else {
     // Padam heat lama
-    const existSnap = await getDocs(collection(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat'))
+    const existSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat'), where('aceraId', '==', aceraKey)))
     if (!existSnap.empty) {
       const delBatch = writeBatch(db)
       existSnap.docs.forEach(d => delBatch.delete(d.ref))
@@ -702,7 +702,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, caraDraw,
     const batch = writeBatch(db)
     for (const h of heats) {
       const heatId = buatHeatId(aceraKey, h.fasa, h.noHeat)
-      const ref = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', heatId)
+      const ref = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
       batch.set(ref, {
         heatId, aceraId: aceraKey, kejohananId,
         fasa: h.fasa, noHeat: h.noHeat, status: 'belum_mula',
@@ -754,7 +754,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, caraDraw,
   const batch = writeBatch(db)
   for (const h of heats) {
     const heatId = buatHeatId(aceraKey, h.fasa, h.noHeat)
-    const ref = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', heatId)
+    const ref = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
     batch.set(ref, {
       heatId, aceraId: aceraKey, kejohananId,
       fasa: h.fasa, noHeat: h.noHeat, status: 'belum_mula',
@@ -857,7 +857,7 @@ function pilihFinalis(heatPhaseHeats, acara, isPadang) {
 
 // ─── Modal: Jana Semua Heat ───────────────────────────────────────────────────
 
-function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolahMap = {}, onClose, onDone }) {
+function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolahMap = {}, onClose, onDone, schoolId = '' }) {
   const [caraDraw,    setCaraDraw]    = useState('random')
   const [skipJikaAda, setSkip]       = useState(true)
   const [running,     setRunning]    = useState(false)
@@ -874,7 +874,7 @@ function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolah
     // Ambil semua pendaftaran sekali
     let pesertaAll = []
     try {
-      const snap = await getDocs(collection(db, 'kejohanan', kejohananId, 'pendaftaran'))
+      const snap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran'))
       pesertaAll = snap.docs.map(d => d.data())
     } catch (e) {
       setProgress({ done: 0, total, log: [{ status:'error', msg:'Gagal muat pendaftaran: ' + e.message }] })
@@ -888,12 +888,12 @@ function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolah
       const acara = acaraAktif[i]
       const label = `${acara.namaAcara} Kat${katLabel(acara.kategoriKod, kategoriList)} ${acara.jantina}`
       try {
-        const result = await generateHeatsForAcara({ acara, pesertaAll, kejohananId, caraDraw, skipJikaAda, namaSekolahMap })
+        const result = await generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap })
         if (result.status === 'ok') {
           berjaya++
           log.push({ status:'ok', msg:`✓ ${label} — ${result.heatCount} heat, ${result.pesertaCount} peserta` })
           // Rekod masa heat dijana — untuk gate pendaftaran PP
-          updateDoc(doc(db, 'kejohanan', kejohananId, 'acara', acara.aceraId || acara.id), {
+          updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'acara', acara.aceraId || acara.id), {
             heatDijanaAt: serverTimestamp()
           }).catch(() => {})
         } else {
@@ -1057,7 +1057,7 @@ function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolah
 
 // ─── Modal: Jana Final dari Heat ─────────────────────────────────────────────
 
-function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, sekolahMap = {}, acaraList = [] }) {
+function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, sekolahMap = {}, acaraList = [], schoolId = '' }) {
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
   const isRelay  = acara.jenisAcara === 'relay'
@@ -1076,8 +1076,8 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   // Load tetapan/finalSetup + wa_config serentak
   useEffect(() => {
     Promise.all([
-      getDoc(doc(db, 'tetapan', 'finalSetup')),
-      getDoc(doc(db, 'wa_config', kejohananId)),
+      getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup')),
+      schoolId ? getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'waConfig')) : Promise.resolve({ exists: () => false }),
     ])
       .then(([fsSnap, waSnap]) => {
         const fs = fsSnap.exists() ? fsSnap.data() : null
@@ -1171,7 +1171,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         heatGroups.forEach((kumpulan, idx) => {
           const noHeat = idx + 1
           const heatId = buatHeatId(targetKey, fasaHeat, noHeat)
-          const ref    = doc(db, 'kejohanan', kejohananId, 'acara', targetKey, 'heat', heatId)
+          const ref    = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
           // Assign lorong dalam setiap heat (WA — terpantas dapat lorong tengah)
           const assigned = assignLorongFinal(
             [...kumpulan].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999)),
@@ -1199,7 +1199,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       } else {
         // ── Satu heat final (saringan → akhir / separuh_akhir → akhir) ──────
         const heatId = buatHeatId(targetKey, fasaHeat, 1)
-        const ref    = doc(db, 'kejohanan', kejohananId, 'acara', targetKey, 'heat', heatId)
+        const ref    = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
 
         const finalisUntukAssign = (!isPadang && !isMass)
           ? [...finalis].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999))
@@ -1227,7 +1227,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
 
       // Mark saringan — finalDijanaKe supaya butang Jana SF/Final hilang
       await updateDoc(
-        doc(db, 'kejohanan', kejohananId, 'acara', saringanKey),
+        doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'acara', saringanKey),
         { finalDijanaKe: String(targetAcara.noAcara || targetKey) }
       ).catch(() => {})
 
@@ -1237,7 +1237,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         const batch = writeBatch(db)
         for (const p of finalis) {
           if (!p.noKP) continue
-          const pendRef  = doc(db, 'kejohanan', kejohananId, 'pendaftaran', p.noKP)
+          const pendRef  = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', p.noKP)
           const pendSnap = await getDoc(pendRef)
           if (pendSnap.exists()) {
             const ids = pendSnap.data().acaraIds || []
@@ -1392,7 +1392,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
 
 // ─── Modal: Jana Heat Individu (dari Status Panel) ───────────────────────────
 
-function QuickJanaModal({ acara, kejohananId, onClose, onDone }) {
+function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '' }) {
   const isPadang = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
 
@@ -1404,14 +1404,15 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone }) {
   const [saving,        setSaving]   = useState(false)
 
   useEffect(() => {
-    getDocs(collection(db, 'kejohanan', kejohananId, 'pendaftaran'))
+    if (!schoolId) return
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran'))
       .then(snap => {
         const all = snap.docs.map(d => d.data())
         setPeserta(all.filter(p => (p.acaraIds || []).includes(acara.aceraId)))
       })
       .catch(() => {})
       .finally(() => setLoadingP(false))
-  }, [acara.aceraId, kejohananId])
+  }, [acara.aceraId, kejohananId, schoolId])
 
   function buatPreview() {
     const p = [...peserta]
@@ -1438,12 +1439,12 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone }) {
   }
 
   async function handleSimpan() {
-    if (!preview) return
+    if (!preview || !schoolId) return
     setSaving(true)
     const aceraKey = acara.aceraId || acara.id
     try {
       // Padam heat lama untuk acara ini sahaja
-      const existSnap = await getDocs(collection(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat'))
+      const existSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat'), where('aceraId', '==', aceraKey)))
       if (!existSnap.empty) {
         const delBatch = writeBatch(db)
         existSnap.docs.forEach(d => delBatch.delete(d.ref))
@@ -1453,7 +1454,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone }) {
       const batch = writeBatch(db)
       for (const h of preview.heats) {
         const heatId = buatHeatId(aceraKey, h.fasa, h.noHeat)
-        const ref = doc(db, 'kejohanan', kejohananId, 'acara', aceraKey, 'heat', heatId)
+        const ref = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
         batch.set(ref, {
           heatId, aceraId: aceraKey, kejohananId,
           fasa: h.fasa, noHeat: h.noHeat, status: 'belum_mula',
@@ -1603,7 +1604,8 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone }) {
 // ─── Halaman Utama ────────────────────────────────────────────────────────────
 
 export default function StartList() {
-  const { userRole } = useAuth()
+  const { userRole, userData } = useAuth()
+  const schoolId = userData?.schoolId || ''
   // Hanya superadmin + admin boleh jana/edit heat
   const canEdit = ['superadmin', 'admin'].includes(userRole)
 
@@ -1665,17 +1667,35 @@ export default function StartList() {
 
   // Fetch sekolah + kategori once
   useEffect(() => {
-    getDocs(collection(db, 'sekolah'))
-      .then(snap => setSekolahList(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+    if (!schoolId) return
+    // Derive sekolah from atlet collection
+    getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+      .then(atletSnap => {
+        const sklMap = {}
+        atletSnap.docs.forEach(d => {
+          const a = d.data()
+          if (a.kodSekolah && !sklMap[a.kodSekolah]) {
+            sklMap[a.kodSekolah] = { kodSekolah: a.kodSekolah, namaSekolah: a.namaSekolah || a.kodSekolah, kategori: a.kategoriSekolah || '' }
+          }
+        })
+        const sekolahList = Object.values(sklMap).sort((a, b) => a.kodSekolah.localeCompare(b.kodSekolah))
+        setSekolahList(sekolahList)
+      })
       .catch(() => {})
-    getDocs(query(collection(db, 'kategori'), orderBy('urutan')))
+  }, [schoolId])
+
+  // Fetch kategori bila selectedKej berubah (per-kejohanan)
+  useEffect(() => {
+    if (!schoolId || !selectedKej) return
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'kategori'), orderBy('urutan')))
       .then(snap => setKategoriList(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
       .catch(() => {})
-  }, [])
+  }, [schoolId, selectedKej])
 
   // Fetch kejohanan aktif
   useEffect(() => {
-    getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+    if (!schoolId) return
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]
@@ -1683,13 +1703,13 @@ export default function StartList() {
           setNamaKej(d.data().namaKejohanan || '')
         }
       }).catch(() => {})
-  }, [])
+  }, [schoolId])
 
   // Fetch acara + jadual bila kejohanan berubah
   useEffect(() => {
-    if (!selectedKej) { setAcaraList([]); setSelectedAcara(null); setPesertaCountMap({}); setJadualMap({}); return }
+    if (!selectedKej || !schoolId) { setAcaraList([]); setSelectedAcara(null); setPesertaCountMap({}); setJadualMap({}); return }
     // Muat wa_config — lorongKumpulan (final) + lorongHeatRemove (heat)
-    getDoc(doc(db, 'wa_config', selectedKej))
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'waConfig'))
       .then(d => {
         if (d.exists()) {
           const data = d.data()
@@ -1722,12 +1742,12 @@ export default function StartList() {
         LORONG_KUMPULAN    = { ...WA_LORONG_KUMPULAN_DEFAULT }
         LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }
       })
-    getDocs(query(collection(db, 'kejohanan', selectedKej, 'acara'), orderBy('kategoriKod')))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'acara'), orderBy('kategoriKod')))
       .then(snap => {
         setAcaraList(snap.docs.map(d => { const data = d.data(); return { id: d.id, ...data, aceraId: data.aceraId || d.id } }))
         setSelectedAcara(null)
       }).catch(() => {})
-    getDocs(query(collection(db, 'jadual_acara'), where('kejohananId', '==', selectedKej)))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'jadual')))
       .then(snap => {
         const map = {}
         snap.docs.forEach(d => {
@@ -1738,7 +1758,7 @@ export default function StartList() {
         setJadualMap(map)
       }).catch(() => {})
     // Fetch pengesahan semua sekolah
-    getDocs(collection(db, 'kejohanan', selectedKej, 'pengesahan'))
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pengesahan'))
       .then(snap => {
         const map = {}
         snap.docs.forEach(d => { map[d.id] = d.data() })
@@ -1748,8 +1768,8 @@ export default function StartList() {
 
   // Fetch peserta count semua acara (untuk status panel)
   useEffect(() => {
-    if (!selectedKej) { setPesertaCountMap({}); return }
-    getDocs(collection(db, 'kejohanan', selectedKej, 'pendaftaran'))
+    if (!selectedKej || !schoolId) { setPesertaCountMap({}); return }
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pendaftaran'))
       .then(snap => {
         const map = {}
         const sekolahSet = new Set()
@@ -1767,27 +1787,26 @@ export default function StartList() {
 
   // Fetch bilangan heat semua acara (untuk badge dalam senarai)
   useEffect(() => {
-    if (!selectedKej || acaraList.length === 0) { setHeatCountMap({}); return }
+    if (!selectedKej || !schoolId || acaraList.length === 0) { setHeatCountMap({}); return }
     let cancelled = false
-    Promise.all(
-      acaraList.map(a => {
-        const aid = a.aceraId || a.id
-        return getDocs(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'))
-          .then(snap => ({ aceraId: aid, count: snap.size }))
-          .catch(() => ({ aceraId: aid, count: 0 }))
+    // Fetch all heats for this kejohanan in one query, then group by aceraId
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'))
+      .then(snap => {
+        if (cancelled) return
+        const map = {}
+        snap.docs.forEach(d => {
+          const aid = d.data().aceraId
+          if (aid) map[aid] = (map[aid] || 0) + 1
+        })
+        setHeatCountMap(map)
       })
-    ).then(results => {
-      if (cancelled) return
-      const map = {}
-      results.forEach(r => { map[r.aceraId] = r.count })
-      setHeatCountMap(map)
-    })
+      .catch(() => {})
     return () => { cancelled = true }
-  }, [selectedKej, acaraList, heatCountTick])
+  }, [selectedKej, schoolId, acaraList, heatCountTick])
 
   // Fetch peserta + heat + rekod bila acara berubah
   const fetchAcaraData = useCallback(async () => {
-    if (!selectedAcara || !selectedKej) {
+    if (!selectedAcara || !selectedKej || !schoolId) {
       setPesertaList([]); setHeatList([])
       setRekodAcara({ D: null, N: null, K: null })
       return
@@ -1796,8 +1815,8 @@ export default function StartList() {
     const aceraKey = selectedAcara.aceraId || selectedAcara.id
     try {
       const [pendSnap, heatSnap, rekod] = await Promise.all([
-        getDocs(query(collection(db, 'kejohanan', selectedKej, 'pendaftaran'))),
-        getDocs(query(collection(db, 'kejohanan', selectedKej, 'acara', aceraKey, 'heat'), orderBy('noHeat'))),
+        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pendaftaran'))),
+        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aceraKey), orderBy('noHeat'))),
         cariRekodUntukAcara(selectedAcara),
       ])
       const peserta = pendSnap.docs
@@ -1808,13 +1827,13 @@ export default function StartList() {
       setRekodAcara(rekod)
       setHeatCountTick(t => t + 1)
     } catch { } finally { setLoading(false) }
-  }, [selectedAcara, selectedKej])
+  }, [selectedAcara, selectedKej, schoolId])
 
   useEffect(() => { fetchAcaraData() }, [fetchAcaraData])
 
   // ── Load saringan heats bila final acara dipilih ──────────────────────────
   useEffect(() => {
-    if (!selectedAcara?.parentAcaraId || !selectedKej) {
+    if (!selectedAcara?.parentAcaraId || !selectedKej || !schoolId) {
       setSaringanAcara(null)
       setSaringanHeats([])
       return
@@ -1826,10 +1845,10 @@ export default function StartList() {
     setSaringanAcara(sar || null)
     if (!sar) { setSaringanHeats([]); return }
     const sarKey = sar.aceraId || sar.id
-    getDocs(collection(db, 'kejohanan', selectedKej, 'acara', sarKey, 'heat'))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', sarKey)))
       .then(snap => setSaringanHeats(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
       .catch(() => setSaringanHeats([]))
-  }, [selectedAcara, selectedKej, acaraList])
+  }, [selectedAcara, selectedKej, schoolId, acaraList])
 
   // ── Helper: semak sama ada mana-mana heat ada keputusan/rasmi ───────────────
   function heatAdaKeputusan(heats) {
@@ -1867,12 +1886,12 @@ export default function StartList() {
     try {
       const batch = writeBatch(db)
       heatList.forEach(h => {
-        batch.delete(doc(db, 'kejohanan', selectedKej, 'acara', selectedAcara.aceraId, 'heat', h.heatId))
+        batch.delete(doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', h.heatId))
       })
       await batch.commit()
       // Clear finalDijanaKe supaya label "Final Sudah Dijana" hilang dalam pencatat
       await updateDoc(
-        doc(db, 'kejohanan', selectedKej, 'acara', selectedAcara.aceraId),
+        doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'acara', selectedAcara.aceraId),
         { finalDijanaKe: deleteField() }
       ).catch(() => {})
       setHeatList([])
@@ -1882,11 +1901,11 @@ export default function StartList() {
 
   // Reset heat untuk satu acara (dari Status panel)
   async function handleResetHeatAcara(acara) {
-    if (!selectedKej) return
+    if (!selectedKej || !schoolId) return
     const aid = acara.aceraId || acara.id
     setResetingAceraId(aid)
     try {
-      const heatSnap = await getDocs(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'))
+      const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid)))
       // Gate: semak keputusan
       const heatsData = heatSnap.docs.map(d => d.data())
       const adaKeputusan = heatAdaKeputusan(heatsData)
@@ -1908,11 +1927,11 @@ export default function StartList() {
       }
       // Clear finalDijanaKe supaya label "Final Sudah Dijana" hilang dalam pencatat
       await updateDoc(
-        doc(db, 'kejohanan', selectedKej, 'acara', aid),
+        doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'acara', aid),
         { finalDijanaKe: deleteField() }
       ).catch(() => {})
       // Reset pengesahan sekolah yang daftar acara ini sahaja
-      const pendSnap = await getDocs(collection(db, 'kejohanan', selectedKej, 'pendaftaran'))
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pendaftaran'))
       const skolahTerkesan = new Set(
         pendSnap.docs
           .filter(d => (d.data().acaraIds || []).includes(aid))
@@ -1920,7 +1939,7 @@ export default function StartList() {
           .filter(Boolean)
       )
       if (skolahTerkesan.size > 0) {
-        const pgSnap = await getDocs(collection(db, 'kejohanan', selectedKej, 'pengesahan'))
+        const pgSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pengesahan'))
         const pgBatch = writeBatch(db)
         pgSnap.docs
           .filter(d => skolahTerkesan.has(d.id))
@@ -1942,7 +1961,7 @@ export default function StartList() {
 
   // Reset heat SEMUA acara
   async function handleResetSemuaHeat() {
-    if (!selectedKej) return
+    if (!selectedKej || !schoolId) return
     if (!canEdit) {
       alert('Reset Semua Heat hanya boleh dilakukan oleh Admin atau Superadmin.')
       return
@@ -1952,7 +1971,7 @@ export default function StartList() {
       const acaraAktif = acaraList.filter(a => a.isAktif !== false)
       for (const acara of acaraAktif) {
         const aid = acara.aceraId || acara.id
-        const heatSnap = await getDocs(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'))
+        const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid)))
         if (!heatSnap.empty) {
           const batch = writeBatch(db)
           heatSnap.docs.forEach(d => batch.delete(d.ref))
@@ -1960,12 +1979,12 @@ export default function StartList() {
         }
         // Clear finalDijanaKe supaya label "Final Sudah Dijana" hilang dalam pencatat
         await updateDoc(
-          doc(db, 'kejohanan', selectedKej, 'acara', aid),
+          doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'acara', aid),
           { finalDijanaKe: deleteField() }
         ).catch(() => {})
       }
       // Reset semua pengesahan
-      const pgSnap = await getDocs(collection(db, 'kejohanan', selectedKej, 'pengesahan'))
+      const pgSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pengesahan'))
       if (!pgSnap.empty) {
         const pgBatch = writeBatch(db)
         pgSnap.docs.forEach(d => pgBatch.delete(d.ref))
@@ -1989,7 +2008,7 @@ export default function StartList() {
     setHariHeatLoading(aid)
     try {
       const snap = await getDocs(
-        query(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'), orderBy('noHeat'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat'))
       )
       setHariHeatMap(prev => ({
         ...prev,
@@ -2005,9 +2024,9 @@ export default function StartList() {
     setCetakHeatId(cKey)
     try {
       const [cfgSnap, rekodDNK, allHeatsSnap] = await Promise.all([
-        getDoc(doc(db, 'tetapan', 'home')),
+        getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
         cariRekodUntukAcara(a),
-        getDocs(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat')),
+        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid))),
       ])
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       const jumlahHeatTotal = allHeatsSnap.docs.filter(d => d.data().fasa !== 'final').length
@@ -2027,7 +2046,7 @@ export default function StartList() {
       pdf.save(`StartList_${aid}_${heat.heatId}_${Date.now()}.pdf`)
       const bil = (heat.bilanganCetak || 0) + 1
       await updateDoc(
-        doc(db, 'kejohanan', selectedKej, 'acara', aid, 'heat', heat.heatId),
+        doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', heat.heatId),
         { bilanganCetak: bil, tarikhCetak: serverTimestamp() }
       )
       setHariHeatMap(prev => ({
@@ -2046,7 +2065,7 @@ export default function StartList() {
     const aid = a.aceraId || a.id
     try {
       await updateDoc(
-        doc(db, 'kejohanan', selectedKej, 'acara', aid, 'heat', heat.heatId),
+        doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', heat.heatId),
         { bilanganCetak: 0, tarikhCetak: null }
       )
       setHariHeatMap(prev => ({
@@ -2082,14 +2101,14 @@ export default function StartList() {
         acaraHari.map(async a => {
           const aid = a.aceraId || a.id
           const snap = await getDocs(
-            query(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'), orderBy('noHeat'))
+            query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat'))
           )
           return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })), jadual: jadualMap[aid] || {} }
         })
       )
 
       // 3. Logo dari tetapan/home
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       function imgFmt(b64) {
         if (!b64) return 'PNG'
@@ -2247,7 +2266,7 @@ export default function StartList() {
         a.heats.forEach(heat => {
           if (!heat.heatId && !heat.id) return
           const heatId = heat.heatId || heat.id
-          const hRef = doc(db, 'kejohanan', selectedKej, 'acara', aid, 'heat', heatId)
+          const hRef = doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', heatId)
           batch.update(hRef, {
             bilanganCetak: (heat.bilanganCetak || 0) + 1,
             tarikhCetak:   serverTimestamp(),
@@ -2302,11 +2321,11 @@ export default function StartList() {
   }
 
   async function cetakSatuHeat(heat) {
-    if (!selectedAcara || !selectedKej) return
+    if (!selectedAcara || !selectedKej || !schoolId) return
     const h = normalizeHeat(heat)
     setCetakHeatId(h.heatId)
     try {
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       const jadual = jadualMap[selectedAcara.aceraId || selectedAcara.id] || {}
       const jumlahHeatTotal = heatList.filter(x => x.fasa !== 'final').length
@@ -2327,7 +2346,7 @@ export default function StartList() {
       // Rekod dalam Firestore
       const bil = (heat.bilanganCetak || 0) + 1
       await updateDoc(
-        doc(db, 'kejohanan', selectedKej, 'acara', selectedAcara.aceraId, 'heat', h.heatId),
+        doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', h.heatId),
         { bilanganCetak: bil, tarikhCetak: serverTimestamp() }
       )
       setHeatList(prev => prev.map(x =>
@@ -2339,10 +2358,10 @@ export default function StartList() {
 
   // ── Cetak Semua Heat (4 Salinan × semua heat) ─────────────────────────────────
   async function cetakSemuaHeat() {
-    if (!selectedAcara || heatList.length === 0) return
+    if (!selectedAcara || heatList.length === 0 || !schoolId) return
     setCetakLoading(true)
     try {
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       const jadual = jadualMap[selectedAcara.aceraId || selectedAcara.id] || {}
       const normalizedHeats = heatList.map(normalizeHeat)
@@ -2363,7 +2382,7 @@ export default function StartList() {
       const batch = writeBatch(db)
       normalizedHeats.forEach(h => {
         batch.update(
-          doc(db, 'kejohanan', selectedKej, 'acara', selectedAcara.aceraId, 'heat', h.heatId),
+          doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', h.heatId),
           { bilanganCetak: (h.bilanganCetak || 0) + 1, tarikhCetak: serverTimestamp() }
         )
       })
@@ -2384,7 +2403,7 @@ export default function StartList() {
     )) return
     try {
       await updateDoc(
-        doc(db, 'kejohanan', selectedKej, 'acara', selectedAcara.aceraId, 'heat', heat.heatId),
+        doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', heat.heatId),
         { bilanganCetak: 0, tarikhCetak: null }
       )
       setHeatList(prev => prev.map(h =>
@@ -2400,13 +2419,13 @@ export default function StartList() {
     try {
       // Fetch heat untuk acara ini
       const heatSnap = await getDocs(
-        query(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'), orderBy('noHeat'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat'))
       )
       const heats = heatSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       if (heats.length === 0) { alert('Heat belum dijana untuk acara ini.'); return }
 
       // Logo dari tetapan/home
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       function imgFmt(b64) {
         if (!b64) return 'PNG'
@@ -2526,7 +2545,7 @@ export default function StartList() {
   // ── Cetak Laporan Pengesahan ──────────────────────────────────────────────────
   async function cetakLaporanPengesahan(sekolahRows, totalSahkan) {
     try {
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       function imgFmt(b64) {
         if (!b64) return 'PNG'
@@ -2627,14 +2646,14 @@ export default function StartList() {
       const acaraWithHeats = await Promise.all(
         acaraBalapan.map(async a => {
           const aid = a.aceraId || a.id
-          const snap = await getDocs(query(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'), orderBy('noHeat')))
+          const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat')))
           return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })), jadual: jadualMap[aid] || {} }
         })
       )
       const acaraAdaHeat = acaraWithHeats.filter(a => a.heats.length > 0)
       if (acaraAdaHeat.length === 0) { alert('Tiada heat dijana untuk mana-mana acara balapan.'); return }
 
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       function imgFmt(b64) {
         if (!b64) return 'PNG'
@@ -2744,14 +2763,14 @@ export default function StartList() {
       const acaraWithHeats = await Promise.all(
         acaraPadang.map(async a => {
           const aid = a.aceraId || a.id
-          const snap = await getDocs(query(collection(db, 'kejohanan', selectedKej, 'acara', aid, 'heat'), orderBy('noHeat')))
+          const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat')))
           return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })), jadual: jadualMap[aid] || {} }
         })
       )
       const acaraAdaHeat = acaraWithHeats.filter(a => a.heats.length > 0)
       if (acaraAdaHeat.length === 0) { alert('Tiada heat dijana untuk mana-mana acara padang.'); return }
 
-      const cfgSnap = await getDoc(doc(db, 'tetapan', 'home'))
+      const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
       function imgFmt(b64) {
         if (!b64) return 'PNG'
@@ -4013,6 +4032,7 @@ export default function StartList() {
         <QuickJanaModal
           acara={quickJanaAcara}
           kejohananId={selectedKej}
+          schoolId={schoolId}
           onClose={() => setQuickJanaAcara(null)}
           onDone={() => { setHeatCountTick(t => t + 1); setQuickJanaAcara(null) }}
         />
@@ -4025,6 +4045,7 @@ export default function StartList() {
           acaraList={acaraList}
           kategoriList={kategoriList}
           namaSekolahMap={namaSekolahMap}
+          schoolId={schoolId}
           onClose={() => setModal(null)}
           onDone={fetchAcaraData}
         />
@@ -4036,6 +4057,7 @@ export default function StartList() {
           onClose={() => setModal(null)}
           onGenerated={fetchAcaraData}
           sekolahMap={namaSekolahMap}
+          schoolId={schoolId}
         />
       )}
       {modal?.type === 'editlorong' && selectedAcara && (
@@ -4046,6 +4068,7 @@ export default function StartList() {
           onClose={() => setModal(null)}
           onSaved={fetchAcaraData}
           sekolahMap={namaSekolahMap}
+          schoolId={schoolId}
         />
       )}
       {modal?.type === 'janaFinal' && selectedAcara && (
@@ -4057,6 +4080,7 @@ export default function StartList() {
           onGenerated={fetchAcaraData}
           sekolahMap={namaSekolahMap}
           acaraList={acaraList}
+          schoolId={schoolId}
         />
       )}
 

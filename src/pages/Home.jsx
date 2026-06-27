@@ -100,7 +100,7 @@ function genPin6() {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
 
-function LupaPinModal({ onClose }) {
+function LupaPinModal({ onClose, schoolId }) {
   const [kodSekolah, setKodSekolah] = useState('')
   const [email,      setEmail]      = useState('')
   const [newPin,     setNewPin]     = useState(null)  // null = belum reset, string = PIN baru
@@ -120,7 +120,8 @@ function LupaPinModal({ onClose }) {
     if (!email.trim())      return setError('Sila masukkan E-mel Sekolah.')
     setLoading(true)
     try {
-      const snap = await getDoc(doc(db, 'sekolah', kodSekolah.trim().toUpperCase()))
+      if (!schoolId) { setError('Sistem belum dikonfigurasi.'); return }
+      const snap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kodSekolah.trim().toUpperCase()))
       if (!snap.exists()) {
         setError('Kod Sekolah tidak dijumpai dalam sistem.')
         return
@@ -133,7 +134,7 @@ function LupaPinModal({ onClose }) {
       // Jana PIN baru, hash & simpan — PIN lama digantikan
       const pin6   = genPin6()
       const ph     = await hashPin(pin6)
-      await updateDoc(doc(db, 'sekolah', kodSekolah.trim().toUpperCase()), {
+      await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', kodSekolah.trim().toUpperCase()), {
         pinHash:   ph,
         pin:       deleteField(),   // buang plain text jika ada
         updatedAt: serverTimestamp(),
@@ -219,7 +220,7 @@ function LupaPinModal({ onClose }) {
 
 // ─── LoginForm ────────────────────────────────────────────────────────────────
 
-function LoginForm({ role, onCancel, cfg }) {
+function LoginForm({ role, onCancel, cfg, schoolId }) {
   const { loginPencatat, loginPengurus } = useAuth()
   const navigate = useNavigate()
   const [kod, setKod] = useState('')
@@ -284,7 +285,7 @@ function LoginForm({ role, onCancel, cfg }) {
           </div>
         </form>
       </div>
-      {lupaPinModal && <LupaPinModal onClose={() => setLupaPinModal(false)} />}
+      {lupaPinModal && <LupaPinModal onClose={() => setLupaPinModal(false)} schoolId={schoolId} />}
     </>
   )
 }
@@ -370,7 +371,7 @@ function rekodKeyHome(namaAcara, jantina, kategoriKod, peringkat) {
     .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
 }
 
-function RekodModal({ peserta, acara, onClose }) {
+function RekodModal({ peserta, acara, onClose, schoolId }) {
   const [data,    setData]    = useState(null)  // { tuntutan, rekodAsal }
   const [loading, setLoading] = useState(true)
 
@@ -395,18 +396,19 @@ function RekodModal({ peserta, acara, onClose }) {
   }
 
   useEffect(() => {
+    if (!schoolId) { setLoading(false); return }
     const rekodNama = acara.namaAcaraPendek || acara.namaAcara
     const rKey = rekodKeyHome(rekodNama, acara.jantina, acara.kategoriKod, peringkat)
     Promise.all([
-      getDoc(doc(db, 'rekod', rKey + '_tuntutan')),
-      getDoc(doc(db, 'rekod', rKey)),
+      getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey + '_tuntutan')),
+      getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey)),
     ]).then(([tSnap, aSnap]) => {
       setData({
         tuntutan:  tSnap.exists()  ? tSnap.data()  : null,
         rekodAsal: aSnap.exists()  ? aSnap.data()  : null,
       })
     }).catch(() => setData(null)).finally(() => setLoading(false))
-  }, []) // eslint-disable-line
+  }, [schoolId]) // eslint-disable-line
 
   useEffect(() => {
     const fn = e => { if (e.key === 'Escape') onClose() }
@@ -517,7 +519,7 @@ function RekodModal({ peserta, acara, onClose }) {
 
 // ─── KeputusanExpanded ────────────────────────────────────────────────────────
 
-function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, rekodDNK }) {
+function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, rekodDNK, schoolId }) {
   const [rekodModal, setRekodModal] = useState(null) // peserta yang badge diklik
 
   if (isLoading) {
@@ -915,6 +917,7 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
           peserta={rekodModal}
           acara={acara}
           onClose={() => setRekodModal(null)}
+          schoolId={schoolId}
         />
       )}
     </div>
@@ -923,7 +926,7 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
 
 // ─── AcaraTableRow ────────────────────────────────────────────────────────────
 
-function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMap, finalSetup, rekodDNK }) {
+function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMap, finalSetup, rekodDNK, schoolId }) {
   const { acara, masaMula } = item
   const noAcara  = acara.noAcara || acara.id || acara.acaraId || '—'
   const status   = acara.statusAcara || 'akan_datang'
@@ -987,6 +990,7 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
               isLoading={isLoading}
               finalSetup={finalSetup}
               rekodDNK={rekodDNK}
+              schoolId={schoolId}
             />
           </td>
         </tr>
@@ -997,8 +1001,11 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
 
 // ─── Home ─────────────────────────────────────────────────────────────────────
 
+const PUBLIC_SCHOOL_ID = import.meta.env.VITE_PUBLIC_SCHOOL_ID || import.meta.env.VITE_DEMO_SCHOOL_ID || ''
+
 export default function Home() {
-  const { user } = useAuth()
+  const { user, userData } = useAuth()
+  const schoolId = userData?.schoolId || PUBLIC_SCHOOL_ID
   const navigate = useNavigate()
 
   // Config
@@ -1070,15 +1077,17 @@ export default function Home() {
 
   // Config — real-time listener supaya Home auto-update bila TetapanHome disimpan
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'tetapan', 'home'), s => {
+    if (!schoolId) return
+    const unsub = onSnapshot(doc(db, 'tenants', schoolId, 'tetapan', 'home'), s => {
       if (s.exists()) setCfg({ ...TETAPAN_DEFAULTS, ...s.data() })
     })
     return () => unsub()
-  }, [])
+  }, [schoolId])
 
   // Calon Atlet Terbaik — real-time listener
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'tetapan', 'atletTerbaik'), s => {
+    if (!schoolId) return
+    const unsub = onSnapshot(doc(db, 'tenants', schoolId, 'tetapan', 'atletTerbaik'), s => {
       if (s.exists()) {
         setShowCalonTab(!!s.data().showAtHome)
         const calon = s.data().calon || []
@@ -1087,115 +1096,103 @@ export default function Home() {
       }
     })
     return () => unsub()
-  }, [])
+  }, [schoolId])
 
   // Akses Pantas — real-time subscribe 3 document
   useEffect(() => {
+    if (!schoolId) return
     const unsubGal = onSnapshot(
-      doc(db, 'tetapan', 'galeri'),
+      doc(db, 'tenants', schoolId, 'tetapan', 'galeri'),
       s => { if (s.exists()) setGaleri({ aktif: !!s.data().aktif, url: s.data().url || '', penerangan: s.data().penerangan || '' }) },
       () => {}
     )
     const unsubBK = onSnapshot(
-      doc(db, 'tetapan', 'bukuKejohananLink'),
+      doc(db, 'tenants', schoolId, 'tetapan', 'bukuKejohananLink'),
       s => { if (s.exists()) setBukuKejohananLink({ aktif: !!s.data().aktif, url: s.data().url || '', penerangan: s.data().penerangan || '' }) },
       () => {}
     )
     const unsubBP = onSnapshot(
-      doc(db, 'tetapan', 'bukuProgram'),
+      doc(db, 'tenants', schoolId, 'tetapan', 'bukuProgram'),
       s => { if (s.exists()) setBukuProgram({ aktif: !!s.data().aktif, url: s.data().url || '', penerangan: s.data().penerangan || '' }) },
       () => {}
     )
     return () => { unsubGal(); unsubBK(); unsubBP() }
-  }, [])
+  }, [schoolId])
 
   // Load finalSetup + sekolah + kategori sekali sahaja
   useEffect(() => {
-    getDoc(doc(db, 'tetapan', 'finalSetup'))
+    if (!schoolId) return
+    // tetapan/finalSetup
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup'))
       .then(s => { if (s.exists()) setFinalSetup(s.data()) })
       .catch(() => {})
-      .catch(() => {})
-    // Kategori collection — doc ID = kod (A, B, C, D, E, PPKI)
-    getDocs(collection(db, 'kategori'))
-      .then(snap => {
+    // Kategori — per-kejohanan; load from active kejohanan
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+      .then(async kejSnap => {
+        const kej = kejSnap.docs[0]
+        if (!kej) return
+        const katSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'kategori'))
         const map = {}
         const jMap = {}
-        snap.forEach(d => {
+        katSnap.forEach(d => {
           const data = d.data()
           map[d.id] = { umurHad: data.umurHad, nama: data.nama || d.id, jenisSekolah: data.jenisSekolah || 'SR' }
-          // Build jenisMap: jenisSekolah → { warna, nama }
-          if (data.jenisSekolah) {
-            if (!jMap[data.jenisSekolah]) {
-              jMap[data.jenisSekolah] = { warna: data.warna || '#6b7280', nama: data.jenisSekolah }
-            }
+          if (data.jenisSekolah && !jMap[data.jenisSekolah]) {
+            jMap[data.jenisSekolah] = { warna: data.warna || '#6b7280', nama: data.jenisSekolah }
           }
         })
         setKategoriMap(map)
         setJenisMap(jMap)
       })
       .catch(() => {})
-    getDocs(collection(db, 'sekolah')).then(snap => {
+    // Sekolah — derive dari atlet
+    getDocs(collection(db, 'tenants', schoolId, 'atlet')).then(snap => {
       const map = {}
       snap.forEach(d => {
         const s = d.data()
-        if (s.kodSekolah) {
-          map[s.kodSekolah] = s.namaSekolah || s.kodSekolah
-        }
+        if (s.kodSekolah) map[s.kodSekolah] = s.namaSekolah || s.kodSekolah
       })
       setSekolahMap(map)
     }).catch(() => {})
     loadJadualData()
-  }, []) // eslint-disable-line
+  }, [schoolId]) // eslint-disable-line
 
   async function loadJadualData() {
+    if (!schoolId) return
     setJadualLoading(true)
     try {
-      // ── Langkah 1: Muatkan jadual_acara (SEMUA, tanpa filter kejohananId) ──
-      const jadualSnap = await getDocs(collection(db, 'jadual_acara'))
+      // ── Langkah 1: Cari kejohanan aktif/persediaan ──
+      const kejSnap = await getDocs(query(
+        collection(db, 'tenants', schoolId, 'kejohanan'),
+        where('statusKejohanan', 'in', ['aktif', 'persediaan'])
+      ))
 
-      // Bina map: aceraKey → jadual info, kira kejohananId paling banyak
-      const jadualMap   = {}  // aceraKey → { masaMula, lokasi, tarikhAcara, kejId }
-      const kejIdCount  = {}  // kejohananId → count
-      jadualSnap.docs.forEach(d => {
-        const j = d.data()
-        if (j.statusJadual === 'batal' || !j.tarikhAcara) return
-        const key = j.aceraId || j.acaraId
-        if (!key) return
-        jadualMap[key] = { masaMula: j.masaMula, lokasi: j.lokasi, tarikhAcara: j.tarikhAcara, kejId: j.kejohananId }
-        if (j.kejohananId) kejIdCount[j.kejohananId] = (kejIdCount[j.kejohananId] || 0) + 1
-      })
-
-      // Pilih kejohananId yang paling banyak dalam jadual_acara
-      const bestKejId = Object.keys(kejIdCount).sort((a, b) => kejIdCount[b] - kejIdCount[a])[0] || null
-
-      // ── Langkah 2: Muatkan acara subcollection (untuk jenisAcara, kelas dll) ──
-      let acaraDetails = {}  // aceraId → acara data
-      if (bestKejId) {
-        try {
-          const acaraSnap = await getDocs(collection(db, 'kejohanan', bestKejId, 'acara'))
-          acaraSnap.docs.forEach(d => { acaraDetails[d.id] = { acaraId: d.id, _kejId: bestKejId, ...d.data() } })
-        } catch {}
+      let bestKejId = null
+      if (!kejSnap.empty) {
+        const kej = kejSnap.docs.find(d => d.data().statusKejohanan === 'aktif') || kejSnap.docs[0]
+        setKejohanan(kej.data())
+        bestKejId = kej.id
+        setKejohananId(kej.id)
       }
 
-      // Juga muatkan dari kejohanan aktif/persediaan (fallback jika seed key berbeza)
-      try {
-        const kejSnap = await getDocs(query(collection(db, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
-        if (!kejSnap.empty) {
-          const kej = kejSnap.docs.find(d => d.data().statusKejohanan === 'aktif') || kejSnap.docs[0]
-          setKejohanan(kej.data())
-          if (!bestKejId) setKejohananId(kej.id)
-          if (bestKejId !== kej.id) {
-            // Cuba juga load acara dari kejohanan aktif jika berbeza dari seed
-            const altSnap = await getDocs(collection(db, 'kejohanan', kej.id, 'acara'))
-            altSnap.docs.forEach(d => {
-              if (!acaraDetails[d.id]) acaraDetails[d.id] = { acaraId: d.id, _kejId: kej.id, ...d.data() }
-            })
-          }
-        }
-      } catch {}
+      // ── Langkah 2: Muatkan jadual per-kejohanan + acara subcollection ──
+      const jadualMap   = {}  // aceraKey → { masaMula, lokasi, tarikhAcara, kejId }
+      let acaraDetails = {}   // aceraId → acara data
 
       if (bestKejId) {
-        setKejohananId(bestKejId)
+        const [jadualSnap, acaraSnap] = await Promise.all([
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', bestKejId, 'jadual')),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', bestKejId, 'acara')),
+        ])
+        jadualSnap.docs.forEach(d => {
+          const j = d.data()
+          if (j.statusJadual === 'batal' || !j.tarikhAcara) return
+          const key = j.aceraId || j.acaraId
+          if (!key) return
+          jadualMap[key] = { masaMula: j.masaMula, lokasi: j.lokasi, tarikhAcara: j.tarikhAcara, kejId: bestKejId }
+        })
+        acaraSnap.docs.forEach(d => { acaraDetails[d.id] = { acaraId: d.id, _kejId: bestKejId, ...d.data() } })
+
         loadMedalTally(bestKejId)
         loadRekodBaru(bestKejId)
       }
@@ -1204,7 +1201,7 @@ export default function Home() {
       const seen   = new Set()
       const items  = []
 
-      // Dari jadual_acara (sumber utama)
+      // Dari jadual subcollection (sumber utama)
       Object.entries(jadualMap).forEach(([key, jd]) => {
         if (seen.has(key)) return
         seen.add(key)
@@ -1216,7 +1213,7 @@ export default function Home() {
         items.push({ acara, masaMula: jd.masaMula || '', lokasi: jd.lokasi || '', tarikhAcara: jd.tarikhAcara })
       })
 
-      // Dari acara subcollection (ada tarikhAcara embedded, tidak ada dalam jadual_acara)
+      // Dari acara subcollection (ada tarikhAcara embedded, tidak ada dalam jadual)
       Object.values(acaraDetails).forEach(acara => {
         const key = acara.acaraId || acara.noAcara
         if (seen.has(key) || !acara.tarikhAcara) return
@@ -1225,22 +1222,24 @@ export default function Home() {
       })
 
       // ── Langkah 4: Muatkan slot khas (perasmian, rehat, dll) ──
-      try {
-        const slotSnap = await getDocs(query(
-          collection(db, 'jadual_khas'),
-          where('kejohananId', '==', bestKejId || '')
-        ))
-        slotSnap.docs.forEach(d => {
-          const s = d.data()
-          if (!s.tarikhAcara) return
-          items.push({
-            acara: null,
-            masaMula: s.masa || '',
-            tarikhAcara: s.tarikhAcara,
-            _slotKhas: { perkara: s.perkara, jenis: s.jenis || 'lain' }
+      if (bestKejId) {
+        try {
+          const slotSnap = await getDocs(query(
+            collection(db, 'tenants', schoolId, 'kejohanan', bestKejId, 'jadual_khas'),
+            where('kejohananId', '==', bestKejId)
+          ))
+          slotSnap.docs.forEach(d => {
+            const s = d.data()
+            if (!s.tarikhAcara) return
+            items.push({
+              acara: null,
+              masaMula: s.masa || '',
+              tarikhAcara: s.tarikhAcara,
+              _slotKhas: { perkara: s.perkara, jenis: s.jenis || 'lain' }
+            })
           })
-        })
-      } catch {}
+        } catch {}
+      }
 
       // ── Langkah 5: Kumpul mengikut tarikh & sort ──
       const byDay = {}
@@ -1270,23 +1269,25 @@ export default function Home() {
   }
 
   async function loadMedalTally(kejId) {
-    if (!kejId) return
+    if (!kejId || !schoolId) return
     setMedalLoading(true)
     try {
-      // 1. Load sekolah collection → nama + kategori (field: 'kategori' = SR/SM/PPKI)
-      const sklSnap = await getDocs(collection(db, 'sekolah'))
+      // 1. Derive sekolah dari atlet collection
+      const atletSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
       const sklInfo = {} // kodSekolah → { namaSekolah, jenisSekolah }
-      sklSnap.docs.forEach(d => {
+      atletSnap.docs.forEach(d => {
         const s = d.data()
-        if (s.kodSekolah) sklInfo[s.kodSekolah] = {
-          namaSekolah:  s.namaSekolah || s.kodSekolah,
-          jenisSekolah: s.kategori || s.jenisSekolah || 'Lain-lain', // SekolahSetup guna 'kategori'
-          isAktif:      s.isAktif !== false,
+        if (s.kodSekolah && !sklInfo[s.kodSekolah]) {
+          sklInfo[s.kodSekolah] = {
+            namaSekolah:  s.namaSekolah || s.kodSekolah,
+            jenisSekolah: s.kategoriSekolah || s.jenisSekolah || 'Lain-lain',
+            isAktif:      true,
+          }
         }
       })
 
-      // 2. Load medal_tally
-      const tallySnap = await getDocs(query(collection(db, 'medal_tally'), where('kejohananId', '==', kejId)))
+      // 2. Load medal_tally per-kejohanan
+      const tallySnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'))
       const tallyMap = {}
       tallySnap.docs.forEach(d => { tallyMap[d.data().kodSekolah] = { id: d.id, ...d.data() } })
 
@@ -1587,7 +1588,7 @@ export default function Home() {
       const maMap = {} // noKP → data
       await Promise.all(noKPList.map(async noKP => {
         try {
-          const snap = await getDoc(doc(db, 'mata_olahragawan', `${noKP}_${kejId}`))
+          const snap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan', `${noKP}_${kejId}`))
           if (snap.exists()) maMap[noKP] = snap.data()
         } catch { }
       }))
@@ -1618,10 +1619,10 @@ export default function Home() {
   }
 
   async function loadRekodBaru(kejId) {
-    if (!kejId) return
+    if (!kejId || !schoolId) return
     setRekodLoading(true)
     try {
-      const snap = await getDocs(query(collection(db, 'rekod'), where('kejohananId', '==', kejId)))
+      const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('kejohananId', '==', kejId)))
       const list = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         // Hanya rekod utama (bukan salinan _tuntutan) supaya tiada duplikat
@@ -1632,10 +1633,10 @@ export default function Home() {
   }
 
   async function loadRekodAll() {
-    if (rekodAllLoaded) return
+    if (rekodAllLoaded || !schoolId) return
     setRekodAllLoading(true)
     try {
-      const snap = await getDocs(query(collection(db, 'rekod'), where('statusRekod', '==', 'aktif')))
+      const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('statusRekod', '==', 'aktif')))
       const list = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(r => !r.rekodAsal)
@@ -1666,7 +1667,7 @@ export default function Home() {
     }
     try {
       const [snap, rekod] = await Promise.all([
-        getDocs(collection(db, 'kejohanan', kId, 'acara', aceraKey, 'heat')),
+        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'heat'), where('aceraId', '==', aceraKey))),
         cariRekodUntukAcara(acara).catch(() => ({ D: null, N: null, K: null })),
       ])
       const heats = snap.docs
@@ -1850,7 +1851,7 @@ export default function Home() {
           const kId = item.acara._kejId || kejohananId
           if (!kId) return [aceraKey, []]
           try {
-            const snap = await getDocs(collection(db, 'kejohanan', kId, 'acara', aceraKey, 'heat'))
+            const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'heat'), where('aceraId', '==', aceraKey)))
             const heats = snap.docs.map(d => ({ heatId: d.id, ...d.data() }))
               .sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0))
             return [aceraKey, heats]
@@ -2409,6 +2410,7 @@ export default function Home() {
                                       sekolahMap={sekolahMap}
                                       finalSetup={finalSetup}
                                       rekodDNK={rekodCache[aceraKey]}
+                                      schoolId={schoolId}
                                     />
                                   )
                                 })}
@@ -2560,6 +2562,7 @@ export default function Home() {
                                   isLoading={heatLoading.has(aceraKey)}
                                   finalSetup={finalSetup}
                                   rekodDNK={rekodCache[aceraKey]}
+                                  schoolId={schoolId}
                                 />
                               </div>
                             )}
@@ -3382,7 +3385,7 @@ export default function Home() {
                     </svg>
                     Pilihan Akses
                   </button>
-                  <LoginForm role={activeRole} onCancel={() => setSelected(null)} cfg={cfg} />
+                  <LoginForm role={activeRole} onCancel={() => setSelected(null)} cfg={cfg} schoolId={schoolId} />
                 </>
               ) : (
                 <div className="space-y-2.5">

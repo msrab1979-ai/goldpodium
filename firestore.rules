@@ -101,7 +101,14 @@ service cloud.firestore {
       allow read, write: if isSuperadmin();
     }
 
-    // ── Atlet master ─────────────────────────────────────────────────────────
+    // ── Tetapan awam — home, galeri, bukuKejohananLink, bukuProgram, atletTerbaik
+    // (dibaca oleh Home public page dan landing page)
+    match /tenants/{schoolId}/tetapan/{docId} {
+      allow read:  if true;
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Atlet master — private (mengandungi noKP, PDPA sensitif) ─────────────
     match /tenants/{schoolId}/atlet/{atletId} {
       allow read:   if canReadSchool(schoolId);
       allow write:  if canAccessSchool(schoolId);
@@ -116,12 +123,40 @@ service cloud.firestore {
 
     // ── Heat — flat di bawah kejohanan (bukan nested dalam acara) ────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
-      allow read:  if canReadSchool(schoolId);
+      allow read:  if true;   // keputusan boleh dilihat awam di Home
       allow write: if canWriteHeat(schoolId);
     }
 
+    // ── Acara, jadual — awam (jadual & keputusan untuk Home public) ──────────
+    match /tenants/{schoolId}/kejohanan/{kejId}/acara/{docId} {
+      allow read:  if true;
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    match /tenants/{schoolId}/kejohanan/{kejId}/jadual/{docId} {
+      allow read:  if true;
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    match /tenants/{schoolId}/kejohanan/{kejId}/jadual_khas/{docId} {
+      allow read:  if true;
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Medal tally — awam (untuk paparan Home) ───────────────────────────────
+    match /tenants/{schoolId}/kejohanan/{kejId}/medal_tally/{docId} {
+      allow read:  if true;
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Mata olahragawan — private (ada noKP) ────────────────────────────────
+    match /tenants/{schoolId}/kejohanan/{kejId}/mata_olahragawan/{docId} {
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
+    }
+
     // ── Semua subcollection lain dalam kejohanan ──────────────────────────────
-    // (kategori, acara, pendaftaran, jadualKhas, tetapan, mata_olahragawan, medal_tally)
+    // (kategori, pendaftaran, pengesahan, pilihan_olahragawan, anugerah_custom, dll)
     match /tenants/{schoolId}/kejohanan/{kejId}/{subcol}/{docId} {
       allow read:  if canReadSchool(schoolId);
       allow write: if canAccessSchool(schoolId);
@@ -136,6 +171,18 @@ service cloud.firestore {
     // ── Rekod kejohanan — baca awam (untuk landing page), tulis admin sahaja ──
     match /tenants/{schoolId}/rekod/{rekodKey} {
       allow read:  if true;
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Rekod sejarah — private ───────────────────────────────────────────────
+    match /tenants/{schoolId}/rekod_sejarah/{docId} {
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Sekolah pasukan — baca oleh teacher (untuk login) ────────────────────
+    match /tenants/{schoolId}/sekolah/{kodSekolah} {
+      allow read:  if true;   // diperlukan untuk Lupa PIN (public)
       allow write: if canAccessSchool(schoolId);
     }
 
