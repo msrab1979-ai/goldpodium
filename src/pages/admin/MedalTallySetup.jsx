@@ -80,7 +80,7 @@ function kiraDataPingat(heats, acara, atletMap) {
     const fasa = heat.fasa || ''
     if (!['final', 'terus_final', 'suku_akhir', 'separuh_akhir'].includes(fasa)) continue
 
-    const a = acara.find(x => x.id === heat.acaraId)
+    const a = acara.find(x => x.id === (heat.aceraId || heat.acaraId))
     const isPadang = a?.jenis === 'padang_lompat' || a?.jenis === 'padang_balin'
     const isRelay  = a?.jenis === 'relay'
 
@@ -111,7 +111,7 @@ function kiraDataPingat(heats, acara, atletMap) {
         kedudukan: i + 1,
         sekolah,
         namaAtlet: isRelay ? (p.namaPasukan || '—') : (p.namaAtlet || atletMap[p.noKP]?.nama || atletMap[p.atletId]?.nama || p.nama || p.noKP || '—'),
-        acara:     a?.nama || heat.acaraId || '—',
+        acara:     a?.nama || heat.aceraId || heat.acaraId || '—',
         kategori:  a?.kategori || '',
         jantina:   a?.jantina || '',
         keputusan: isPadang

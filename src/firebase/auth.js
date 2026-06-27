@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth'
 import {
   doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp,
-  collection, query, where, getCountFromServer, getDocs, limit,
+  collection, query, where, getCountFromServer,
 } from 'firebase/firestore'
 import { auth, db, SUPERADMIN_EMAIL, secondaryAuth, APP_URL } from './config'
 import { alertFailedLogin, alertSuperadminNewDevice } from './telegram'
@@ -154,6 +154,34 @@ export async function loginWithEmail(email, password) {
     throw Object.assign(new Error('Account is inactive. Contact admin.'), { code: 'auth/user-disabled' })
   }
 
+  // Semak expiry langganan (admin sahaja, superadmin tidak kena had)
+  if (userData.role === 'admin' && userData.schoolId) {
+    try {
+      const tenantSnap = await getDoc(doc(db, 'tenants', userData.schoolId))
+      if (tenantSnap.exists()) {
+        const tenant = tenantSnap.data()
+        const expiry = tenant.tarikhExpiry?.toMillis?.() || 0
+        if (expiry > 0 && expiry < Date.now()) {
+          await firebaseSignOut(auth)
+          throw Object.assign(
+            new Error('Langganan sistem telah tamat. Sila hubungi Gold Podium untuk memperbaharui.'),
+            { code: 'auth/account-expired' }
+          )
+        }
+        if (tenant.status === 'suspended') {
+          await firebaseSignOut(auth)
+          throw Object.assign(
+            new Error('Akaun sekolah telah digantung. Sila hubungi Gold Podium.'),
+            { code: 'auth/account-suspended' }
+          )
+        }
+      }
+    } catch (err) {
+      if (err.code === 'auth/account-expired' || err.code === 'auth/account-suspended') throw err
+      // Firestore error — biarkan login teruskan
+    }
+  }
+
   // Semak superadmin — alert jika device baru
   if (userData.role === 'superadmin') {
     const lastDevice = userData.lastDevice || ''
@@ -174,8 +202,8 @@ export async function loginWithEmail(email, password) {
 
   const session = {
     uid:                cred.user.uid,
-    email:              userData.email || emailClean,
-    name:               userData.name || userData.nama || '',
+    email:              cred.user.email || emailClean,
+    name:               cred.user.displayName || '',
     role:               userData.role,
     schoolId:           userData.schoolId || '',
     isAktif:            userData.isAktif !== false,
@@ -241,20 +269,15 @@ function janaSlug(nama) {
     .slice(0, 30)                 // had 30 aksara
 }
 
-// Semak jika slug sudah digunakan — tambah suffix nombor jika perlu
+// Semak jika slug sudah digunakan — doc ID = slug, getDoc lebih cepat
 async function slugUnik(slug) {
-  const snap = await getDocs(
-    query(collection(db, 'slugIndex'), where('slug', '==', slug), limit(1))
-  )
-  if (snap.empty) return slug
+  const snap = await getDoc(doc(db, 'slugIndex', slug))
+  if (!snap.exists()) return slug
 
-  // Cuba dengan nombor suffix
   for (let i = 2; i <= 99; i++) {
     const percubaan = `${slug}-${i}`
-    const s = await getDocs(
-      query(collection(db, 'slugIndex'), where('slug', '==', percubaan), limit(1))
-    )
-    if (s.empty) return percubaan
+    const s = await getDoc(doc(db, 'slugIndex', percubaan))
+    if (!s.exists()) return percubaan
   }
   return `${slug}-${Date.now()}`
 }
@@ -304,16 +327,21 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
   // Simpan dalam Firestore — tenants doc
   await setDoc(doc(db, 'tenants', schoolId), {
     schoolId,
-    namaSekolah:    namaSekolah.trim(),
-    daerah:         daerah.trim(),
-    emelAdmin:      emailClean,
-    namaAdmin:      namaAdmin.trim(),
+    namaSekolah:  namaSekolah.trim(),
+    daerah:       daerah.trim(),
+    namaAdmin:    namaAdmin.trim(),
     slug,
-    tarikhMula:     Timestamp.fromDate(mula),
-    tarikhExpiry:   Timestamp.fromDate(expiry),
-    status:         'active',
-    adminUid:       uid,
-    createdAt:      serverTimestamp(),
+    tarikhMula:   Timestamp.fromDate(mula),
+    tarikhExpiry: Timestamp.fromDate(expiry),
+    status:       'active',
+    createdAt:    serverTimestamp(),
+  })
+
+  // Data sensitif admin — subcollection private (rules: superadmin sahaja)
+  await setDoc(doc(db, 'tenants', schoolId, '_private', 'admin'), {
+    adminUid:  uid,
+    emelAdmin: emailClean,
+    createdAt: serverTimestamp(),
   })
 
   // slugIndex — pointer sahaja, tiada data redundant

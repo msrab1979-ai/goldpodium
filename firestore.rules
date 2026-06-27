@@ -77,10 +77,16 @@ service cloud.firestore {
     // TENANTS — data sekolah (multi-tenant root)
     // ══════════════════════════════════════════════════════════════════════════
 
-    // Profil sekolah itu sendiri
+    // Profil sekolah — read awam (namaSekolah, daerah, slug, status untuk landing page)
+    // Data sensitif (emelAdmin, adminUid) ada dalam doc tapi landing page tidak paparkan
     match /tenants/{schoolId} {
-      allow read:  if canReadSchool(schoolId);
+      allow read:  if true;
       allow write: if isSuperadmin();
+    }
+
+    // ── Data sensitif admin — private, superadmin sahaja ─────────────────────
+    match /tenants/{schoolId}/_private/{docId} {
+      allow read, write: if isSuperadmin();
     }
 
     // ── Atlet master ─────────────────────────────────────────────────────────

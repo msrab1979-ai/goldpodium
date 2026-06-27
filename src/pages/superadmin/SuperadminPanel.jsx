@@ -602,7 +602,7 @@ export default function SuperadminPanel() {
                         <tr key={s.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${baki !== null && baki < 0 ? 'bg-red-50/30' : ''}`}>
                           <td className="px-4 py-3">
                             <p className="font-semibold text-gray-800 text-xs">{s.namaSekolah || '—'}</p>
-                            <p className="text-[10px] text-gray-400">{s.emelAdmin || '—'}</p>
+                            <p className="text-[10px] text-gray-400">{s.namaAdmin || '—'}</p>
                           </td>
                           <td className="px-3 py-3 text-xs text-gray-500 hidden sm:table-cell">{s.daerah || '—'}</td>
                           <td className="px-3 py-3 hidden md:table-cell">
