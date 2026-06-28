@@ -19,8 +19,7 @@ import autoTable from 'jspdf-autotable'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const KATEGORI_LIST_FALLBACK = ['SR', 'SM', 'PPKI']
-const KATEGORI_SAH = ['SR', 'SM', 'PPKI']
+const KATEGORI_LIST_FALLBACK = []
 const NEGERI_LIST   = ['Terengganu', 'Kelantan', 'Pahang', 'Johor', 'Selangor',
   'Perak', 'Kedah', 'Perlis', 'Pulau Pinang', 'Negeri Sembilan',
   'Melaka', 'Sabah', 'Sarawak', 'W.P. Kuala Lumpur', 'W.P. Labuan', 'W.P. Putrajaya']
@@ -41,7 +40,7 @@ function previewBib(prefix, mula, format) {
 }
 
 const EMPTY_FORM = {
-  kodSekolah: '', namaSekolah: '', kategori: 'SR', negeri: 'Terengganu',
+  kodSekolah: '', namaSekolah: '', kategori: '', negeri: 'Terengganu',
   daerah: 'Kemaman', email: '', bibPrefix: '', bibMula: 1, bibFormat: 3, pin: '', isAktif: true,
 }
 
@@ -93,8 +92,7 @@ function validateImportRowSekolah(r) {
 
   if (!kod)   errors.push('kodSekolah kosong')
   if (!nama)  errors.push('namaSekolah kosong')
-  if (!kat || !KATEGORI_SAH.includes(kat.toUpperCase()))
-              errors.push('kategori mesti SR / SM / PPKI')
+  if (!kat)   errors.push('kategori kosong')
   if (!prefix) errors.push('bibPrefix kosong')
   else if (prefix.length > 5) errors.push('bibPrefix mesti ≤ 5 aksara')
 
@@ -640,10 +638,17 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
               />
             </FormField>
 
-            <FormField label="Kategori" required>
-              <select className={inputCls} value={form.kategori} onChange={e => set('kategori', e.target.value)}>
-                {jenisList.map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
+            <FormField label="Kategori" required hint={jenisList.length === 0 ? 'Tambah jenis sekolah dalam panel Jenis Sekolah dahulu' : ''}>
+              {jenisList.length > 0 ? (
+                <select className={inputCls} value={form.kategori} onChange={e => set('kategori', e.target.value)}>
+                  <option value="">— Pilih —</option>
+                  {jenisList.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+              ) : (
+                <input className={inputCls + ' uppercase'} value={form.kategori}
+                  onChange={e => set('kategori', e.target.value.toUpperCase())}
+                  placeholder="cth: SK" maxLength={10} />
+              )}
             </FormField>
           </div>
 
@@ -990,6 +995,59 @@ function BibBulkPanel({ list, onUpdated, schoolId }) {
   )
 }
 
+// ─── Panel Urus Jenis Sekolah Dinamik ────────────────────────────────────────
+
+function JenisSekolahPanel({ jenisList, onTambah, onPadam }) {
+  const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function handleTambah() {
+    const val = input.trim().toUpperCase()
+    if (!val) return
+    setBusy(true)
+    await onTambah(val)
+    setInput('')
+    setBusy(false)
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Jenis Sekolah / Kategori</p>
+      <div className="flex flex-wrap gap-2">
+        {jenisList.length === 0 && (
+          <p className="text-xs text-gray-400 italic">Tiada jenis — tambah di bawah</p>
+        )}
+        {jenisList.map(j => (
+          <span key={j} className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold rounded-lg">
+            {j}
+            <button onClick={() => onPadam(j)}
+              className="text-blue-400 hover:text-red-500 transition-colors ml-0.5"
+              title={`Padam ${j}`}>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#003399]/25 focus:border-[#003399] uppercase w-32"
+          placeholder="cth: SK"
+          value={input}
+          onChange={e => setInput(e.target.value.toUpperCase())}
+          onKeyDown={e => e.key === 'Enter' && handleTambah()}
+          maxLength={10}
+        />
+        <button onClick={handleTambah} disabled={busy || !input.trim()}
+          className="px-3 py-1.5 bg-[#003399] text-white text-xs font-bold rounded-lg disabled:opacity-40 hover:bg-[#002277] transition-colors">
+          + Tambah
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── SekolahSetup (Main) ──────────────────────────────────────────────────────
 
 export default function SekolahSetup() {
@@ -1027,15 +1085,31 @@ export default function SekolahSetup() {
 
   useEffect(() => { fetchList() }, [schoolId])
 
-  // Load jenis institusi dari kategori collection
-  useEffect(() => {
+  // Load jenis sekolah dinamik dari tetapan/jenisSekolah
+  async function fetchJenisList() {
     if (!schoolId) return
-    getDocs(collection(db, 'tenants', schoolId, 'kategori'))
-      .then(snap => {
-        const jenis = [...new Set(snap.docs.map(d => d.data().jenisSekolah).filter(Boolean))]
-        if (jenis.length > 0) setJenisList(jenis)
-      }).catch(() => {})
-  }, [schoolId])
+    try {
+      const snap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'))
+      if (snap.exists()) setJenisList(snap.data().list || [])
+      else setJenisList([])
+    } catch { setJenisList([]) }
+  }
+
+  useEffect(() => { fetchJenisList() }, [schoolId])
+
+  async function tambahJenis(nama) {
+    const baru = nama.trim().toUpperCase()
+    if (!baru || jenisList.includes(baru)) return
+    const next = [...jenisList, baru]
+    await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'), { list: next }, { merge: true })
+    setJenisList(next)
+  }
+
+  async function padamJenis(nama) {
+    const next = jenisList.filter(j => j !== nama)
+    await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'), { list: next }, { merge: true })
+    setJenisList(next)
+  }
 
   // ── Bypass Deadline (global) ──
   async function doToggleBypass(s) {
@@ -1220,6 +1294,9 @@ export default function SekolahSetup() {
           </button>
         )}
       </div>
+
+      {/* Panel Jenis Sekolah Dinamik */}
+      <JenisSekolahPanel jenisList={jenisList} onTambah={tambahJenis} onPadam={padamJenis} />
 
       {/* Toolbar */}
       <div className="flex flex-wrap gap-3 items-center">
