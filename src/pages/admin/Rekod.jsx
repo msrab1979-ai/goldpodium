@@ -899,9 +899,13 @@ function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved, school
 
 export default function Rekod() {
   const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
-  const userRole = userData?.role
   const navigate = useNavigate()
+  const userRole = userData?.role
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
 
   const canEdit   = ['superadmin', 'pengurus_teknik'].includes(userRole)
   const canSahkan = ['superadmin', 'pengurus_teknik'].includes(userRole)

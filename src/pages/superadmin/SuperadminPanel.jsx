@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { createAdminAccount } from '../../firebase/auth'
 import { useAuth } from '../../context/AuthContext'
@@ -444,9 +444,20 @@ export default function SuperadminPanel() {
     if (!confirm(`Sahkan sekali lagi — padam "${s.namaSekolah}" secara kekal?`)) return
     setMuatTurunTindakan(s.id)
     try {
-      await deleteDoc(doc(db, 'tenants', s.id))
+      const sid = s.id
+      // Padam subcollection utama (Firestore tidak auto-delete subcollection)
+      const subcols = ['kejohanan', 'atlet', 'sekolah', 'rekod', 'rekod_sejarah', 'users', 'login_attempts', 'tetapan', '_private']
+      for (const col of subcols) {
+        try {
+          const snap = await getDocs(collection(db, 'tenants', sid, col))
+          const batch = writeBatch(db)
+          snap.docs.forEach(d => batch.delete(d.ref))
+          if (snap.docs.length > 0) await batch.commit()
+        } catch { /* subcollection mungkin kosong */ }
+      }
+      await deleteDoc(doc(db, 'tenants', sid))
       if (s.slug) await deleteDoc(doc(db, 'slugIndex', s.slug)).catch(() => {})
-      setSekolah(list => list.filter(x => x.id !== s.id))
+      setSekolah(list => list.filter(x => x.id !== sid))
     } catch { alert('Gagal padam. Sila cuba semula.') }
     setMuatTurunTindakan(null)
   }

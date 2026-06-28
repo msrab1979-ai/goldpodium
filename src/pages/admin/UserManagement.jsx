@@ -309,7 +309,7 @@ export default function UserManagement() {
   async function resetCubaan(u) {
     setResettingAttempt(u.uid)
     try {
-      await setDoc(doc(db, 'tenants', schoolId, 'login_attempts', `user_${u.kodAkses}`), {
+      await setDoc(doc(db, 'login_attempts', `pencatat_${schoolId}_${u.kodAkses}`), {
         attempts: 0, lockedUntil: null, lastAttempt: serverTimestamp(),
       })
     } finally {

@@ -254,7 +254,11 @@ function HomePreview({ cfg }) {
 export default function TetapanHome() {
   const { user, userData } = useAuth()
   const navigate = useNavigate()
-  const schoolId = userData?.schoolId || ''
+  const isSuperadmin = userData?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [cfg,          setCfg]         = useState(TETAPAN_DEFAULTS)
   const [busy,         setBusy]        = useState(false)
   const [saved,        setSaved]       = useState(false)

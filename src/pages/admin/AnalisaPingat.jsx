@@ -32,8 +32,12 @@ function fmtPingat(n) { return n > 0 ? String(n) : '—' }
 
 export default function AnalisaPingat() {
   const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
   const navigate = useNavigate()
+  const isSuperadmin = userData?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState('')
   const [kategoriList, setKategoriList] = useState([])

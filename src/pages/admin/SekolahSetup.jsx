@@ -994,8 +994,11 @@ function BibBulkPanel({ list, onUpdated, schoolId }) {
 
 export default function SekolahSetup() {
   const { userRole, userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
   const isSuperAdmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperAdmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
 
   const [list,    setList]    = useState([])
   const [loading, setLoading] = useState(true)

@@ -635,7 +635,11 @@ function KejohananCard({ k, onEdit, onStatusChange }) {
 export default function KejohananSetup() {
   const { userData } = useAuth()
   const navigate = useNavigate()
-  const schoolId = userData?.schoolId || ''
+  const isSuperadmin = userData?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [kejohananList, setKejohananList] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)       // null | { mode, data }

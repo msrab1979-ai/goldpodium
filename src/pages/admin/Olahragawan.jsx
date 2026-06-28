@@ -973,9 +973,13 @@ function MuridTerbaikCard({ jantina, pilihan, liveData, onTukar }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Olahragawan() {
-  const { userData }  = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData } = useAuth()
   const navigate = useNavigate()
+  const isSuperadmin = userData?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [selKej, setSelKej]             = useState('')
   const [namaKej, setNamaKej]           = useState('')
   const [allData, setAllData]           = useState([])

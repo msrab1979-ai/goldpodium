@@ -149,7 +149,11 @@ async function batchDelete(refs) {
 export default function ResetSistem() {
   const { userData } = useAuth()
   const navigate = useNavigate()
-  const schoolId = userData?.schoolId || ''
+  const isSuperadmin = userData?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
 
   const [kejId,    setKejId]    = useState('')
   const [namaKej,  setNamaKej]  = useState('')

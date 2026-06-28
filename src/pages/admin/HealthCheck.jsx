@@ -58,7 +58,11 @@ function Section({ title, checks }) {
 export default function HealthCheck() {
   const { userData } = useAuth()
   const navigate = useNavigate()
-  const schoolId = userData?.schoolId || ''
+  const isSuperadmin = userData?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [running, setRunning]   = useState(false)
   const [result, setResult]     = useState(null)
   const [progress, setProgress] = useState('')

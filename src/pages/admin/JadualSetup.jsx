@@ -764,8 +764,12 @@ function PadamSatuModal({ schoolId, kejId, row, onClose, onDeleted }) {
 
 export default function JadualSetup() {
   const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
   const navigate = useNavigate()
+  const isSuperadmin = userData?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [selectedKej,   setSelectedKej]   = useState('')
   const [namaKej,       setNamaKej]       = useState('')
   const [rows,          setRows]          = useState([])
