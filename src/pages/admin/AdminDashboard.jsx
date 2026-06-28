@@ -243,38 +243,7 @@ export default function AdminDashboard() {
   const selesai = kejohanan.filter(k => k.statusKejohanan === 'selesai')
 
   return (
-    <div className="min-h-screen bg-gray-50">
-
-      {/* Banner superadmin mode */}
-      {isSuperadmin && (
-        <div className="bg-amber-400 text-amber-900 px-4 py-2 flex items-center justify-between text-xs font-bold">
-          <span>⚡ Mode Superadmin — {viewNamaSekolah || 'Sekolah'}</span>
-          <button onClick={() => { sessionStorage.removeItem('gp_view_school'); navigate('/superadmin') }}
-            className="underline hover:no-underline">
-            ← Balik ke Panel Superadmin
-          </button>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="bg-[#003399] text-white px-4 py-3 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center">
-            {Ikon.trophy}
-          </div>
-          <div>
-            <p className="text-[9px] text-white/50 uppercase tracking-widest">Gold Podium</p>
-            <p className="text-sm font-bold leading-tight">{viewNamaSekolah || userData?.name || 'Admin'}</p>
-          </div>
-        </div>
-        <button onClick={async () => { await logout(); navigate('/login') }}
-          className="text-white/60 hover:text-white transition-colors p-1.5 flex items-center gap-1.5 text-xs">
-          {Ikon.keluar}
-          <span className="hidden sm:block">Log Keluar</span>
-        </button>
-      </header>
-
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Welcome + CTA */}
         <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center justify-between gap-4 shadow-sm">
@@ -429,7 +398,6 @@ export default function AdminDashboard() {
             )}
           </div>
         )}
-      </div>
 
       {modalBuat && (
         <ModalBuatKejohanan

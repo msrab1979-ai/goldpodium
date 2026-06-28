@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import AdminLayout from './components/AdminLayout'
 
 // ── Lazy imports — setiap modul load bila diperlukan sahaja ──────────────────
 const Landing            = lazy(() => import('./pages/Landing'))
@@ -101,6 +102,14 @@ function RedirectIfLoggedIn({ children }) {
   return children
 }
 
+function AdminRoute({ children }) {
+  return (
+    <RequireAuth roles={['admin', 'superadmin']}>
+      <AdminLayout>{children}</AdminLayout>
+    </RequireAuth>
+  )
+}
+
 function StaticPage({ title, children }) {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 max-w-2xl mx-auto">
@@ -159,177 +168,41 @@ function AppRoutes() {
         {/* Tukar password paksa */}
         <Route path="/tukar-password" element={<ForceChangePassword />} />
 
-        {/* Admin */}
-        <Route path="/admin" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <AdminDashboard />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <KejohananDetail />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId/pendaftaran" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <PendaftaranSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId/startlist" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <StartListSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId/kategori" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <KategoriSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId/acara" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <AcaraSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId/keputusan" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <InputKeputusan />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId/medal" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <MedalTallySetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan/:kejId/laporan" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <LaporanCetakan />
-          </RequireAuth>
-        } />
-        <Route path="/admin/sekolah" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <SekolahSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/kejohanan-setup" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <KejohananSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/pengguna" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <UserManagement />
-          </RequireAuth>
-        } />
-        <Route path="/admin/tetapan" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <TetapanHome />
-          </RequireAuth>
-        } />
-        <Route path="/admin/jadual" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <JadualSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/rekod" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <Rekod />
-          </RequireAuth>
-        } />
-        <Route path="/admin/olahragawan" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <Olahragawan />
-          </RequireAuth>
-        } />
-        <Route path="/admin/analisa-pingat" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <AnalisaPingat />
-          </RequireAuth>
-        } />
-        <Route path="/admin/reset" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <ResetSistem />
-          </RequireAuth>
-        } />
-        <Route path="/admin/health" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <HealthCheck />
-          </RequireAuth>
-        } />
-        <Route path="/admin/analisis-pendaftaran" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <AnalisisPendaftaran />
-          </RequireAuth>
-        } />
-        <Route path="/admin/backup" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <Backup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/buku-kejohanan" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <BukuKejohanan />
-          </RequireAuth>
-        } />
-        <Route path="/admin/buku-kejohanan-link" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <BukuKejohananLinkSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/buku-kongsi" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <BukuKongsiSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/buku-program" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <BukuProgramSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/cetak-acara" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <CetakAcara />
-          </RequireAuth>
-        } />
-        <Route path="/admin/cetak-keputusan" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <CetakKeputusan />
-          </RequireAuth>
-        } />
-        <Route path="/admin/esijil" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <ESijil />
-          </RequireAuth>
-        } />
-        <Route path="/admin/esijil-pencapaian" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <ESijilPencapaian />
-          </RequireAuth>
-        } />
-        <Route path="/admin/galeri" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <GaleriSetup />
-          </RequireAuth>
-        } />
-        <Route path="/admin/manual-pendaftaran" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <ManualPendaftaran />
-          </RequireAuth>
-        } />
-        <Route path="/admin/muat-turun-sijil" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <MuatTurunSijil />
-          </RequireAuth>
-        } />
-        <Route path="/admin/sijil-pengurus" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <SijilPengurus />
-          </RequireAuth>
-        } />
-        <Route path="/admin/*" element={
-          <RequireAuth roles={['admin', 'superadmin']}>
-            <AdminPanel />
-          </RequireAuth>
-        } />
+        {/* Admin — semua routes guna AdminLayout (sidebar tetap) */}
+        <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId" element={<AdminRoute><KejohananDetail /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/pendaftaran" element={<AdminRoute><PendaftaranSetup /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/startlist" element={<AdminRoute><StartListSetup /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/kategori" element={<AdminRoute><KategoriSetup /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/acara" element={<AdminRoute><AcaraSetup /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/keputusan" element={<AdminRoute><InputKeputusan /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/medal" element={<AdminRoute><MedalTallySetup /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/laporan" element={<AdminRoute><LaporanCetakan /></AdminRoute>} />
+        <Route path="/admin/sekolah" element={<AdminRoute><SekolahSetup /></AdminRoute>} />
+        <Route path="/admin/kejohanan-setup" element={<AdminRoute><KejohananSetup /></AdminRoute>} />
+        <Route path="/admin/pengguna" element={<AdminRoute><UserManagement /></AdminRoute>} />
+        <Route path="/admin/tetapan" element={<AdminRoute><TetapanHome /></AdminRoute>} />
+        <Route path="/admin/jadual" element={<AdminRoute><JadualSetup /></AdminRoute>} />
+        <Route path="/admin/rekod" element={<AdminRoute><Rekod /></AdminRoute>} />
+        <Route path="/admin/olahragawan" element={<AdminRoute><Olahragawan /></AdminRoute>} />
+        <Route path="/admin/analisa-pingat" element={<AdminRoute><AnalisaPingat /></AdminRoute>} />
+        <Route path="/admin/reset" element={<AdminRoute><ResetSistem /></AdminRoute>} />
+        <Route path="/admin/health" element={<AdminRoute><HealthCheck /></AdminRoute>} />
+        <Route path="/admin/analisis-pendaftaran" element={<AdminRoute><AnalisisPendaftaran /></AdminRoute>} />
+        <Route path="/admin/backup" element={<AdminRoute><Backup /></AdminRoute>} />
+        <Route path="/admin/buku-kejohanan" element={<AdminRoute><BukuKejohanan /></AdminRoute>} />
+        <Route path="/admin/buku-kejohanan-link" element={<AdminRoute><BukuKejohananLinkSetup /></AdminRoute>} />
+        <Route path="/admin/buku-kongsi" element={<AdminRoute><BukuKongsiSetup /></AdminRoute>} />
+        <Route path="/admin/buku-program" element={<AdminRoute><BukuProgramSetup /></AdminRoute>} />
+        <Route path="/admin/cetak-acara" element={<AdminRoute><CetakAcara /></AdminRoute>} />
+        <Route path="/admin/cetak-keputusan" element={<AdminRoute><CetakKeputusan /></AdminRoute>} />
+        <Route path="/admin/esijil" element={<AdminRoute><ESijil /></AdminRoute>} />
+        <Route path="/admin/esijil-pencapaian" element={<AdminRoute><ESijilPencapaian /></AdminRoute>} />
+        <Route path="/admin/galeri" element={<AdminRoute><GaleriSetup /></AdminRoute>} />
+        <Route path="/admin/manual-pendaftaran" element={<AdminRoute><ManualPendaftaran /></AdminRoute>} />
+        <Route path="/admin/muat-turun-sijil" element={<AdminRoute><MuatTurunSijil /></AdminRoute>} />
+        <Route path="/admin/sijil-pengurus" element={<AdminRoute><SijilPengurus /></AdminRoute>} />
+        <Route path="/admin/*" element={<AdminRoute><AdminPanel /></AdminRoute>} />
 
         {/* Pencatat (teacher role) */}
         <Route path="/dashboard" element={
