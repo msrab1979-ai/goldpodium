@@ -456,6 +456,14 @@ export default function SuperadminPanel() {
     setMuatTurunTindakan(s.id)
     try {
       const sid = s.id
+
+      // Ambil emel admin sebelum padam _private
+      let emelAdmin = ''
+      try {
+        const privSnap = await getDoc(doc(db, 'tenants', sid, '_private', 'admin'))
+        if (privSnap.exists()) emelAdmin = privSnap.data().emelAdmin || ''
+      } catch { /* bukan kritikal */ }
+
       // Padam subcollection utama (Firestore tidak auto-delete subcollection)
       const subcols = ['kejohanan', 'atlet', 'sekolah', 'rekod', 'rekod_sejarah', 'users', 'login_attempts', 'tetapan', '_private']
       for (const col of subcols) {
@@ -469,6 +477,11 @@ export default function SuperadminPanel() {
       await deleteDoc(doc(db, 'tenants', sid))
       if (s.slug) await deleteDoc(doc(db, 'slugIndex', s.slug)).catch(() => {})
       setSekolah(list => list.filter(x => x.id !== sid))
+
+      // Papar arahan padam Firebase Auth
+      if (emelAdmin) {
+        alert(`✅ Data Firestore "${s.namaSekolah}" berjaya dipadam.\n\n⚠️ LANGKAH TAMBAHAN:\nAkaun Firebase Auth masih wujud.\nSila padam akaun ini dari Firebase Console:\n\n📧 ${emelAdmin}\n\n(Console → Authentication → cari emel → padam)`)
+      }
     } catch { alert('Gagal padam. Sila cuba semula.') }
     setMuatTurunTindakan(null)
   }
