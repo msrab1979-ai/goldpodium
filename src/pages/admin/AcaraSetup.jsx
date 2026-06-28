@@ -3030,14 +3030,12 @@ export default function AcaraSetup() {
 
       {/* Tab: Tetapan Final */}
       {selectedKej && activeTab === 'final' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          <TetapanFinal kategoriList={kategoriList} schoolId={schoolId} kejId={kejId} />
-          <WaConfigPanel schoolId={schoolId} kejId={kejId} />
-        </div>
+        <TetapanFinal kategoriList={kategoriList} schoolId={schoolId} kejId={kejId} />
       )}
 
       {selectedKej && activeTab === 'setup' && (
-        <>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
+        <div className="space-y-4">
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
@@ -3448,11 +3446,15 @@ export default function AcaraSetup() {
           </div>
           )}
 
-          {/* WA Config dipindah ke tab Tetapan Final */}
-
           {/* Had Peserta Bundle */}
           <HadPesertaPanel acaraList={acaraList} schoolId={schoolId} kejId={kejId} onRefresh={fetchAcara} kategoriList={kategoriList} />
-        </>
+        </div>
+
+        {/* Kanan: Setup Lorong dan Heat */}
+        <div className="lg:sticky lg:top-6">
+          <WaConfigPanel schoolId={schoolId} kejId={kejId} />
+        </div>
+        </div>
       )}
 
 
