@@ -47,6 +47,8 @@ const GaleriSetup        = lazy(() => import('./pages/admin/GaleriSetup'))
 const ManualPendaftaran  = lazy(() => import('./pages/admin/ManualPendaftaran'))
 const MuatTurunSijil     = lazy(() => import('./pages/admin/MuatTurunSijil'))
 const SijilPengurus      = lazy(() => import('./pages/admin/SijilPengurus'))
+const PengurusLogin      = lazy(() => import('./pages/pengurus/PengurusLogin'))
+const PengurusDashboard  = lazy(() => import('./pages/pengurus/PengurusDashboard'))
 
 // ── Spinner ringkas semasa lazy load ─────────────────────────────────────────
 function PageLoader() {
@@ -75,7 +77,7 @@ function RequireAuth({ children, roles }) {
   if (mustChangePassword) return <Navigate to="/tukar-password" replace />
 
   if (roles && !roles.includes(userRole)) {
-    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard' }[userRole] || '/login'
+    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard', pencatat: '/dashboard', pengurus: '/pengurus/dashboard' }[userRole] || '/login'
     return <Navigate to={dest} replace />
   }
 
@@ -92,7 +94,7 @@ function RedirectIfLoggedIn({ children }) {
   if (user && mustChangePassword) return <Navigate to="/tukar-password" replace />
 
   if (user && userRole) {
-    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard' }[userRole] || '/dashboard'
+    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard', pencatat: '/dashboard', pengurus: '/pengurus/dashboard' }[userRole] || '/dashboard'
     return <Navigate to={dest} replace />
   }
 
@@ -331,13 +333,21 @@ function AppRoutes() {
 
         {/* Pencatat (teacher role) */}
         <Route path="/dashboard" element={
-          <RequireAuth roles={['teacher']}>
+          <RequireAuth roles={['teacher', 'pencatat']}>
             <PencatatDashboard />
           </RequireAuth>
         } />
         <Route path="/dashboard/kejohanan/:kejId/keputusan" element={
-          <RequireAuth roles={['teacher']}>
+          <RequireAuth roles={['teacher', 'pencatat']}>
             <PencatatInput />
+          </RequireAuth>
+        } />
+
+        {/* Pengurus Pasukan */}
+        <Route path="/pengurus/login" element={<PengurusLogin />} />
+        <Route path="/pengurus/dashboard" element={
+          <RequireAuth roles={['pengurus']}>
+            <PengurusDashboard />
           </RequireAuth>
         } />
 

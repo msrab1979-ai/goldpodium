@@ -416,6 +416,54 @@ export async function loginPencatat(slug, kodAkses, pin) {
   }
 }
 
+// ── Login Pengurus Pasukan (kodSekolah + PIN, tanpa Firebase Auth) ─────────────
+
+export async function loginPengurus(schoolId, kodSekolah, pin) {
+  const kodBersih = kodSekolah.trim().toUpperCase()
+
+  // 1. Rate limit
+  const attemptKey = `pengurus_${schoolId}_${kodBersih}`
+  await checkRateLimit(attemptKey)
+
+  // 2. Cari sekolah doc
+  const sekolahSnap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kodBersih))
+  if (!sekolahSnap.exists()) {
+    await recordFailedAttempt(attemptKey)
+    throw new Error('Kod sekolah tidak dijumpai.')
+  }
+
+  const sekolahData = sekolahSnap.data()
+
+  if (sekolahData.isAktif === false) {
+    throw new Error('Sekolah ini tidak aktif. Hubungi pentadbir.')
+  }
+
+  // 3. Verify PIN
+  if (!sekolahData.pinHash) {
+    throw new Error('PIN belum ditetapkan. Hubungi pentadbir sekolah.')
+  }
+
+  const pinHash = await hashPin(pin)
+  if (pinHash !== sekolahData.pinHash) {
+    await recordFailedAttempt(attemptKey)
+    throw new Error('PIN tidak betul.')
+  }
+
+  await clearAttempts(attemptKey)
+
+  return {
+    uid:        `pengurus_${schoolId}_${kodBersih}`,
+    email:      sekolahData.email || '',
+    name:       sekolahData.namaSekolah || kodBersih,
+    role:       'pengurus',
+    schoolId,
+    kodSekolah: kodBersih,
+    namaSekolah: sekolahData.namaSekolah || kodBersih,
+    isAktif:    true,
+    _savedAt:   Date.now(),
+  }
+}
+
 // ── Tukar password (first login) ──────────────────────────────────────────────
 
 export async function changePasswordFirstTime(currentPassword, newPassword) {

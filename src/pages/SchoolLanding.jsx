@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   collection, doc, query, getDocs, getDoc,
-  orderBy, limit,
+  orderBy, limit, onSnapshot,
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 
@@ -69,7 +69,7 @@ function PanelKeputusan({ acara, heats }) {
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isRelay  = acara.jenisAcara === 'relay'
 
-  const heatsAda    = heats.filter(h => h.statusKeputusan === 'ada_keputusan')
+  const heatsAda    = heats.filter(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
   const finalHeats  = heatsAda.filter(h => ['final', 'terus_final'].includes(h.fasa))
   const displayHeats = finalHeats.length > 0 ? finalHeats : heatsAda
 
@@ -186,47 +186,53 @@ function PanelKeputusan({ acara, heats }) {
 function TabJadual({ schoolId, kejId }) {
   const [acara,    setAcara]    = useState([])
   const [heatsMap, setHeatsMap] = useState({})
-  const [jadualMap, setJadualMap] = useState({}) // aceraId → { tarikhAcara, masaMula, lokasi }
   const [loading,  setLoading]  = useState(true)
   const [terbuka,  setTerbuka]  = useState(null)
+  const unsubAcara = useRef(null)
+  const unsubHeat  = useRef(null)
 
   useEffect(() => {
     if (!schoolId || !kejId) return
-    Promise.all([
-      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara'))),
-      getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat')),
-      getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'jadual')),
-    ]).then(([aSnap, hSnap, jSnap]) => {
-      setAcara(aSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+    setLoading(true)
 
-      const hm = {}
-      hSnap.docs.forEach(d => {
-        const h   = { id: d.id, ...d.data() }
-        const aid = h.aceraId || h.acaraId
-        if (aid) { if (!hm[aid]) hm[aid] = []; hm[aid].push(h) }
-      })
-      setHeatsMap(hm)
+    if (unsubAcara.current) unsubAcara.current()
+    if (unsubHeat.current)  unsubHeat.current()
 
-      const jm = {}
-      jSnap.docs.forEach(d => {
-        const j = d.data()
-        const key = j.aceraId || j.acaraId || d.id
-        if (key) jm[key] = { tarikhAcara: j.tarikhAcara, masaMula: j.masaMula, lokasi: j.lokasi }
-      })
-      setJadualMap(jm)
-    }).catch(() => {}).finally(() => setLoading(false))
+    unsubAcara.current = onSnapshot(
+      query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara')),
+      snap => { setAcara(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false) },
+      () => setLoading(false)
+    )
+
+    unsubHeat.current = onSnapshot(
+      collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'),
+      snap => {
+        const hm = {}
+        snap.docs.forEach(d => {
+          const h   = { id: d.id, ...d.data() }
+          const aid = h.aceraId || h.acaraId
+          if (aid) { if (!hm[aid]) hm[aid] = []; hm[aid].push(h) }
+        })
+        setHeatsMap(hm)
+      },
+      () => {}
+    )
+
+    return () => {
+      if (unsubAcara.current) unsubAcara.current()
+      if (unsubHeat.current)  unsubHeat.current()
+    }
   }, [schoolId, kejId])
 
   if (loading) return <div className="flex justify-center py-10"><div className="w-5 h-5 border-2 border-[#003399] border-t-transparent rounded-full animate-spin"/></div>
   if (acara.length === 0) return <p className="text-center text-xs text-gray-400 py-10">Tiada acara didaftarkan.</p>
 
-  // Kumpul mengikut tarikhAcara (dari jadual subcollection atau acara.tarikhAcara)
+  // Kumpul mengikut tarikhAcara
   const hariMap = {}
   acara.forEach(a => {
-    const jadual = jadualMap[a.id] || jadualMap[a.noAcara]
-    const tarikh = jadual?.tarikhAcara || a.tarikhAcara || 'Belum Ditetapkan'
+    const tarikh = a.tarikhAcara || 'Belum Ditetapkan'
     if (!hariMap[tarikh]) hariMap[tarikh] = []
-    hariMap[tarikh].push({ ...a, _masaMula: jadual?.masaMula || a.masaMula, _lokasi: jadual?.lokasi || a.lokasi })
+    hariMap[tarikh].push(a)
   })
   const hariKeys = Object.keys(hariMap).sort()
 
@@ -243,10 +249,10 @@ function TabJadual({ schoolId, kejId }) {
           </div>
           <div className="space-y-0">
             {hariMap[hari]
-              .sort((a, b) => (a._masaMula || '99:99').localeCompare(b._masaMula || '99:99') || (Number(a.noAcara) || 999) - (Number(b.noAcara) || 999))
+              .sort((a, b) => (a.masa || '99:99').localeCompare(b.masa || '99:99') || (Number(a.noAcara) || 999) - (Number(b.noAcara) || 999))
               .map(a => {
                 const heats = heatsMap[a.id] || []
-                const adaKeputusan = heats.some(h => h.statusKeputusan === 'ada_keputusan')
+                const adaKeputusan = a.statusAcara === 'ada_keputusan' || heats.some(h => ['rasmi','diterima'].includes(h.statusKeputusan))
                 const adaHeat      = heats.length > 0
                 const dibuka = terbuka === a.id
 
@@ -261,7 +267,7 @@ function TabJadual({ schoolId, kejId }) {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-gray-900 truncate">{a.namaAcara || a.namaAcaraPendek || '—'}</p>
                         <p className="text-[10px] text-gray-400">
-                          {a._masaMula && <span>{a._masaMula} · </span>}
+                          {a.masa && <span>{a.masa} · </span>}
                           {a.kategoriKod || ''}{a.jantina ? ` · ${a.jantina}` : ''} · {JENIS_LABEL[a.jenisAcara] || a.jenisAcara || '—'}
                         </p>
                       </div>
@@ -298,11 +304,16 @@ function TabJadual({ schoolId, kejId }) {
 function TabMedalTally({ schoolId, kejId }) {
   const [tally,   setTally]   = useState([])
   const [loading, setLoading] = useState(true)
+  const unsubRef = useRef(null)
 
   useEffect(() => {
     if (!schoolId || !kejId) return
-    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'))
-      .then(snap => {
+    setLoading(true)
+    if (unsubRef.current) unsubRef.current()
+
+    unsubRef.current = onSnapshot(
+      collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'),
+      snap => {
         const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         rows.sort((a, b) => {
           if ((b.emas  || 0) !== (a.emas  || 0)) return (b.emas  || 0) - (a.emas  || 0)
@@ -311,9 +322,11 @@ function TabMedalTally({ schoolId, kejId }) {
           return (a.namaSekolah || a.kodSekolah || '').localeCompare(b.namaSekolah || b.kodSekolah || '')
         })
         setTally(rows)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+        setLoading(false)
+      },
+      () => setLoading(false)
+    )
+    return () => { if (unsubRef.current) unsubRef.current() }
   }, [schoolId, kejId])
 
   if (loading) return <div className="flex justify-center py-10"><div className="w-5 h-5 border-2 border-[#003399] border-t-transparent rounded-full animate-spin"/></div>
@@ -443,14 +456,24 @@ export default function SchoolLanding() {
               </div>
               <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Gold Podium</span>
             </div>
-            <button
-              onClick={() => navigate('/login', { state: { schoolSlug: slug, schoolId, namaSekolah: sekolah?.namaSekolah } })}
-              className="text-[11px] font-bold bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
-              </svg>
-              Login Admin
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/pengurus/login', { state: { schoolSlug: slug, schoolId, namaSekolah: sekolah?.namaSekolah } })}
+                className="text-[11px] font-bold bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Pengurus
+              </button>
+              <button
+                onClick={() => navigate('/login', { state: { schoolSlug: slug, schoolId, namaSekolah: sekolah?.namaSekolah } })}
+                className="text-[11px] font-bold bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                </svg>
+                Admin
+              </button>
+            </div>
           </div>
 
           {/* Info kejohanan */}

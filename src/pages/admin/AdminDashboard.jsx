@@ -314,24 +314,58 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Quick Links Admin */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {[
-            { label: 'Senarai Kejohanan', ikon: '📋', path: '/admin/kejohanan-setup' },
-            { label: 'Urus Pengguna',     ikon: '👥', path: '/admin/pengguna' },
-            { label: 'Urus Sekolah',      ikon: '🏫', path: '/admin/sekolah' },
-            { label: 'Tetapan Sistem',    ikon: '⚙️', path: '/admin/tetapan' },
-            { label: 'Rekod Kejohanan',   ikon: '🏆', path: '/admin/rekod' },
-            { label: 'Jadual Acara',      ikon: '📅', path: '/admin/jadual' },
-            { label: 'Olahragawan',       ikon: '🏅', path: '/admin/olahragawan' },
-            { label: 'Analisa Pingat',    ikon: '📊', path: '/admin/analisa-pingat' },
-          ].map(item => (
-            <button key={item.path} onClick={() => navigate(item.path)}
-              className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-3 text-left hover:border-[#003399]/30 hover:shadow-sm transition-all group">
-              <span className="text-base">{item.ikon}</span>
-              <span className="text-xs font-semibold text-gray-600 group-hover:text-[#003399] transition-colors leading-tight">{item.label}</span>
-            </button>
-          ))}
+        {/* Quick Links — Pengurusan */}
+        <div>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Pengurusan</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: 'Senarai Kejohanan',    ikon: '📋', path: '/admin/kejohanan-setup' },
+              { label: 'Urus Pengguna',        ikon: '👥', path: '/admin/pengguna' },
+              { label: 'Urus Sekolah',         ikon: '🏫', path: '/admin/sekolah' },
+              { label: 'Tetapan Sistem',       ikon: '⚙️', path: '/admin/tetapan' },
+              { label: 'Rekod Kejohanan',      ikon: '🏆', path: '/admin/rekod' },
+              { label: 'Jadual Acara',         ikon: '📅', path: '/admin/jadual' },
+              { label: 'Olahragawan',          ikon: '🏅', path: '/admin/olahragawan' },
+              { label: 'Analisa Pingat',       ikon: '📊', path: '/admin/analisa-pingat' },
+              { label: 'Analisis Pendaftaran', ikon: '🔍', path: '/admin/analisis-pendaftaran' },
+              { label: 'Manual Pendaftaran',   ikon: '📖', path: '/admin/manual-pendaftaran' },
+              { label: 'Backup Data',          ikon: '💾', path: '/admin/backup' },
+              { label: 'Health Check',         ikon: '🩺', path: '/admin/health' },
+              { label: 'Reset Sistem',         ikon: '🔄', path: '/admin/reset' },
+            ].map(item => (
+              <button key={item.path} onClick={() => navigate(item.path)}
+                className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-3 text-left hover:border-[#003399]/30 hover:shadow-sm transition-all group">
+                <span className="text-base">{item.ikon}</span>
+                <span className="text-xs font-semibold text-gray-600 group-hover:text-[#003399] transition-colors leading-tight">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Links — Cetakan & Sijil */}
+        <div>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Cetakan & Sijil</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: 'Buku Kejohanan',      ikon: '📚', path: '/admin/buku-kejohanan' },
+              { label: 'Buku Kongsi',         ikon: '🔗', path: '/admin/buku-kongsi' },
+              { label: 'Buku Program',        ikon: '📰', path: '/admin/buku-program' },
+              { label: 'Link Buku Kejohanan', ikon: '🌐', path: '/admin/buku-kejohanan-link' },
+              { label: 'Cetak Acara',         ikon: '🖨️', path: '/admin/cetak-acara' },
+              { label: 'Cetak Keputusan',     ikon: '📄', path: '/admin/cetak-keputusan' },
+              { label: 'E-Sijil Penyertaan',  ikon: '🎖️', path: '/admin/esijil' },
+              { label: 'E-Sijil Pencapaian',  ikon: '🥇', path: '/admin/esijil-pencapaian' },
+              { label: 'Muat Turun Sijil',    ikon: '⬇️', path: '/admin/muat-turun-sijil' },
+              { label: 'Sijil Pengurus',      ikon: '🏫', path: '/admin/sijil-pengurus' },
+              { label: 'Galeri',              ikon: '🖼️', path: '/admin/galeri' },
+            ].map(item => (
+              <button key={item.path} onClick={() => navigate(item.path)}
+                className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-3 text-left hover:border-[#003399]/30 hover:shadow-sm transition-all group">
+                <span className="text-base">{item.ikon}</span>
+                <span className="text-xs font-semibold text-gray-600 group-hover:text-[#003399] transition-colors leading-tight">{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Senarai Kejohanan */}
