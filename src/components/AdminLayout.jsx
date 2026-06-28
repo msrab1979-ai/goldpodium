@@ -21,8 +21,7 @@ const NAV = [
       { label: 'Pengguna',     icon: '👤', path: '/admin/pengguna' },
       { label: 'Pendaftaran',  icon: '📝', path: '/admin/analisis-pendaftaran' },
       { label: 'Rekod',        icon: '🎖️', path: '/admin/rekod' },
-      { label: 'Olahragawan',  icon: '⭐', path: '/admin/olahragawan' },
-      { label: 'Analisa Pingat', icon: '🥇', path: '/admin/analisa-pingat' },
+      { label: 'Atlet Terbaik', icon: '🥇', path: '/admin/analisa-pingat' },
     ],
   },
   {
