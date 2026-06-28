@@ -6,9 +6,9 @@ const NAV = [
   {
     label: 'Utama',
     items: [
-      { label: 'Dashboard',    icon: '🏠', path: '/admin' },
-      { label: 'Kejohanan',    icon: '🏆', path: '/admin/kejohanan-setup' },
-      { label: 'Jadual',       icon: '📅', path: '/admin/jadual' },
+      { label: 'Dashboard',       icon: '🏠', path: '/admin' },
+      { label: 'Kejohanan',       icon: '🏆', path: '/admin/kejohanan-setup' },
+      { label: 'Acara & Jadual',  icon: '📅', path: '/admin/jadual' },
     ],
   },
   {
@@ -57,7 +57,20 @@ export default function AdminLayout({ children }) {
 
   function isActive(path) {
     if (path === '/admin') return location.pathname === '/admin'
+    if (path === '/admin/jadual') return location.pathname.includes('/acara') || location.pathname === '/admin/jadual'
     return location.pathname.startsWith(path)
+  }
+
+  function handleNav(path) {
+    if (path === '/admin/jadual') {
+      try {
+        const kej = JSON.parse(sessionStorage.getItem('gp_kej_aktif') || '{}')
+        if (kej.id) { navigate(`/admin/kejohanan/${kej.id}/acara`); return }
+      } catch { /* langkau */ }
+      navigate('/admin/kejohanan-setup')
+      return
+    }
+    navigate(path)
   }
 
   async function handleLogout() {
@@ -91,7 +104,7 @@ export default function AdminLayout({ children }) {
               {group.items.map(item => (
                 <button
                   key={item.path}
-                  onClick={() => { navigate(item.path); setMobileOpen(false) }}
+                  onClick={() => { handleNav(item.path); setMobileOpen(false) }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all text-left ${
                     isActive(item.path)
                       ? 'bg-white/15 text-white'

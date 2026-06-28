@@ -2929,43 +2929,44 @@ export default function AcaraSetup() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="space-y-4">
 
-      {/* Banner superadmin */}
-      {isSuperadmin && (
-        <div className="bg-amber-400 text-amber-900 px-4 py-2 flex items-center justify-between text-xs font-bold">
-          <span>⚡ Mode Superadmin</span>
-          <button onClick={() => { sessionStorage.removeItem('gp_view_school'); navigate('/superadmin') }}
-            className="underline hover:no-underline">← Balik ke Panel Superadmin</button>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="bg-[#003399] text-white px-4 py-3 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate(`/admin/kejohanan/${kejId}`)}
-            className="text-white/60 hover:text-white transition-colors p-1 -ml-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-          </button>
-          <div className="min-w-0">
-            <p className="text-[9px] text-white/50 uppercase tracking-widest">Gold Podium</p>
-            <p className="text-sm font-bold leading-tight truncate">{namaKej || 'Acara & Jadual'}</p>
+      {/* Header kejohanan + butang tambah */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => navigate(`/admin/kejohanan/${kejId}`)}
+              className="text-gray-400 hover:text-[#003399] transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            </button>
+            <h1 className="text-lg font-bold text-gray-800">Acara & Jadual</h1>
           </div>
+          <p className="text-xs text-gray-400 mt-0.5 ml-6">{namaKej}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setModal({ mode: 'add' })}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-lg hover:bg-yellow-300 shadow-sm">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-            Tambah
-          </button>
-          <button onClick={async () => { await logout(); navigate('/login') }}
-            className="text-white/60 hover:text-white transition-colors p-1.5 flex items-center gap-1 text-xs shrink-0">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-          </button>
-        </div>
-      </header>
+        <button onClick={() => setModal({ mode: 'add' })}
+          className="flex items-center gap-1.5 px-4 py-2 bg-[#003399] text-white text-sm font-bold rounded-xl hover:bg-[#002277] shadow-sm">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+          Tambah Acara
+        </button>
+      </div>
 
-    <div className="p-5 space-y-4">
+      {/* Stats bar */}
+      <div className="grid grid-cols-5 gap-3">
+        {[
+          { label: 'Jumlah',  val: stats.total,  cls: 'text-[#003399]' },
+          { label: 'Lorong',  val: stats.lorong, cls: 'text-blue-600'  },
+          { label: 'Padang',  val: stats.padang, cls: 'text-green-600' },
+          { label: 'Relay',   val: stats.relay,  cls: 'text-purple-600'},
+          { label: 'Aktif',   val: stats.aktif,  cls: 'text-emerald-600'},
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
+            <p className={`text-2xl font-black ${s.cls}`}>{s.val}</p>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+    <div className="space-y-4">
 
       {/* Tab bar */}
       {selectedKej && (
