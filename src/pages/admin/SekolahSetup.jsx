@@ -873,7 +873,7 @@ function ConfirmDialog({ msg, onYes, onNo, danger }) {
 
 // ─── BIB Bulk Panel ───────────────────────────────────────────────────────────
 
-function BibBulkPanel({ list, onUpdated }) {
+function BibBulkPanel({ list, onUpdated, schoolId }) {
   const [open,   setOpen]   = useState(false)
   const [format, setFormat] = useState(3)
   const [mula,   setMula]   = useState(1)
@@ -1422,7 +1422,7 @@ export default function SekolahSetup() {
       </div>
 
       {/* ── BIB Bulk Update ── */}
-      {isSuperAdmin && <BibBulkPanel list={list} onUpdated={fetchList} />}
+      {isSuperAdmin && <BibBulkPanel list={list} onUpdated={fetchList} schoolId={schoolId} />}
 
       {/* Import Modal */}
       {showImport && (

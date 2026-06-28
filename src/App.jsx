@@ -19,6 +19,7 @@ const StartListSetup     = lazy(() => import('./pages/admin/StartListSetup'))
 const InputKeputusan     = lazy(() => import('./pages/admin/InputKeputusan'))
 const MedalTallySetup   = lazy(() => import('./pages/admin/MedalTallySetup'))
 const LaporanCetakan     = lazy(() => import('./pages/admin/LaporanCetakan'))
+const SekolahSetup       = lazy(() => import('./pages/admin/SekolahSetup'))
 const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
@@ -171,6 +172,11 @@ function AppRoutes() {
         <Route path="/admin/kejohanan/:kejId/laporan" element={
           <RequireAuth roles={['admin', 'superadmin']}>
             <LaporanCetakan />
+          </RequireAuth>
+        } />
+        <Route path="/admin/sekolah" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <SekolahSetup />
           </RequireAuth>
         } />
         <Route path="/admin/*" element={
