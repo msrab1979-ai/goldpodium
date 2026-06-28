@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, getDoc,
   serverTimestamp, query, orderBy, where, writeBatch,
@@ -764,6 +765,7 @@ function PadamSatuModal({ schoolId, kejId, row, onClose, onDeleted }) {
 export default function JadualSetup() {
   const { userData } = useAuth()
   const schoolId = userData?.schoolId || ''
+  const navigate = useNavigate()
   const [selectedKej,   setSelectedKej]   = useState('')
   const [namaKej,       setNamaKej]       = useState('')
   const [rows,          setRows]          = useState([])
@@ -970,6 +972,19 @@ export default function JadualSetup() {
   const missingCount = padananData?.missing?.length || 0
 
   return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-[#003399] text-white px-4 py-3 flex items-center gap-3 shadow-lg">
+        <button onClick={() => navigate('/admin')}
+          className="text-white/70 hover:text-white transition-colors p-1">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </button>
+        <div>
+          <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Admin</p>
+          <p className="text-sm font-black">Jadual Acara</p>
+        </div>
+      </header>
     <div className="p-5 max-w-6xl mx-auto space-y-4">
 
       {/* ── Header ── */}
@@ -1354,6 +1369,7 @@ export default function JadualSetup() {
           onDeleted={fetchData}
         />
       )}
+    </div>
     </div>
   )
 }

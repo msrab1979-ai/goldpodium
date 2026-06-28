@@ -11,12 +11,15 @@ const Ikon = {
 }
 
 const MODUL = [
-  { id: 'pendaftaran', label: 'Pendaftaran Atlet',  hurai: 'Daftar & urus atlet yang menyertai',      warna: 'from-blue-500 to-blue-600',   ikon: '👤' },
-  { id: 'kategori',   label: 'Kategori & Acara',    hurai: 'Tetapkan kategori, acara & jadual',        warna: 'from-purple-500 to-purple-600', ikon: '🏷️' },
-  { id: 'startlist',  label: 'Start List',          hurai: 'Jana & cetak start list peserta',          warna: 'from-amber-500 to-amber-600',  ikon: '📋' },
-  { id: 'keputusan',  label: 'Input Keputusan',     hurai: 'Rekod masa & kedudukan acara',             warna: 'from-green-500 to-green-600',  ikon: '⏱️' },
-  { id: 'medal',      label: 'Medal Tally',         hurai: 'Kiraan pingat mengikut sekolah',           warna: 'from-yellow-500 to-yellow-600', ikon: '🥇' },
-  { id: 'laporan',    label: 'Laporan & Cetakan',   hurai: 'Buku kejohanan, keputusan, sijil',         warna: 'from-red-500 to-red-600',      ikon: '📄' },
+  { id: 'pendaftaran',    label: 'Pendaftaran Atlet',  hurai: 'Daftar & urus atlet yang menyertai',      warna: 'from-blue-500 to-blue-600',    ikon: '👤' },
+  { id: 'kategori',       label: 'Kategori & Acara',   hurai: 'Tetapkan kategori, acara & jadual',        warna: 'from-purple-500 to-purple-600', ikon: '🏷️' },
+  { id: 'startlist',      label: 'Start List',         hurai: 'Jana & cetak start list peserta',          warna: 'from-amber-500 to-amber-600',  ikon: '📋' },
+  { id: 'keputusan',      label: 'Input Keputusan',    hurai: 'Rekod masa & kedudukan acara',             warna: 'from-green-500 to-green-600',  ikon: '⏱️' },
+  { id: 'medal',          label: 'Medal Tally',        hurai: 'Kiraan pingat mengikut sekolah',           warna: 'from-yellow-500 to-yellow-600', ikon: '🥇' },
+  { id: 'laporan',        label: 'Laporan & Cetakan',  hurai: 'Buku kejohanan, keputusan, sijil',         warna: 'from-red-500 to-red-600',      ikon: '📄' },
+  { id: 'jadual',         label: 'Jadual Acara',       hurai: 'Susun & semak jadual acara kejohanan',     warna: 'from-sky-500 to-sky-600',      ikon: '📅' },
+  { id: 'olahragawan',    label: 'Olahragawan',        hurai: 'Analisa & anugerah olahragawan terbaik',   warna: 'from-rose-500 to-rose-600',    ikon: '🏅' },
+  { id: 'analisa-pingat', label: 'Analisa Pingat',     hurai: 'Kedudukan pingat per atlet & sekolah',     warna: 'from-orange-500 to-orange-600', ikon: '📊' },
 ]
 
 const STATUS_LABEL = { aktif: 'Sedang Berlangsung', draf: 'Draf', selesai: 'Selesai' }
@@ -66,12 +69,15 @@ export default function KejohananDetail() {
   }, [schoolId, kejId])
 
   function handleModul(modulId) {
-    if (modulId === 'kategori')     { navigate(`/admin/kejohanan/${kejId}/kategori`);    return }
-    if (modulId === 'pendaftaran')  { navigate(`/admin/kejohanan/${kejId}/pendaftaran`); return }
-    if (modulId === 'startlist')    { navigate(`/admin/kejohanan/${kejId}/startlist`);   return }
-    if (modulId === 'keputusan')   { navigate(`/admin/kejohanan/${kejId}/keputusan`);  return }
-    if (modulId === 'medal')       { navigate(`/admin/kejohanan/${kejId}/medal`);       return }
-    if (modulId === 'laporan')     { navigate(`/admin/kejohanan/${kejId}/laporan`);     return }
+    if (modulId === 'kategori')       { navigate(`/admin/kejohanan/${kejId}/kategori`);    return }
+    if (modulId === 'pendaftaran')    { navigate(`/admin/kejohanan/${kejId}/pendaftaran`); return }
+    if (modulId === 'startlist')      { navigate(`/admin/kejohanan/${kejId}/startlist`);   return }
+    if (modulId === 'keputusan')      { navigate(`/admin/kejohanan/${kejId}/keputusan`);   return }
+    if (modulId === 'medal')          { navigate(`/admin/kejohanan/${kejId}/medal`);        return }
+    if (modulId === 'laporan')        { navigate(`/admin/kejohanan/${kejId}/laporan`);      return }
+    if (modulId === 'jadual')         { navigate('/admin/jadual');                           return }
+    if (modulId === 'olahragawan')    { navigate('/admin/olahragawan');                      return }
+    if (modulId === 'analisa-pingat') { navigate('/admin/analisa-pingat');                   return }
     alert(`Modul "${MODUL.find(m => m.id === modulId)?.label}" akan dibina tidak lama lagi.`)
   }
 

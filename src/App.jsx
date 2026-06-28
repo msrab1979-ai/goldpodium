@@ -23,6 +23,12 @@ const SekolahSetup       = lazy(() => import('./pages/admin/SekolahSetup'))
 const KejohananSetup     = lazy(() => import('./pages/admin/KejohananSetup'))
 const UserManagement     = lazy(() => import('./pages/admin/UserManagement'))
 const TetapanHome        = lazy(() => import('./pages/admin/TetapanHome'))
+const JadualSetup        = lazy(() => import('./pages/admin/JadualSetup'))
+const Rekod              = lazy(() => import('./pages/admin/Rekod'))
+const Olahragawan        = lazy(() => import('./pages/admin/Olahragawan'))
+const AnalisaPingat      = lazy(() => import('./pages/admin/AnalisaPingat'))
+const ResetSistem        = lazy(() => import('./pages/admin/ResetSistem'))
+const HealthCheck        = lazy(() => import('./pages/admin/HealthCheck'))
 const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
@@ -195,6 +201,36 @@ function AppRoutes() {
         <Route path="/admin/tetapan" element={
           <RequireAuth roles={['admin', 'superadmin']}>
             <TetapanHome />
+          </RequireAuth>
+        } />
+        <Route path="/admin/jadual" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <JadualSetup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/rekod" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <Rekod />
+          </RequireAuth>
+        } />
+        <Route path="/admin/olahragawan" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <Olahragawan />
+          </RequireAuth>
+        } />
+        <Route path="/admin/analisa-pingat" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <AnalisaPingat />
+          </RequireAuth>
+        } />
+        <Route path="/admin/reset" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <ResetSistem />
+          </RequireAuth>
+        } />
+        <Route path="/admin/health" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <HealthCheck />
           </RequireAuth>
         } />
         <Route path="/admin/*" element={

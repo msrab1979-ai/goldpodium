@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, query, where, orderBy, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -32,6 +33,7 @@ function fmtPingat(n) { return n > 0 ? String(n) : '—' }
 export default function AnalisaPingat() {
   const { userData } = useAuth()
   const schoolId = userData?.schoolId || ''
+  const navigate = useNavigate()
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState('')
   const [kategoriList, setKategoriList] = useState([])
@@ -632,6 +634,19 @@ export default function AnalisaPingat() {
   const selKatLabel = kategoriList.find(k => k.kod === selKat)?.label || selKat
 
   return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-[#003399] text-white px-4 py-3 flex items-center gap-3 shadow-lg">
+        <button onClick={() => navigate('/admin')}
+          className="text-white/70 hover:text-white transition-colors p-1">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </button>
+        <div>
+          <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Admin</p>
+          <p className="text-sm font-black">Analisa Pingat</p>
+        </div>
+      </header>
     <div className="space-y-4">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#003399] to-[#0055cc] rounded-xl px-5 py-4 flex items-center justify-between gap-3">
@@ -1191,6 +1206,7 @@ export default function AnalisaPingat() {
           </div>
         </div>
       )}
+    </div>
     </div>
   )
 }

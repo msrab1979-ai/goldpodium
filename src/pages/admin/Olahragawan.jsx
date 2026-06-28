@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   collection, doc, getDoc, getDocs, query, where, onSnapshot, orderBy,
   setDoc, deleteDoc, serverTimestamp,
@@ -974,6 +975,7 @@ function MuridTerbaikCard({ jantina, pilihan, liveData, onTukar }) {
 export default function Olahragawan() {
   const { userData }  = useAuth()
   const schoolId = userData?.schoolId || ''
+  const navigate = useNavigate()
   const [selKej, setSelKej]             = useState('')
   const [namaKej, setNamaKej]           = useState('')
   const [allData, setAllData]           = useState([])
@@ -1542,6 +1544,19 @@ export default function Olahragawan() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-[#003399] text-white px-4 py-3 flex items-center gap-3 shadow-lg">
+        <button onClick={() => navigate('/admin')}
+          className="text-white/70 hover:text-white transition-colors p-1">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </button>
+        <div>
+          <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Admin</p>
+          <p className="text-sm font-black">Analisa Olahragawan</p>
+        </div>
+      </header>
     <div className="p-4 max-w-6xl mx-auto space-y-5">
 
       {/* Header */}
@@ -1947,6 +1962,7 @@ export default function Olahragawan() {
           onClose={() => setModalAtlet(null)}
         />
       )}
+    </div>
     </div>
   )
 }

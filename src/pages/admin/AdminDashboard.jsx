@@ -321,6 +321,10 @@ export default function AdminDashboard() {
             { label: 'Urus Pengguna',     ikon: '👥', path: '/admin/pengguna' },
             { label: 'Urus Sekolah',      ikon: '🏫', path: '/admin/sekolah' },
             { label: 'Tetapan Sistem',    ikon: '⚙️', path: '/admin/tetapan' },
+            { label: 'Rekod Kejohanan',   ikon: '🏆', path: '/admin/rekod' },
+            { label: 'Jadual Acara',      ikon: '📅', path: '/admin/jadual' },
+            { label: 'Olahragawan',       ikon: '🏅', path: '/admin/olahragawan' },
+            { label: 'Analisa Pingat',    ikon: '📊', path: '/admin/analisa-pingat' },
           ].map(item => (
             <button key={item.path} onClick={() => navigate(item.path)}
               className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-3 text-left hover:border-[#003399]/30 hover:shadow-sm transition-all group">
