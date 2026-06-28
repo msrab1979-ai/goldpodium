@@ -33,6 +33,20 @@ const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
 const PencatatLogin      = lazy(() => import('./pages/pencatat/PencatatLogin'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
+const AnalisisPendaftaran = lazy(() => import('./pages/admin/AnalisisPendaftaran'))
+const Backup             = lazy(() => import('./pages/admin/Backup'))
+const BukuKejohanan      = lazy(() => import('./pages/admin/BukuKejohanan'))
+const BukuKejohananLinkSetup = lazy(() => import('./pages/admin/BukuKejohananLinkSetup'))
+const BukuKongsiSetup    = lazy(() => import('./pages/admin/BukuKongsiSetup'))
+const BukuProgramSetup   = lazy(() => import('./pages/admin/BukuProgramSetup'))
+const CetakAcara         = lazy(() => import('./pages/admin/CetakAcara'))
+const CetakKeputusan     = lazy(() => import('./pages/admin/CetakKeputusan'))
+const ESijil             = lazy(() => import('./pages/admin/ESijil'))
+const ESijilPencapaian   = lazy(() => import('./pages/admin/ESijilPencapaian'))
+const GaleriSetup        = lazy(() => import('./pages/admin/GaleriSetup'))
+const ManualPendaftaran  = lazy(() => import('./pages/admin/ManualPendaftaran'))
+const MuatTurunSijil     = lazy(() => import('./pages/admin/MuatTurunSijil'))
+const SijilPengurus      = lazy(() => import('./pages/admin/SijilPengurus'))
 
 // ── Spinner ringkas semasa lazy load ─────────────────────────────────────────
 function PageLoader() {
@@ -237,6 +251,76 @@ function AppRoutes() {
         <Route path="/admin/health" element={
           <RequireAuth roles={['admin', 'superadmin']}>
             <HealthCheck />
+          </RequireAuth>
+        } />
+        <Route path="/admin/analisis-pendaftaran" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <AnalisisPendaftaran />
+          </RequireAuth>
+        } />
+        <Route path="/admin/backup" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <Backup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/buku-kejohanan" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <BukuKejohanan />
+          </RequireAuth>
+        } />
+        <Route path="/admin/buku-kejohanan-link" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <BukuKejohananLinkSetup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/buku-kongsi" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <BukuKongsiSetup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/buku-program" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <BukuProgramSetup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/cetak-acara" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <CetakAcara />
+          </RequireAuth>
+        } />
+        <Route path="/admin/cetak-keputusan" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <CetakKeputusan />
+          </RequireAuth>
+        } />
+        <Route path="/admin/esijil" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <ESijil />
+          </RequireAuth>
+        } />
+        <Route path="/admin/esijil-pencapaian" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <ESijilPencapaian />
+          </RequireAuth>
+        } />
+        <Route path="/admin/galeri" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <GaleriSetup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/manual-pendaftaran" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <ManualPendaftaran />
+          </RequireAuth>
+        } />
+        <Route path="/admin/muat-turun-sijil" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <MuatTurunSijil />
+          </RequireAuth>
+        } />
+        <Route path="/admin/sijil-pengurus" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <SijilPengurus />
           </RequireAuth>
         } />
         <Route path="/admin/*" element={

@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 
 // ─── Konfigurasi ──────────────────────────────────────────────────────────────
@@ -354,8 +355,13 @@ async function batchTulis(items, addLog, label, merge = false) {
 // ─── Komponen Utama ───────────────────────────────────────────────────────────
 
 export default function Backup() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [tab, setTab] = useState('muat_turun')
 
   // Export state
@@ -617,10 +623,13 @@ export default function Backup() {
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">
 
-      {/* Header */}
-      <div className="mb-5">
-        <h1 className="text-lg font-bold text-gray-800">Backup Sistem</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Muat turun atau pulihkan data sistem KOAM</p>
+      {/* Nav Header */}
+      <div className="flex items-center gap-3 mb-5">
+        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
+        <div>
+          <h1 className="text-lg font-bold text-gray-800">Backup Sistem</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Muat turun atau pulihkan data sistem</p>
+        </div>
       </div>
 
       {/* Tab switcher */}

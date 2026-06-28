@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -459,8 +460,13 @@ function cetakBorangTeknikal({ acara, allHeatsList, namaKej, cfg }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CetakAcara() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [cfg,          setCfg]          = useState({})
   const [kejohanan,    setKejohanan]    = useState(null)
   const [namaKej,      setNamaKej]      = useState('')
@@ -652,10 +658,13 @@ export default function CetakAcara() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
-        <h1 className="text-sm font-bold text-gray-800">Cetak Acara</h1>
-        <p className="text-xs text-gray-500 mt-0.5">{namaKej}</p>
+      {/* Nav Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
+        <div>
+          <h1 className="text-sm font-bold text-gray-800">Cetak Acara</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{namaKej}</p>
+        </div>
       </div>
 
       <div className="flex h-[calc(100vh-57px)]">

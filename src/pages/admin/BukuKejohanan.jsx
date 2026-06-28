@@ -22,6 +22,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 // ─── Helper: Kompres gambar cover supaya muat dalam Firestore (1MB limit) ────
 function kompresGambarCover(dataUrl) {
@@ -77,8 +78,13 @@ function rekodKey(namaAcara, jantina, kategoriKod, peringkat) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function BukuKejohanan() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [loading,  setLoading]  = useState(false)
   const [msg,      setMsg]      = useState(null)
   const [preview,  setPreview]  = useState(null)
@@ -1336,12 +1342,13 @@ export default function BukuKejohanan() {
   return (
     <div className="p-4 max-w-3xl mx-auto space-y-5">
 
-      {/* Header */}
-      <div>
-        <h1 className="text-base font-bold text-[#003399]">Buku Kejohanan</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
-          Jana PDF komprehensif — Muka Depan, Medal Tally, Pendaftaran, Jadual, Keputusan, Rekod, Atlet Terbaik
-        </p>
+      {/* Nav Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
+        <div>
+          <h1 className="text-base font-bold text-[#003399]">Buku Kejohanan</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Jana PDF komprehensif — Muka Depan, Medal Tally, Pendaftaran, Jadual, Keputusan, Rekod, Atlet Terbaik</p>
+        </div>
       </div>
 
       {/* ── Setup Muka Depan (Cover) ── */}

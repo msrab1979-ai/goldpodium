@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { janaSijilPDF, namaFail } from '../../utils/sijilUtils'
@@ -22,8 +23,13 @@ import { janaSijilPDF, namaFail } from '../../utils/sijilUtils'
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function SijilPengurus() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const kodSekolah = userData?.kodSekolah || ''
   const namaSekolah = userData?.namaSekolah || kodSekolah
 
@@ -150,10 +156,13 @@ export default function SijilPengurus() {
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
-      {/* Header */}
-      <div className="mb-5">
-        <h1 className="text-base font-bold text-gray-800">Sijil Penyertaan</h1>
-        <p className="text-xs text-gray-500 mt-0.5">{namaSekolah}</p>
+      {/* Nav Header */}
+      <div className="mb-5 flex items-center gap-3">
+        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
+        <div>
+          <h1 className="text-base font-bold text-gray-800">Sijil Penyertaan</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{namaSekolah}</p>
+        </div>
       </div>
 
       {err ? (

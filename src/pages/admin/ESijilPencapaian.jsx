@@ -14,6 +14,7 @@ import { useState, useEffect, useRef } from 'react'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import jsPDF from 'jspdf'
 import { labelKedudukan, janaSijilPencapaianPDF } from '../../utils/sijilPencapaianUtils'
 
@@ -229,8 +230,13 @@ function DraggableLabel({ fieldCfg, pos, style, sampleText, containerRef, onPosC
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function ESijilPencapaian() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [aktif, setAktif]                 = useState(true)  // default ON
   const [template, setTemplate]           = useState(null)
   const [namaKejohanan, setNamaKejohanan] = useState('')
@@ -361,11 +367,14 @@ export default function ESijilPencapaian() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start gap-3">
+        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399] mt-0.5 shrink-0">← Kembali</button>
+        <div>
         <h1 className="text-base font-bold text-gray-800">Sijil Pencapaian</h1>
         <p className="text-xs text-gray-500 mt-0.5">
           Tetapkan template sijil untuk atlet yang dapat tempat 1 hingga {hadKedudukan}. Pengurus pasukan boleh muat turun sijil murid sekolah masing-masing selepas tetapan disimpan.
         </p>
+        </div>
       </div>
 
       <div className="space-y-5">

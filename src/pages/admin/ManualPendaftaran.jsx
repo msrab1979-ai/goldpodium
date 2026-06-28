@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,8 +72,13 @@ function InfoKotak({ icon = 'ℹ️', children }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ManualPendaftaran() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [loading,      setLoading]      = useState(true)
   const [kategoriList, setKategoriList] = useState([])
   const [acaraList,    setAcaraList]    = useState([])
@@ -144,6 +150,11 @@ export default function ManualPendaftaran() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+
+      {/* Nav Header */}
+      <div>
+        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399] mb-3">← Kembali</button>
+      </div>
 
       {/* ── Header ── */}
       <div className="bg-[#003399] rounded-2xl px-5 py-5 text-white">

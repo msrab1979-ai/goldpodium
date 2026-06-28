@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,8 +63,13 @@ const PINGAT_UI  = { 1: '🥇', 2: '🥈', 3: '🥉' }  // untuk web preview sah
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CetakKeputusan() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [loadingInit, setLoadingInit] = useState(true)
   const [generating,  setGenerating]  = useState(false)
   const [progress,    setProgress]    = useState('')
@@ -602,11 +608,14 @@ export default function CetakKeputusan() {
   return (
     <div className="p-4 max-w-5xl mx-auto space-y-4">
 
-      {/* Header */}
+      {/* Nav Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-base font-bold text-[#003399]">Cetakan Keputusan</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Pilih hari → jana PDF atau Excel keputusan rasmi</p>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
+          <div>
+            <h1 className="text-base font-bold text-[#003399]">Cetakan Keputusan</h1>
+            <p className="text-xs text-gray-400 mt-0.5">Pilih hari → jana PDF atau Excel keputusan rasmi</p>
+          </div>
           {namaKej && <p className="text-xs font-semibold text-[#003399] mt-0.5">{namaKej}</p>}
         </div>
 

@@ -20,6 +20,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -864,8 +865,13 @@ function TabAnalisisSekolah({ sekolahList, acaraList, pendaftaranDocs, kategoriL
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AnalisisPendaftaran() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userData, userRole } = useAuth()
+  const navigate = useNavigate()
+  const isSuperadmin = userRole === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || userData?.schoolId || ''
   const [loading,          setLoading]          = useState(true)
   const [err,              setErr]              = useState(null)
   const [namaKej,          setNamaKej]          = useState('')
@@ -951,10 +957,13 @@ export default function AnalisisPendaftaran() {
   return (
     <div className="p-4 max-w-full space-y-4">
 
-      {/* Header */}
-      <div>
-        <h1 className="text-base font-bold text-[#003399]">Analisis Pendaftaran</h1>
-        {namaKej && <p className="text-xs text-gray-400 mt-0.5">{namaKej}</p>}
+      {/* Nav Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
+        <div>
+          <h1 className="text-base font-bold text-[#003399]">Analisis Pendaftaran</h1>
+          {namaKej && <p className="text-xs text-gray-400 mt-0.5">{namaKej}</p>}
+        </div>
       </div>
 
       {/* Tab switcher */}
