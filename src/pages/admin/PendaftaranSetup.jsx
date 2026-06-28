@@ -833,7 +833,7 @@ export default function PendaftaranSetup() {
   const ctx      = getKejContext()
   const schoolId = ctx.schoolId || ''
   const kejId    = ctx.id       || ''
-  const namaKej  = ctx.nama     || ''
+  const namaKej  = ctx.namaKejohanan || ctx.nama || ''
 
   const [tab,          setTab]          = useState(0)
   const [kategoriList, setKategoriList] = useState([])

@@ -2721,7 +2721,7 @@ export default function AcaraSetup() {
   const ctx      = getKejContext()
   const schoolId = ctx.schoolId || ''
   const kejId    = ctx.id       || ''
-  const namaKej  = ctx.nama     || ''
+  const namaKej  = ctx.namaKejohanan || ctx.nama || ''
 
   // Guard — jika tiada konteks
   if (!schoolId || !kejId) {

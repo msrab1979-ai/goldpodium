@@ -1029,7 +1029,7 @@ export default function KategoriSetup() {
           </button>
           <div>
             <h1 className="text-lg font-bold text-gray-900">Setup Kategori</h1>
-            <p className="text-xs text-gray-400 mt-0.5">{ctx.nama || 'Kejohanan'} · Standard MSSD / MSSM</p>
+            <p className="text-xs text-gray-400 mt-0.5">{ctx.namaKejohanan || ctx.nama || 'Kejohanan'} · Standard MSSD / MSSM</p>
           </div>
         </div>
         {activeTab === 'kategori' && (

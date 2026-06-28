@@ -728,7 +728,7 @@ export default function InputKeputusan() {
         <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3 shadow-sm flex items-center gap-3">
           <div className="w-9 h-9 bg-green-100 rounded-xl flex items-center justify-center text-lg shrink-0">⏱️</div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-gray-800 truncate">{kej.nama || 'Kejohanan'}</p>
+            <p className="text-xs font-bold text-gray-800 truncate">{kej.namaKejohanan || kej.nama || 'Kejohanan'}</p>
             <p className="text-[10px] text-gray-400">Pilih acara → pilih heat → input keputusan</p>
           </div>
           <span className="shrink-0 text-[10px] font-bold text-[#003399] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">

@@ -58,7 +58,7 @@ export default function KejohananDetail() {
         if (snap.exists()) {
           const data = { id: snap.id, ...snap.data() }
           setKej(data)
-          sessionStorage.setItem('gp_kej_aktif', JSON.stringify({ id: data.id, nama: data.nama, schoolId }))
+          sessionStorage.setItem('gp_kej_aktif', JSON.stringify({ id: data.id, namaKejohanan: data.namaKejohanan, schoolId }))
         }
       })
       .catch(() => { /* langkau */ })
@@ -115,7 +115,7 @@ export default function KejohananDetail() {
           </div>
           <div className="min-w-0">
             <p className="text-[9px] text-white/50 uppercase tracking-widest">Gold Podium</p>
-            <p className="text-sm font-bold leading-tight truncate">{kej?.nama || 'Kejohanan'}</p>
+            <p className="text-sm font-bold leading-tight truncate">{kej?.namaKejohanan || 'Kejohanan'}</p>
           </div>
         </div>
         <button onClick={async () => { await logout(); navigate('/login') }}
@@ -131,11 +131,11 @@ export default function KejohananDetail() {
         <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-2 ${STATUS_WARNA[kej?.status] || STATUS_WARNA.draf}`}>
-                {kej?.status === 'aktif' && <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full mr-1 animate-pulse" />}
-                {STATUS_LABEL[kej?.status] || 'Draf'}
+              <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-2 ${STATUS_WARNA[kej?.statusKejohanan] || STATUS_WARNA.draf}`}>
+                {kej?.statusKejohanan === 'aktif' && <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full mr-1 animate-pulse" />}
+                {STATUS_LABEL[kej?.statusKejohanan] || 'Draf'}
               </span>
-              <h1 className="text-lg font-black text-gray-900">{kej?.nama || '—'}</h1>
+              <h1 className="text-lg font-black text-gray-900">{kej?.namaKejohanan || '—'}</h1>
               <div className="flex flex-wrap gap-3 mt-2">
                 {kej?.lokasi && (
                   <span className="text-xs text-gray-500 flex items-center gap-1">

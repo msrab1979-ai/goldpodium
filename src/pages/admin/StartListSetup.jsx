@@ -641,7 +641,7 @@ export default function StartListSetup() {
   const ctx      = getKejContext()
   const schoolId = ctx.schoolId || ''
   const kejId    = ctx.id       || ''
-  const namaKej  = ctx.nama     || ''
+  const namaKej  = ctx.namaKejohanan || ctx.nama || ''
 
   const [acaraList,      setAcaraList]      = useState([])
   const [kategoriList,   setKategoriList]   = useState([])

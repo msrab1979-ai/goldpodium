@@ -27,7 +27,7 @@ const STATUS_WARNA = {
 function ModalBuatKejohanan({ schoolId, onTutup, onBerjaya }) {
   const HARI_INI = new Date().toISOString().split('T')[0]
   const [borang, setBorang] = useState({
-    nama: '', lokasi: '', tarikhMula: HARI_INI, tarikhTamat: HARI_INI,
+    namaKejohanan: '', lokasi: '', tarikhMula: HARI_INI, tarikhTamat: HARI_INI,
   })
   const [muatTurun, setMuatTurun] = useState(false)
   const [ralat, setRalat] = useState('')
@@ -36,7 +36,7 @@ function ModalBuatKejohanan({ schoolId, onTutup, onBerjaya }) {
 
   async function handleHantar(e) {
     e.preventDefault()
-    if (!borang.nama.trim())   return setRalat('Nama kejohanan diperlukan.')
+    if (!borang.namaKejohanan.trim()) return setRalat('Nama kejohanan diperlukan.')
     if (!borang.lokasi.trim()) return setRalat('Lokasi diperlukan.')
     if (borang.tarikhTamat < borang.tarikhMula) return setRalat('Tarikh tamat mesti selepas tarikh mula.')
 
@@ -45,13 +45,13 @@ function ModalBuatKejohanan({ schoolId, onTutup, onBerjaya }) {
       const id = `kej_${Date.now()}`
       await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', id), {
         id,
-        nama:        borang.nama.trim(),
-        lokasi:      borang.lokasi.trim(),
-        tarikhMula:  borang.tarikhMula,
-        tarikhTamat: borang.tarikhTamat,
-        status:      'draf',
+        namaKejohanan:  borang.namaKejohanan.trim(),
+        lokasi:         borang.lokasi.trim(),
+        tarikhMula:     borang.tarikhMula,
+        tarikhTamat:    borang.tarikhTamat,
+        statusKejohanan: 'draf',
         schoolId,
-        createdAt:   serverTimestamp(),
+        createdAt:      serverTimestamp(),
       })
       onBerjaya()
       onTutup()
@@ -80,7 +80,7 @@ function ModalBuatKejohanan({ schoolId, onTutup, onBerjaya }) {
 
           <div>
             <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Nama Kejohanan</label>
-            <input type="text" value={borang.nama} onChange={e => set('nama', e.target.value)}
+            <input type="text" value={borang.namaKejohanan} onChange={e => set('namaKejohanan', e.target.value)}
               required autoFocus placeholder="MSSD Kemaman 2026"
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50" />
           </div>
@@ -141,16 +141,16 @@ function KadKejohanan({ kej, onPilih, onTukarStatus }) {
 
   return (
     <div className={`bg-white border-2 rounded-2xl p-5 hover:shadow-md transition-all ${
-      kej.status === 'aktif' ? 'border-green-300' : kej.status === 'draf' ? 'border-yellow-200' : 'border-gray-100'
+      kej.statusKejohanan === 'aktif' ? 'border-green-300' : kej.statusKejohanan === 'draf' ? 'border-yellow-200' : 'border-gray-100'
     }`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
-          <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border mb-1.5 ${STATUS_WARNA[kej.status] || STATUS_WARNA.draf}`}>
-            {kej.status === 'aktif' && <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1 animate-pulse" />}
-            {STATUS_LABEL[kej.status] || 'Draf'}
+          <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border mb-1.5 ${STATUS_WARNA[kej.statusKejohanan] || STATUS_WARNA.draf}`}>
+            {kej.statusKejohanan === 'aktif' && <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1 animate-pulse" />}
+            {STATUS_LABEL[kej.statusKejohanan] || 'Draf'}
           </span>
-          <h3 className="text-sm font-bold text-gray-900 leading-tight truncate">{kej.nama}</h3>
+          <h3 className="text-sm font-bold text-gray-900 leading-tight truncate">{kej.namaKejohanan}</h3>
         </div>
       </div>
 
@@ -173,13 +173,13 @@ function KadKejohanan({ kej, onPilih, onTukarStatus }) {
           {Ikon.masuk} Urus Kejohanan
         </button>
 
-        {kej.status === 'draf' && (
+        {kej.statusKejohanan === 'draf' && (
           <button onClick={() => handleTukarStatus('aktif')} disabled={muatTurun}
             className="px-3 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50">
             Aktif
           </button>
         )}
-        {kej.status === 'aktif' && (
+        {kej.statusKejohanan === 'aktif' && (
           <button onClick={() => handleTukarStatus('selesai')} disabled={muatTurun}
             className="px-3 bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50">
             Tamat
@@ -227,21 +227,20 @@ export default function AdminDashboard() {
   async function handleTukarStatus(kejId, status) {
     try {
       await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId), {
-        status, updatedAt: serverTimestamp()
+        statusKejohanan: status, updatedAt: serverTimestamp()
       })
-      setKejohanan(list => list.map(k => k.id === kejId ? { ...k, status } : k))
+      setKejohanan(list => list.map(k => k.id === kejId ? { ...k, statusKejohanan: status } : k))
     } catch { /* langkau */ }
   }
 
   function handlePilihKejohanan(kej) {
-    // Simpan kejohanan aktif dalam sessionStorage untuk digunakan dalam modul lain
-    sessionStorage.setItem('gp_kej_aktif', JSON.stringify({ id: kej.id, nama: kej.nama, schoolId }))
+    sessionStorage.setItem('gp_kej_aktif', JSON.stringify({ id: kej.id, namaKejohanan: kej.namaKejohanan, schoolId }))
     navigate(`/admin/kejohanan/${kej.id}`)
   }
 
-  const aktif   = kejohanan.filter(k => k.status === 'aktif')
-  const draf    = kejohanan.filter(k => k.status === 'draf')
-  const selesai = kejohanan.filter(k => k.status === 'selesai')
+  const aktif   = kejohanan.filter(k => k.statusKejohanan === 'aktif')
+  const draf    = kejohanan.filter(k => k.statusKejohanan === 'draf')
+  const selesai = kejohanan.filter(k => k.statusKejohanan === 'selesai')
 
   return (
     <div className="min-h-screen bg-gray-50">
