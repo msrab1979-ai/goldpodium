@@ -38,7 +38,7 @@ async function janaSheetExcel(schoolId, addLog) {
   if (!schoolId) throw new Error('schoolId tidak dijumpai — sila log masuk semula.')
   // 1. Kejohanan aktif
   addLog('Mencari kejohanan aktif...')
-  const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+  const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
   if (kejSnap.empty) throw new Error('Tiada kejohanan aktif.')
   const kej = { id: kejSnap.docs[0].id, ...kejSnap.docs[0].data() }
   const namaKej = kej.namaKejohanan || kej.id

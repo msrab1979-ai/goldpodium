@@ -259,7 +259,7 @@ export default function MedalTally() {
   // ── Load kejohanan aktif ───────────────────────────────────────────────────
   useEffect(() => {
     if (!schoolId) return
-    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]

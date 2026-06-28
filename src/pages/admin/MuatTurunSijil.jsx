@@ -73,7 +73,7 @@ export default function MuatTurunSijil() {
 
       // Kejohanan aktif
       const kejSnap = await getDocs(
-        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))
       )
       if (kejSnap.empty) {
         setErrInit('Tiada kejohanan aktif pada masa ini.')

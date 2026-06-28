@@ -422,7 +422,7 @@ export default function HealthCheck() {
   const [fixing, setFixing]           = useState(false)
 
   async function getKejId() {
-    const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+    const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
     if (kejSnap.empty) throw new Error('Tiada kejohanan aktif.')
     return kejSnap.docs[0].id
   }
@@ -802,7 +802,7 @@ export default function HealthCheck() {
     try {
       // ── 0. Cari kejohanan aktif ──────────────────────────────────────────────
       const kejSnap = await getDocs(
-        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))
       )
       if (kejSnap.empty) {
         setResult({ error: 'Tiada kejohanan aktif ditemui.' })

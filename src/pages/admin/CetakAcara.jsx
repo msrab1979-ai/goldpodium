@@ -494,7 +494,7 @@ export default function CetakAcara() {
     if (!schoolId) return
     Promise.all([
       getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
-      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan']))),
+      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))),
     ]).then(([cfgSnap, kejSnap]) => {
       if (cfgSnap.exists()) setCfg(cfgSnap.data())
       if (!kejSnap.empty) {

@@ -1695,7 +1695,7 @@ export default function StartList() {
   // Fetch kejohanan aktif
   useEffect(() => {
     if (!schoolId) return
-    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]

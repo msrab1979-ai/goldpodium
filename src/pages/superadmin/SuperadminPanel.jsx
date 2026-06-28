@@ -472,7 +472,7 @@ export default function SuperadminPanel() {
           const batch = writeBatch(db)
           snap.docs.forEach(d => batch.delete(d.ref))
           if (snap.docs.length > 0) await batch.commit()
-        } catch { /* subcollection mungkin kosong */ }
+        } catch (colErr) { console.warn(`Skip subcol ${col}:`, colErr?.message) }
       }
       await deleteDoc(doc(db, 'tenants', sid))
       if (s.slug) await deleteDoc(doc(db, 'slugIndex', s.slug)).catch(() => {})
@@ -482,7 +482,7 @@ export default function SuperadminPanel() {
       if (emelAdmin) {
         alert(`✅ Data Firestore "${s.namaSekolah}" berjaya dipadam.\n\n⚠️ LANGKAH TAMBAHAN:\nAkaun Firebase Auth masih wujud.\nSila padam akaun ini dari Firebase Console:\n\n📧 ${emelAdmin}\n\n(Console → Authentication → cari emel → padam)`)
       }
-    } catch { alert('Gagal padam. Sila cuba semula.') }
+    } catch (err) { console.error('padamSekolah error:', err); alert('Gagal padam: ' + (err?.message || err)) }
     setMuatTurunTindakan(null)
   }
 

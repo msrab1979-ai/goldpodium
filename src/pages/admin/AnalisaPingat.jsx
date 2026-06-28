@@ -67,7 +67,7 @@ export default function AnalisaPingat() {
       setError('')
       try {
         // 1. Kejohanan aktif
-        const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+        const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
         if (kejSnap.empty) { setError('Tiada kejohanan aktif.'); setLoading(false); return }
         const kej   = kejSnap.docs[0]
         const kejId = kej.id
@@ -214,7 +214,7 @@ export default function AnalisaPingat() {
     setAuditLoading(true)
     setAuditResult(null)
     try {
-      const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+      const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
       if (kejSnap.empty) return
       const kejId = kejSnap.docs[0].id
 

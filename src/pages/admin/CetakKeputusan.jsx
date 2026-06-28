@@ -104,7 +104,7 @@ export default function CetakKeputusan() {
       try {
         const [cfgSnap, kejSnap] = await Promise.all([
           getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
-          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan']))),
+          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))),
         ])
         const cfgData = cfgSnap.exists() ? cfgSnap.data() : {}
         setCfg(cfgData)

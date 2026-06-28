@@ -892,7 +892,7 @@ export default function AnalisisPendaftaran() {
       try {
         // 1. Kejohanan aktif
         const kejSnap = await getDocs(
-          query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+          query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))
         )
         if (cancelled) return
         if (kejSnap.empty) { setErr('Tiada kejohanan aktif.'); setLoading(false); return }

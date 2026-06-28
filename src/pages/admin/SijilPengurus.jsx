@@ -61,7 +61,7 @@ export default function SijilPengurus() {
 
       // 2. Cari kejohanan aktif
       const kejSnap = await getDocs(
-        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))
       )
       if (kejSnap.empty) {
         setErr('Tiada kejohanan aktif pada masa ini.')

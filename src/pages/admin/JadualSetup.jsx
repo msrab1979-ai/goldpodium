@@ -793,7 +793,7 @@ export default function JadualSetup() {
   // ── Load kejohanan aktif + showJadual ─────────────────────────────────────
   useEffect(() => {
     if (!schoolId) return
-    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan', 'draf'])))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]

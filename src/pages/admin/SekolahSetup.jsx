@@ -1067,7 +1067,7 @@ export default function SekolahSetup() {
     try {
       // Cari kejohanan aktif
       const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'),
-        where('statusKejohanan', 'in', ['aktif', 'persediaan'])))
+        where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
       if (kejSnap.empty) { setAcaraHeat([]); return }
       const kejId = kejSnap.docs[0].id
       // Ambil semua acara yang ada heatDijanaAt

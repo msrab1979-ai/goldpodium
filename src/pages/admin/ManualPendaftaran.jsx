@@ -94,7 +94,7 @@ export default function ManualPendaftaran() {
         // Kejohanan aktif — untuk nama & tahun
         const kejSnap = await getDocs(query(
           collection(db, 'tenants', schoolId, 'kejohanan'),
-          where('statusKejohanan', '==', 'aktif')
+          where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])
         ))
         let kejId = null
         if (!kejSnap.empty) {

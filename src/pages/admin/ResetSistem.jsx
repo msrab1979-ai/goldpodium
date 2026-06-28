@@ -231,7 +231,7 @@ export default function ResetSistem() {
     async function init() {
       setLoading(true)
       try {
-        const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+        const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
         if (!snap.empty) {
           const d = snap.docs[0]
           setKejId(d.id)

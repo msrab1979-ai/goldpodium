@@ -938,7 +938,7 @@ export default function Rekod() {
     // rekod library + kejohanan aktif
     const [rekodSnap, kejSnap] = await Promise.allSettled([
       getDocs(collection(db, 'tenants', schoolId, 'rekod')),
-      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))),
+      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))),
     ])
     if (rekodSnap.status === 'fulfilled') {
       const allRekod = rekodSnap.value.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -1349,7 +1349,7 @@ export default function Rekod() {
     let kemaskini = 0, skip = 0
     try {
       // 1. Ambil kejohananId aktif
-      const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
+      const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))
       if (kejSnap.empty) { setRefreshResult({ err: 'Tiada kejohanan aktif.' }); return }
       const kejId = kejSnap.docs[0].data().kejohananId || kejSnap.docs[0].id
 
