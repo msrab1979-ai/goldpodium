@@ -2977,6 +2977,7 @@ export default function AcaraSetup() {
             { key: 'semak', label: 'Semak Acara' },
             { key: 'slot',  label: 'Slot Khas' },
             { key: 'final', label: 'Tetapan Final' },
+            { key: 'lorong', label: 'Setup Lorong dan Heat' },
           ].map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
               className={`px-5 py-2.5 font-semibold transition-colors border-r border-gray-200 last:border-r-0 ${
@@ -3033,9 +3034,13 @@ export default function AcaraSetup() {
         <TetapanFinal kategoriList={kategoriList} schoolId={schoolId} kejId={kejId} />
       )}
 
+      {/* Tab: Setup Lorong dan Heat */}
+      {selectedKej && activeTab === 'lorong' && (
+        <WaConfigPanel schoolId={schoolId} kejId={kejId} />
+      )}
+
       {selectedKej && activeTab === 'setup' && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
-        <div className="space-y-4">
+        <>
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
@@ -3448,13 +3453,7 @@ export default function AcaraSetup() {
 
           {/* Had Peserta Bundle */}
           <HadPesertaPanel acaraList={acaraList} schoolId={schoolId} kejId={kejId} onRefresh={fetchAcara} kategoriList={kategoriList} />
-        </div>
-
-        {/* Kanan: Setup Lorong dan Heat */}
-        <div className="lg:sticky lg:top-6">
-          <WaConfigPanel schoolId={schoolId} kejId={kejId} />
-        </div>
-        </div>
+        </>
       )}
 
 
