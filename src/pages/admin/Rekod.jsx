@@ -907,8 +907,8 @@ export default function Rekod() {
     : null
   const schoolId = viewSchoolId || userData?.schoolId || ''
 
-  const canEdit   = ['superadmin', 'pengurus_teknik'].includes(userRole)
-  const canSahkan = ['superadmin', 'pengurus_teknik'].includes(userRole)
+  const canEdit   = ['superadmin', 'admin'].includes(userRole)
+  const canSahkan = ['superadmin', 'admin'].includes(userRole)
 
   const [rekodList,    setRekodList]    = useState([])
   const [tuntutanList, setTuntutanList] = useState([])

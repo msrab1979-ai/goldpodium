@@ -677,7 +677,7 @@ export default function PencatatInputKeputusan() {
   const { kejId }    = useParams()
   const schoolId     = userData?.schoolId || ''
 
-  const bolehEdit = ['teacher', 'pencatat', 'admin', 'superadmin'].includes(userData?.role)
+  const bolehEdit = ['teacher', 'pencatat', 'pengurus_teknik', 'urusetia', 'admin', 'superadmin'].includes(userData?.role)
 
   const [step, setStep]         = useState('home') // 'home' | 'input'
   const [search, setSearch]     = useState('')

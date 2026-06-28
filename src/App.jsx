@@ -77,7 +77,7 @@ function RequireAuth({ children, roles }) {
   if (mustChangePassword) return <Navigate to="/tukar-password" replace />
 
   if (roles && !roles.includes(userRole)) {
-    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard', pencatat: '/dashboard', pengurus: '/pengurus/dashboard' }[userRole] || '/login'
+    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard', pencatat: '/dashboard', pengurus_teknik: '/dashboard', urusetia: '/dashboard', pengurus: '/pengurus/dashboard' }[userRole] || '/login'
     return <Navigate to={dest} replace />
   }
 
@@ -333,12 +333,12 @@ function AppRoutes() {
 
         {/* Pencatat (teacher role) */}
         <Route path="/dashboard" element={
-          <RequireAuth roles={['teacher', 'pencatat']}>
+          <RequireAuth roles={['teacher', 'pencatat', 'pengurus_teknik', 'urusetia']}>
             <PencatatDashboard />
           </RequireAuth>
         } />
         <Route path="/dashboard/kejohanan/:kejId/keputusan" element={
-          <RequireAuth roles={['teacher', 'pencatat']}>
+          <RequireAuth roles={['teacher', 'pencatat', 'pengurus_teknik', 'urusetia']}>
             <PencatatInput />
           </RequireAuth>
         } />

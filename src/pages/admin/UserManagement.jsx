@@ -12,10 +12,8 @@ import { hashPin } from '../../utils/hashPin'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ROLES = [
-  { value: 'pencatat',        label: 'Pencatat',         badge: 'bg-purple-100 text-purple-800' },
-  { value: 'urusetia',        label: 'Urusetia',          badge: 'bg-teal-100 text-teal-800'   },
-  { value: 'pengurus_teknik', label: 'Pengurus Teknik',   badge: 'bg-orange-100 text-orange-800' },
-  { value: 'admin',           label: 'Admin',             badge: 'bg-blue-100 text-blue-800'   },
+  { value: 'pencatat', label: 'Pencatat', badge: 'bg-purple-100 text-purple-800' },
+  { value: 'admin',    label: 'Admin',    badge: 'bg-blue-100 text-blue-800'   },
 ]
 
 const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.value, r.label]))
