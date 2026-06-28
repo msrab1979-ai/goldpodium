@@ -362,7 +362,7 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
                 </label>
                 <p className="text-[10px] text-gray-400 mb-1.5">Klik untuk pilih, atau taip nilai baharu di bawah:</p>
                 <div className="flex flex-wrap gap-1.5 mb-2">
-                  {[...new Set([...JENIS_DEFAULTS, ...jenisValues])].map(j => (
+                  {[...new Set([...jenisValues])].map(j => (
                     <button
                       key={j}
                       type="button"
@@ -613,7 +613,7 @@ const SIFIR_STANDARD = [
   { heat: 6, bh: 1, bt: 2 },
 ]
 
-function TetapanFinal({ kategoriList, schoolId, kejId }) {
+export function TetapanFinal({ kategoriList, schoolId, kejId }) {
   const [loading,      setLoading]      = useState(true)
   const [saving,       setSaving]       = useState(false)
   const [saved,        setSaved]        = useState(false)
@@ -946,7 +946,18 @@ export default function KategoriSetup() {
   const [delTarget, setDelTarget] = useState(null)
   const [filterJenis, setFilterJenis] = useState('semua')
   const [activeTab, setActiveTab] = useState('kategori')
+  const [jenisList, setJenisList] = useState([])
   const tahun = new Date().getFullYear()
+
+  useEffect(() => {
+    if (!schoolId) return
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'))
+      .then(s => {
+        if (s.exists() && (s.data().list || []).length > 0) setJenisList(s.data().list)
+        else setJenisList(['SR', 'SM', 'PPKI'])
+      })
+      .catch(() => setJenisList(['SR', 'SM', 'PPKI']))
+  }, [schoolId])
 
   if (!schoolId || !kejId) {
     return (
@@ -985,10 +996,10 @@ export default function KategoriSetup() {
 
   const jenisValues = [
     ...new Set([
-      ...JENIS_DEFAULTS,
+      ...jenisList,
       ...list.map(k => k.jenisSekolah).filter(Boolean),
     ])
-  ].sort()
+  ]
 
   const JENIS_LABELS = {
     SR:   'Sekolah Rendah (SR)',

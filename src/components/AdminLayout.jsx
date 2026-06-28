@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { db } from '../firebase/config'
 
 const NAV = [
   {
@@ -8,13 +10,14 @@ const NAV = [
     items: [
       { label: 'Dashboard',       icon: '🏠', path: '/admin' },
       { label: 'Kejohanan',       icon: '🏆', path: '/admin/kejohanan-setup' },
-      { label: 'Acara & Jadual',  icon: '📅', path: '/admin/jadual' },
     ],
   },
   {
     label: 'Pengurusan',
     items: [
-      { label: 'Setup Kategori', icon: '🏫', path: '/admin/sekolah' },
+      { label: 'Daftar Sekolah', icon: '🏫', path: '/admin/sekolah' },
+      { label: 'Setup Kategori', icon: '🏷️', path: '/admin/kategori' },
+      { label: 'Acara & Jadual',  icon: '📅', path: '/admin/jadual' },
       { label: 'Pengguna',     icon: '👤', path: '/admin/pengguna' },
       { label: 'Pendaftaran',  icon: '📝', path: '/admin/analisis-pendaftaran' },
       { label: 'Rekod',        icon: '🎖️', path: '/admin/rekod' },
@@ -58,18 +61,37 @@ export default function AdminLayout({ children }) {
   function isActive(path) {
     if (path === '/admin') return location.pathname === '/admin'
     if (path === '/admin/jadual') return location.pathname.includes('/acara') || location.pathname === '/admin/jadual'
+    if (path === '/admin/kategori') return location.pathname.includes('/kategori')
     return location.pathname.startsWith(path)
   }
 
+  async function navKejohanan(subpath) {
+    try {
+      const kej = JSON.parse(sessionStorage.getItem('gp_kej_aktif') || '{}')
+      if (kej.id) { navigate(`/admin/kejohanan/${kej.id}/${subpath}`); return }
+    } catch { /* langkau */ }
+    // sessionStorage kosong — fetch terus dari Firestore
+    const schoolId = userData?.schoolId || ''
+    if (!schoolId) { navigate('/admin/kejohanan-setup'); return }
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'tenants', schoolId, 'kejohanan'),
+        where('statusKejohanan', 'in', ['aktif', 'persediaan', 'draf'])
+      ))
+      if (!snap.empty) {
+        const d = snap.docs[0]
+        const kej = { id: d.id, namaKejohanan: d.data().namaKejohanan || '', schoolId }
+        sessionStorage.setItem('gp_kej_aktif', JSON.stringify(kej))
+        navigate(`/admin/kejohanan/${d.id}/${subpath}`)
+      } else {
+        navigate('/admin/kejohanan-setup')
+      }
+    } catch { navigate('/admin/kejohanan-setup') }
+  }
+
   function handleNav(path) {
-    if (path === '/admin/jadual') {
-      try {
-        const kej = JSON.parse(sessionStorage.getItem('gp_kej_aktif') || '{}')
-        if (kej.id) { navigate(`/admin/kejohanan/${kej.id}/acara`); return }
-      } catch { /* langkau */ }
-      navigate('/admin/kejohanan-setup')
-      return
-    }
+    if (path === '/admin/jadual')    { navKejohanan('acara');    return }
+    if (path === '/admin/kategori')  { navKejohanan('kategori'); return }
     navigate(path)
   }
 

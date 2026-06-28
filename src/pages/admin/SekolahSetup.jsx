@@ -40,7 +40,7 @@ function previewBib(prefix, mula, format) {
 }
 
 const EMPTY_FORM = {
-  kodSekolah: '', namaSekolah: '', kategori: '', negeri: 'Terengganu',
+  kodSekolah: '', namaSekolah: '', kategori: 'SR', negeri: 'Terengganu',
   daerah: 'Kemaman', email: '', bibPrefix: '', bibMula: 1, bibFormat: 3, pin: '', isAktif: true,
 }
 
@@ -1064,7 +1064,7 @@ export default function SekolahSetup() {
   const [katFil,  setKatFil]  = useState('SEMUA')
   const [bibResult, setBibResult] = useState(null)  // { kodSekolah, namaAtlet, noBib } | 'tiada' | null
   const [bibSearching, setBibSearching] = useState(false)
-  const [jenisList, setJenisList] = useState(KATEGORI_LIST_FALLBACK)
+  const [jenisList, setJenisList] = useState(['SR', 'SM', 'PPKI'])
 
   // Modals
   const [modal,      setModal]      = useState(null)  // 'tambah' | 'edit' | 'resetPin' | 'toggleAktif' | 'padam'
@@ -1090,9 +1090,9 @@ export default function SekolahSetup() {
     if (!schoolId) return
     try {
       const snap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'))
-      if (snap.exists()) setJenisList(snap.data().list || [])
-      else setJenisList([])
-    } catch { setJenisList([]) }
+      if (snap.exists() && (snap.data().list || []).length > 0) setJenisList(snap.data().list)
+      else setJenisList(['SR', 'SM', 'PPKI'])
+    } catch { setJenisList(['SR', 'SM', 'PPKI']) }
   }
 
   useEffect(() => { fetchJenisList() }, [schoolId])
@@ -1284,15 +1284,13 @@ export default function SekolahSetup() {
             {list.filter(s => s.isAktif).length} aktif
           </p>
         </div>
-        {isSuperAdmin && (
-          <button onClick={() => setModal('tambah')}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#003399] hover:bg-[#002277] text-white text-sm font-semibold rounded-lg transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Tambah Sekolah
-          </button>
-        )}
+        <button onClick={() => setModal('tambah')}
+          className="flex items-center gap-1.5 px-4 py-2 bg-[#003399] hover:bg-[#002277] text-white text-sm font-semibold rounded-lg transition-colors">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Tambah Sekolah
+        </button>
       </div>
 
       {/* Panel Jenis Sekolah Dinamik */}
@@ -1438,8 +1436,7 @@ export default function SekolahSetup() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1.5 justify-end">
-                        {isSuperAdmin && (
-                          <>
+                        <>
                             <button onClick={() => { setSelected(s); setModal('edit') }}
                               className="px-2.5 py-1.5 text-[10px] font-semibold border border-gray-200 rounded text-gray-600 hover:bg-gray-50 transition-colors">
                               Edit
@@ -1490,7 +1487,6 @@ export default function SekolahSetup() {
                               Padam
                             </button>
                           </>
-                        )}
                       </div>
                     </td>
                   </tr>

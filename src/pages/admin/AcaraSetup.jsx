@@ -25,6 +25,7 @@ import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { TetapanFinal } from './KategoriSetup'
 
 // ─── Gold Podium helpers ──────────────────────────────────────────────────────
 
@@ -2975,6 +2976,7 @@ export default function AcaraSetup() {
             { key: 'setup', label: 'Urus Acara' },
             { key: 'semak', label: 'Semak Acara' },
             { key: 'slot',  label: 'Slot Khas' },
+            { key: 'final', label: 'Tetapan Final' },
           ].map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
               className={`px-5 py-2.5 font-semibold transition-colors border-r border-gray-200 last:border-r-0 ${
@@ -3024,6 +3026,11 @@ export default function AcaraSetup() {
             )
           })()}
         </div>
+      )}
+
+      {/* Tab: Tetapan Final */}
+      {selectedKej && activeTab === 'final' && (
+        <TetapanFinal kategoriList={kategoriList} schoolId={schoolId} kejId={kejId} />
       )}
 
       {selectedKej && activeTab === 'setup' && (
