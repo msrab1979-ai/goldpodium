@@ -39,13 +39,6 @@ service cloud.firestore {
       return isSuperadmin() || (isAdmin() && isMySchool(schoolId));
     }
 
-    // Teacher boleh tulis heat (input keputusan) untuk sekolah sendiri
-    function canWriteHeat(schoolId) {
-      return isSuperadmin()
-        || (isAdmin() && isMySchool(schoolId))
-        || (isTeacher() && isMySchool(schoolId));
-    }
-
     // Admin/teacher/superadmin untuk sekolah ini (baca sahaja)
     function canReadSchool(schoolId) {
       return isSuperadmin()
@@ -196,9 +189,13 @@ service cloud.firestore {
       allow write: if canAccessSchool(schoolId);
     }
 
-    // ── Users per-tenant (pencatat, urusetia, dll) — PDPA, admin sahaja ──────
+    // ── Users per-tenant (pencatat, dll) ─────────────────────────────────────
+    // Read: allow true — diperlukan untuk loginPencatat() yang query by kodAkses
+    // tanpa Firebase Auth. Data: nama, kodAkses, pinHash, role — bukan data PDPA kritikal.
+    // noKP/ic TIDAK disimpan dalam users doc.
+    // Write: admin/superadmin sahaja.
     match /tenants/{schoolId}/users/{uid} {
-      allow read:  if canReadSchool(schoolId);
+      allow read:  if true;
       allow write: if canAccessSchool(schoolId);
     }
 
