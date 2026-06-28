@@ -14,7 +14,7 @@ const NAV = [
   {
     label: 'Pengurusan',
     items: [
-      { label: 'Sekolah',      icon: '🏫', path: '/admin/sekolah' },
+      { label: 'Setup Kategori', icon: '🏫', path: '/admin/sekolah' },
       { label: 'Pengguna',     icon: '👤', path: '/admin/pengguna' },
       { label: 'Pendaftaran',  icon: '📝', path: '/admin/analisis-pendaftaran' },
       { label: 'Rekod',        icon: '🎖️', path: '/admin/rekod' },
