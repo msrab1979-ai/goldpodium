@@ -790,15 +790,18 @@ export default function JadualSetup() {
   const [padananData,   setPadananData]   = useState(null) // { missing, orphan }
   const [showPadanan,   setShowPadanan]   = useState(false)
 
-  // ── Load kejohanan aktif + showJadual ─────────────────────────────────────
+  // ── Load kejohanan aktif — redirect terus ke AcaraSetup ──────────────────
   useEffect(() => {
     if (!schoolId) return
     getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'persediaan', 'draf'])))
       .then(snap => {
         if (!snap.empty) {
           const d = snap.docs[0]
+          const kej = { id: d.id, namaKejohanan: d.data().namaKejohanan || '', schoolId }
+          sessionStorage.setItem('gp_kej_aktif', JSON.stringify(kej))
           setSelectedKej(d.id)
           setNamaKej(d.data().namaKejohanan || '')
+          navigate(`/admin/kejohanan/${d.id}/acara`, { replace: true })
         }
       }).catch(console.error)
 
