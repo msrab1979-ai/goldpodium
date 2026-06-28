@@ -186,6 +186,17 @@ service cloud.firestore {
       allow write: if canAccessSchool(schoolId);
     }
 
+    // ── Users per-tenant (pencatat, urusetia, dll) — PDPA, admin sahaja ──────
+    match /tenants/{schoolId}/users/{uid} {
+      allow read:  if canReadSchool(schoolId);
+      allow write: if canAccessSchool(schoolId);
+    }
+
+    // ── Login attempts per-tenant — tulis tanpa auth (proses login) ──────────
+    match /tenants/{schoolId}/login_attempts/{docId} {
+      allow read, write: if true;
+    }
+
     // Wildcard untuk semua lain dalam tenant (selamat, ikut sekolah)
     match /tenants/{schoolId}/{path=**} {
       allow read:  if canReadSchool(schoolId);

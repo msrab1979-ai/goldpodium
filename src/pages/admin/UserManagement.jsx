@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   collection, getDocs, doc, addDoc, updateDoc, deleteDoc, deleteField, setDoc,
   serverTimestamp, query, orderBy,
@@ -54,7 +55,7 @@ function StatusBadge({ isAktif }) {
 
 // ─── Modal Tambah / Edit ──────────────────────────────────────────────────────
 
-function UserModal({ mode, initial, onClose, onSaved }) {
+function UserModal({ mode, initial, onClose, onSaved, schoolId }) {
   const { userData } = useAuth()
   const [form,   setForm]   = useState(initial)
   const [saving, setSaving] = useState(false)
@@ -99,10 +100,10 @@ function UserModal({ mode, initial, onClose, onSaved }) {
           updateData.pinHash = ph
           updateData.pin     = deleteField()
         }
-        await updateDoc(doc(db, 'users', initial.uid), updateData)
+        await updateDoc(doc(db, 'tenants', schoolId, 'users', initial.uid), updateData)
       } else {
         const ph = await hashPin(form.pin)
-        await addDoc(collection(db, 'users'), {
+        await addDoc(collection(db, 'tenants', schoolId, 'users'), {
           nama:      form.nama.trim(),
           email:     form.email.trim().toLowerCase(),
           kodAkses:  form.kodAkses.trim().toUpperCase(),
@@ -252,15 +253,23 @@ export default function UserManagement() {
   const [toggling,      setToggling]      = useState(null)
   const [deleting,      setDeleting]      = useState(null)
   const [confirmDel,    setConfirmDel]    = useState(null)
-  const [resetPin,      setResetPin]      = useState(null) // { uid, nama, newPin }
+  const [resetPin,      setResetPin]      = useState(null)
   const [resettingAttempt, setResettingAttempt] = useState(null)
 
   const { userData: currentUser } = useAuth()
+  const navigate = useNavigate()
+
+  const isSuperadmin = currentUser?.role === 'superadmin'
+  const viewSchoolId = isSuperadmin
+    ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
+    : null
+  const schoolId = viewSchoolId || currentUser?.schoolId || ''
 
   const fetchUsers = useCallback(async () => {
+    if (!schoolId) return
     setLoading(true)
     try {
-      const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
+      const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'users'), orderBy('createdAt', 'desc')))
       setUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() })))
     } catch {
       setUsers([])
@@ -269,13 +278,13 @@ export default function UserManagement() {
     }
   }, [])
 
-  useEffect(() => { fetchUsers() }, [fetchUsers])
+  useEffect(() => { fetchUsers() }, [fetchUsers, schoolId])
 
   async function toggleAktif(u) {
     setToggling(u.uid)
     try {
       const next = u.isAktif === false
-      await updateDoc(doc(db, 'users', u.uid), { isAktif: next, updatedAt: serverTimestamp() })
+      await updateDoc(doc(db, 'tenants', schoolId, 'users', u.uid), { isAktif: next, updatedAt: serverTimestamp() })
       setUsers(prev => prev.map(x => x.uid === u.uid ? { ...x, isAktif: next } : x))
     } finally {
       setToggling(null)
@@ -286,7 +295,7 @@ export default function UserManagement() {
     setConfirmDel(null)
     setDeleting(u.uid)
     try {
-      await deleteDoc(doc(db, 'users', u.uid))
+      await deleteDoc(doc(db, 'tenants', schoolId, 'users', u.uid))
       setUsers(prev => prev.filter(x => x.uid !== u.uid))
     } finally {
       setDeleting(null)
@@ -300,7 +309,7 @@ export default function UserManagement() {
   async function resetCubaan(u) {
     setResettingAttempt(u.uid)
     try {
-      await setDoc(doc(db, 'login_attempts', `user_${u.kodAkses}`), {
+      await setDoc(doc(db, 'tenants', schoolId, 'login_attempts', `user_${u.kodAkses}`), {
         attempts: 0, lockedUntil: null, lastAttempt: serverTimestamp(),
       })
     } finally {
@@ -311,7 +320,7 @@ export default function UserManagement() {
   async function confirmResetPin() {
     if (!resetPin) return
     const ph = await hashPin(resetPin.newPin)
-    await updateDoc(doc(db, 'users', resetPin.uid), {
+    await updateDoc(doc(db, 'tenants', schoolId, 'users', resetPin.uid), {
       pinHash:   ph,
       pin:       deleteField(),   // buang plain text jika ada
       updatedAt: serverTimestamp(),
@@ -347,6 +356,20 @@ export default function UserManagement() {
   const totalAktif = users.filter(u => u.isAktif !== false).length
 
   return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-[#003399] text-white px-4 py-3 flex items-center gap-3 shadow-lg">
+        <button onClick={() => navigate('/admin')}
+          className="text-white/70 hover:text-white transition-colors p-1">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </button>
+        <div>
+          <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Admin</p>
+          <p className="text-sm font-black">Pengurusan Pengguna</p>
+        </div>
+      </header>
+
     <div className="p-6">
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
@@ -506,6 +529,7 @@ export default function UserManagement() {
           initial={modal.data}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); fetchUsers() }}
+          schoolId={schoolId}
         />
       )}
 
@@ -557,6 +581,7 @@ export default function UserManagement() {
           </div>
         </div>
       )}
+    </div>
     </div>
   )
 }

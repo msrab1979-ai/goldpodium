@@ -20,6 +20,9 @@ const InputKeputusan     = lazy(() => import('./pages/admin/InputKeputusan'))
 const MedalTallySetup   = lazy(() => import('./pages/admin/MedalTallySetup'))
 const LaporanCetakan     = lazy(() => import('./pages/admin/LaporanCetakan'))
 const SekolahSetup       = lazy(() => import('./pages/admin/SekolahSetup'))
+const KejohananSetup     = lazy(() => import('./pages/admin/KejohananSetup'))
+const UserManagement     = lazy(() => import('./pages/admin/UserManagement'))
+const TetapanHome        = lazy(() => import('./pages/admin/TetapanHome'))
 const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
@@ -177,6 +180,21 @@ function AppRoutes() {
         <Route path="/admin/sekolah" element={
           <RequireAuth roles={['admin', 'superadmin']}>
             <SekolahSetup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/kejohanan-setup" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <KejohananSetup />
+          </RequireAuth>
+        } />
+        <Route path="/admin/pengguna" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <UserManagement />
+          </RequireAuth>
+        } />
+        <Route path="/admin/tetapan" element={
+          <RequireAuth roles={['admin', 'superadmin']}>
+            <TetapanHome />
           </RequireAuth>
         } />
         <Route path="/admin/*" element={

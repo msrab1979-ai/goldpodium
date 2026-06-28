@@ -314,6 +314,22 @@ export default function AdminDashboard() {
           ))}
         </div>
 
+        {/* Quick Links Admin */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            { label: 'Senarai Kejohanan', ikon: '📋', path: '/admin/kejohanan-setup' },
+            { label: 'Urus Pengguna',     ikon: '👥', path: '/admin/pengguna' },
+            { label: 'Urus Sekolah',      ikon: '🏫', path: '/admin/sekolah' },
+            { label: 'Tetapan Sistem',    ikon: '⚙️', path: '/admin/tetapan' },
+          ].map(item => (
+            <button key={item.path} onClick={() => navigate(item.path)}
+              className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-3 text-left hover:border-[#003399]/30 hover:shadow-sm transition-all group">
+              <span className="text-base">{item.ikon}</span>
+              <span className="text-xs font-semibold text-gray-600 group-hover:text-[#003399] transition-colors leading-tight">{item.label}</span>
+            </button>
+          ))}
+        </div>
+
         {/* Senarai Kejohanan */}
         {muatTurun ? (
           <div className="flex items-center justify-center py-16 gap-2 text-gray-400">
