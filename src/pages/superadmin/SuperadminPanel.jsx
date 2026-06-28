@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../../firebase/config'
-import { createAdminAccount } from '../../firebase/auth'
+import { createAdminAccount, hantarResetPassword } from '../../firebase/auth'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -420,6 +420,17 @@ export default function SuperadminPanel() {
     return () => batal()
   }, [userData]) // eslint-disable-line
 
+  async function resetPwAdmin(s) {
+    try {
+      const privSnap = await getDoc(doc(db, 'tenants', s.id, '_private', 'admin'))
+      const emel = privSnap.exists() ? privSnap.data().emelAdmin : null
+      if (!emel) return alert('Emel admin tidak dijumpai dalam sistem.')
+      if (!confirm(`Hantar emel reset password ke ${emel}?`)) return
+      await hantarResetPassword(emel)
+      alert(`✅ Emel reset password dihantar ke ${emel}`)
+    } catch { alert('Gagal hantar emel. Sila cuba semula.') }
+  }
+
   async function tangguhSekolah(s) {
     if (!confirm(`Tangguhkan ${s.namaSekolah}? Admin sekolah tidak boleh log masuk semasa ditangguh.`)) return
     setMuatTurunTindakan(s.id)
@@ -645,6 +656,11 @@ export default function SuperadminPanel() {
                                 <button onClick={() => masukSebagaiAdmin(s)}
                                   className="text-[10px] font-bold text-[#003399] hover:text-white hover:bg-[#003399] px-2 py-1 rounded border border-[#003399]/30 hover:border-[#003399] transition-colors">
                                   Masuk
+                                </button>
+                                <button onClick={() => resetPwAdmin(s)}
+                                  className="text-[10px] font-bold text-orange-500 hover:text-white hover:bg-orange-500 px-2 py-1 rounded border border-orange-300 hover:border-orange-500 transition-colors"
+                                  title="Hantar reset password ke emel admin">
+                                  Reset PW
                                 </button>
                                 {s.status === 'active' ? (
                                   <button onClick={() => tangguhSekolah(s)}

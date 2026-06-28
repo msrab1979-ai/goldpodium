@@ -5,6 +5,7 @@ import {
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
 } from 'firebase/auth'
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp, Timestamp,
@@ -465,6 +466,10 @@ export async function loginPengurus(schoolId, kodSekolah, pin) {
 }
 
 // ── Tukar password (first login) ──────────────────────────────────────────────
+
+export async function hantarResetPassword(email) {
+  await sendPasswordResetEmail(auth, email.trim().toLowerCase())
+}
 
 export async function changePasswordFirstTime(currentPassword, newPassword) {
   const user = auth.currentUser
