@@ -31,6 +31,7 @@ const ResetSistem        = lazy(() => import('./pages/admin/ResetSistem'))
 const HealthCheck        = lazy(() => import('./pages/admin/HealthCheck'))
 const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
+const PencatatLogin      = lazy(() => import('./pages/pencatat/PencatatLogin'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
 
 // ── Spinner ringkas semasa lazy load ─────────────────────────────────────────
@@ -123,6 +124,11 @@ function AppRoutes() {
         <Route path="/login" element={
           <RedirectIfLoggedIn>
             <Login />
+          </RedirectIfLoggedIn>
+        } />
+        <Route path="/login/pencatat" element={
+          <RedirectIfLoggedIn>
+            <PencatatLogin />
           </RedirectIfLoggedIn>
         } />
 

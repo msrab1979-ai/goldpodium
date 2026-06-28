@@ -122,9 +122,14 @@ service cloud.firestore {
     }
 
     // ── Heat — flat di bawah kejohanan (bukan nested dalam acara) ────────────
+    // Read: awam (keputusan boleh dilihat di Home public)
+    // Write: admin/superadmin (Firebase Auth) ATAU pencatat (tiada Firebase Auth,
+    //        login via PIN — client-side auth sahaja). Heat tiada data PDPA.
+    //        canWriteHeat() cover admin+teacher Firebase Auth.
+    //        allow write: if true cover pencatat PIN (tiada request.auth).
     match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
-      allow read:  if true;   // keputusan boleh dilihat awam di Home
-      allow write: if canWriteHeat(schoolId);
+      allow read:  if true;
+      allow write: if true;
     }
 
     // ── Acara, jadual — awam (jadual & keputusan untuk Home public) ──────────

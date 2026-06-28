@@ -7,11 +7,12 @@ import {
   reauthenticateWithCredential,
 } from 'firebase/auth'
 import {
-  doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp,
+  doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp, Timestamp,
   collection, query, where, getCountFromServer,
 } from 'firebase/firestore'
 import { auth, db, SUPERADMIN_EMAIL, secondaryAuth, APP_URL } from './config'
 import { alertFailedLogin, alertSuperadminNewDevice } from './telegram'
+import { hashPin } from '../utils/hashPin'
 
 // ── Session key ───────────────────────────────────────────────────────────────
 
@@ -360,6 +361,58 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
     loginUrl:     `${APP_URL}/${slug}`,
     tarikhMula:   mula.toLocaleDateString('ms-MY'),
     tarikhExpiry: expiry.toLocaleDateString('ms-MY'),
+  }
+}
+
+// ── Login Pencatat — kodAkses + PIN (tanpa Firebase Auth) ────────────────────
+
+export async function loginPencatat(slug, kodAkses, pin) {
+  // 1. Resolve slug → schoolId
+  const slugSnap = await getDoc(doc(db, 'slugIndex', slug))
+  if (!slugSnap.exists() || !slugSnap.data().aktif) {
+    throw new Error('Kod sekolah tidak dijumpai. Semak ejaan dengan pentadbir.')
+  }
+  const schoolId = slugSnap.data().schoolId
+
+  // 2. Rate limit per kodAkses
+  const attemptKey = `pencatat_${schoolId}_${kodAkses}`
+  await checkRateLimit(attemptKey)
+
+  // 3. Cari user dalam tenant
+  const usersSnap = await getDocs(
+    query(collection(db, 'tenants', schoolId, 'users'), where('kodAkses', '==', kodAkses))
+  )
+  if (usersSnap.empty) {
+    await recordFailedAttempt(attemptKey)
+    throw new Error('Kod akses tidak dijumpai.')
+  }
+
+  const userDoc  = usersSnap.docs[0]
+  const userData = userDoc.data()
+
+  if (userData.isAktif === false) {
+    throw new Error('Akaun ini tidak aktif. Hubungi pentadbir sekolah.')
+  }
+
+  // 4. Verify PIN
+  const pinHash = await hashPin(pin)
+  if (pinHash !== userData.pinHash) {
+    await recordFailedAttempt(attemptKey)
+    throw new Error('PIN tidak betul.')
+  }
+
+  await clearAttempts(attemptKey)
+
+  // 5. Bina session (tiada Firebase Auth uid — guna doc id sebagai uid)
+  return {
+    uid:      userDoc.id,
+    email:    userData.email || '',
+    name:     userData.nama  || kodAkses,
+    role:     userData.role  || 'pencatat',
+    schoolId,
+    kodAkses,
+    isAktif:  true,
+    _savedAt: Date.now(),
   }
 }
 

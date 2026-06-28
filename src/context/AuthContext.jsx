@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
-import { loginWithEmail, logoutAll, claimSuperadmin, SESSION_KEY } from '../firebase/auth'
+import { loginWithEmail, logoutAll, claimSuperadmin, loginPencatat as loginPencatatFn, SESSION_KEY } from '../firebase/auth'
 
 const AuthContext = createContext(null)
 
@@ -136,6 +136,16 @@ export function AuthProvider({ children }) {
     return session
   }
 
+  async function loginPencatat(slug, kodAkses, pin) {
+    const session = await loginPencatatFn(slug, kodAkses, pin)
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    setUser({ uid: session.uid, email: session.email })
+    setUserData(session)
+    setUserRole(session.role)
+    setNeedsSetup(false)
+    return session
+  }
+
   // ── Logout ────────────────────────────────────────────────────────────────
 
   const logout = useCallback(async () => {
@@ -190,7 +200,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, userRole, userData, loading, needsSetup, mustChangePassword,
-      login, logout, hasRole, setupSuperadmin, refreshSession,
+      login, logout, loginPencatat, hasRole, setupSuperadmin, refreshSession,
     }}>
       {!loading && children}
     </AuthContext.Provider>

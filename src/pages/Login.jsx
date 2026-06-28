@@ -225,10 +225,14 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Pautan balik */}
-      <Link to="/" className="mt-6 text-xs text-white/50 hover:text-white/80 transition-colors">
-        ← Kembali ke Laman Utama
-      </Link>
+      <div className="mt-6 flex flex-col items-center gap-3">
+        <Link to="/login/pencatat" className="text-xs text-white/60 hover:text-white/90 transition-colors font-semibold">
+          Log masuk sebagai Pencatat / Urusetia →
+        </Link>
+        <Link to="/" className="text-xs text-white/40 hover:text-white/70 transition-colors">
+          ← Kembali ke Laman Utama
+        </Link>
+      </div>
     </div>
   )
 }
