@@ -2133,7 +2133,10 @@ export default function PengurusDashboard() {
           const peserta  = pesertaSekolahByAcara[aid] || []
           if (peserta.length === 0) return
           const pesertaNama = peserta.map((p, i) => `${i+1}. ${p.namaAtlet} (${p.noBib || '—'})`).join('\n')
-          rows.push([bil++, aid, a.namaAcara, a.kategoriKod || '—', a.jantina === 'L' ? 'Lelaki' : 'Perempuan', pesertaNama])
+          const katKod  = a.kategoriKod || ''
+          const katObj  = kategoriList.find(k => (k.kod || k.id) === katKod)
+          const katLabel = katObj?.label || katObj?.nama || katKod || '—'
+          rows.push([bil++, aid, a.namaAcara, katLabel, a.jantina === 'L' ? 'Lelaki' : 'Perempuan', pesertaNama])
         })
       if (rows.length === 0) {
         pdf.setFontSize(10); pdf.text('Tiada pendaftaran untuk sekolah ini.', pageW / 2, startY + 10, { align: 'center' })
