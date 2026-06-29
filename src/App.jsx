@@ -32,7 +32,6 @@ const ResetSistem        = lazy(() => import('./pages/admin/ResetSistem'))
 const HealthCheck        = lazy(() => import('./pages/admin/HealthCheck'))
 const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
-const PencatatLogin      = lazy(() => import('./pages/pencatat/PencatatLogin'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
 const AnalisisPendaftaran = lazy(() => import('./pages/admin/AnalisisPendaftaran'))
 const Backup             = lazy(() => import('./pages/admin/Backup'))
@@ -82,7 +81,7 @@ function RequireAuth({ children, roles }) {
   if (mustChangePassword) return <Navigate to="/tukar-password" replace />
 
   if (roles && !roles.includes(userRole)) {
-    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard', pencatat: '/dashboard', pengurus_teknik: '/dashboard', urusetia: '/dashboard', pengurus: '/pengurus/dashboard' }[userRole] || '/login'
+    const dest = { superadmin: '/superadmin', admin: '/admin', pengurus: '/pengurus/dashboard' }[userRole] || '/login'
     return <Navigate to={dest} replace />
   }
 
@@ -99,7 +98,7 @@ function RedirectIfLoggedIn({ children }) {
   if (user && mustChangePassword) return <Navigate to="/tukar-password" replace />
 
   if (user && userRole) {
-    const dest = { superadmin: '/superadmin', admin: '/admin', teacher: '/dashboard', pencatat: '/dashboard', pengurus: '/pengurus/dashboard' }[userRole] || '/dashboard'
+    const dest = { superadmin: '/superadmin', admin: '/admin', pengurus: '/pengurus/dashboard' }[userRole] || '/login'
     return <Navigate to={dest} replace />
   }
 
@@ -112,6 +111,21 @@ function AdminRoute({ children }) {
       <AdminLayout>{children}</AdminLayout>
     </RequireAuth>
   )
+}
+
+// Guard pencatat — slug dalam URL mesti match session
+function RequirePencatat({ children }) {
+  const { userRole, loading, userData } = useAuth()
+  const { slug } = useParams()
+
+  if (loading) return null
+
+  if (userRole !== 'pencatat') return <Navigate to={`/${slug}`} replace />
+
+  const sessionSlug = userData?.schoolSlug || ''
+  if (sessionSlug && sessionSlug !== slug) return <Navigate to={`/${slug}`} replace />
+
+  return children
 }
 
 // Guard khusus pengurus — semak slug dalam URL match schoolId dalam session
@@ -131,11 +145,8 @@ function RequirePengurus({ children }) {
   // Selamat: login tapi schoolId tidak match slug sekolah ini
   // Ini berlaku bila Sekolah A cuba akses URL Sekolah B
   if (userData?.schoolId) {
-    // Resolve slug semasa → schoolId (dari session yang ada)
-    // Kita simpan slug dalam session semasa login — semak di sini
     const sessionSlug = userData?.schoolSlug || ''
     if (sessionSlug && sessionSlug !== slug) {
-      // Session milik sekolah lain — halang akses, redirect ke login sekolah betul
       return <Navigate to={`/${slug}/pengurus`} replace />
     }
   }
@@ -143,10 +154,14 @@ function RequirePengurus({ children }) {
   return children
 }
 
-// Redirect dinamik ke dashboard dengan slug dari URL
 function NavigateToPengurusDashboard() {
   const { slug } = useParams()
   return <Navigate to={`/${slug}/pengurus/dashboard`} replace />
+}
+
+function NavigateToPencatatDashboard() {
+  const { slug } = useParams()
+  return <Navigate to={`/${slug}/pencatat/dashboard`} replace />
 }
 
 function StaticPage({ title, children }) {
@@ -188,11 +203,6 @@ function AppRoutes() {
         <Route path="/login" element={
           <RedirectIfLoggedIn>
             <Login />
-          </RedirectIfLoggedIn>
-        } />
-        <Route path="/login/pencatat" element={
-          <RedirectIfLoggedIn>
-            <PencatatLogin />
           </RedirectIfLoggedIn>
         } />
 
@@ -243,16 +253,15 @@ function AppRoutes() {
         <Route path="/admin/sijil-pengurus" element={<AdminRoute><SijilPengurus /></AdminRoute>} />
         <Route path="/admin/*" element={<AdminRoute><AdminPanel /></AdminRoute>} />
 
-        {/* Pencatat (teacher role) */}
-        <Route path="/dashboard" element={
-          <RequireAuth roles={['teacher', 'pencatat', 'pengurus_teknik', 'urusetia']}>
-            <PencatatDashboard />
-          </RequireAuth>
-        } />
-        <Route path="/dashboard/kejohanan/:kejId/keputusan" element={
-          <RequireAuth roles={['teacher', 'pencatat', 'pengurus_teknik', 'urusetia']}>
-            <PencatatInput />
-          </RequireAuth>
+        {/* Pencatat — slug-based, multi-tenant safe */}
+        <Route path="/:slug/pencatat/*" element={
+          <RequirePencatat>
+            <Routes>
+              <Route path="dashboard"                      element={<PencatatDashboard />} />
+              <Route path="kejohanan/:kejId/keputusan"     element={<PencatatInput />} />
+              <Route path="*"                              element={<NavigateToPencatatDashboard />} />
+            </Routes>
+          </RequirePencatat>
         } />
 
         {/* Pengurus Pasukan — login global (fallback, pengurus taip slug sendiri) */}

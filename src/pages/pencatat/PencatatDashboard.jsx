@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ function TabKejohanan({ schoolId, onSelect }) {
           <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">Sedang Aktif</p>
           {aktif.map(k => (
             <KejCard key={k.id} kej={k}
-              onClick={() => { onSelect(k); navigate(`/dashboard/kejohanan/${k.id}/keputusan`) }} />
+              onClick={() => { onSelect(k); navigate(`/${slug}/pencatat/kejohanan/${k.id}/keputusan`) }} />
           ))}
         </div>
       )}
@@ -93,7 +93,7 @@ function TabKejohanan({ schoolId, onSelect }) {
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Lain-lain</p>
           {lain.map(k => (
             <KejCard key={k.id} kej={k}
-              onClick={() => { onSelect(k); navigate(`/dashboard/kejohanan/${k.id}/keputusan`) }} />
+              onClick={() => { onSelect(k); navigate(`/${slug}/pencatat/kejohanan/${k.id}/keputusan`) }} />
           ))}
         </div>
       )}
@@ -482,7 +482,8 @@ const TABS = [
 export default function PencatatDashboard() {
   const { userData, logout } = useAuth()
   const navigate = useNavigate()
-  const schoolId = userData?.schoolId || ''
+  const { slug }  = useParams()
+  const schoolId  = userData?.schoolId || ''
 
   const [tab, setTab]         = useState('kejohanan')
   const [kejAktif, setKejAktif] = useState(null)
@@ -503,9 +504,8 @@ export default function PencatatDashboard() {
   }
 
   async function handleLogout() {
-    const slug = userData?.schoolSlug || ''
     await logout()
-    navigate(slug ? `/${slug}` : '/login')
+    navigate(`/${slug}`)
   }
 
   return (

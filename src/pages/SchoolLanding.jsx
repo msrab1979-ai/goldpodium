@@ -752,7 +752,7 @@ export default function SchoolLanding() {
     setPencatatLoading(true)
     try {
       await loginPencatat(slug, pencatatKod.trim(), pencatatPin)
-      navigate('/dashboard')
+      navigate(`/${slug}/pencatat/dashboard`)
     } catch (err) {
       setPencatatErr(err.message || 'Log masuk gagal.')
     } finally {
