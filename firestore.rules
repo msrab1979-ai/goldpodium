@@ -83,10 +83,11 @@ service cloud.firestore {
     }
 
     // ── Heat ──────────────────────────────────────────────────────────────────
-    // write: if true — pencatat guna PIN + sessionStorage, tiada Firebase Auth.
+    // write: if isAuth() — pencatat guna Anonymous Auth (signInAnonymously semasa login PIN).
     // Concurrent write dilindungi oleh runTransaction dalam InputKeputusan.jsx.
     match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
-      allow read, write: if true;
+      allow read:  if true;
+      allow write: if isAuth();
     }
 
     // ── Acara ─────────────────────────────────────────────────────────────────
@@ -121,19 +122,20 @@ service cloud.firestore {
     // ── Pengesahan ────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/pengesahan/{docId} {
       allow read:  if true;
-      allow write: if true;
+      allow write: if isAuth();
     }
 
     // ── Pendaftaran ───────────────────────────────────────────────────────────
-    // write: if true — pencatat/pasukan pendaftaran tiada Firebase Auth (PIN-based)
+    // write: if isAuth() — pengurus guna Anonymous Auth semasa login PIN
     match /tenants/{schoolId}/kejohanan/{kejId}/pendaftaran/{docId} {
       allow read:  if true;
-      allow write: if true;
+      allow write: if isAuth();
     }
 
     // ── Pendaftaran counter ───────────────────────────────────────────────────
     match /tenants/{schoolId}/pendaftaran_counter/{docId} {
-      allow read, write: if true;
+      allow read:  if true;
+      allow write: if isAuth();
     }
 
     // ── Subcollection kejohanan lain ──────────────────────────────────────────

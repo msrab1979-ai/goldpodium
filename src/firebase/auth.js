@@ -1,5 +1,6 @@
 import {
   signInWithEmailAndPassword,
+  signInAnonymously,
   signOut as firebaseSignOut,
   createUserWithEmailAndPassword,
   updatePassword,
@@ -365,7 +366,7 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
   }
 }
 
-// ── Login Pencatat — kodAkses + PIN (tanpa Firebase Auth) ────────────────────
+// ── Login Pencatat — kodAkses + PIN + Anonymous Auth ─────────────────────────
 
 export async function loginPencatat(slug, kodAkses, pin) {
   // 1. Resolve slug → schoolId
@@ -404,7 +405,11 @@ export async function loginPencatat(slug, kodAkses, pin) {
 
   await clearAttempts(attemptKey)
 
-  // 5. Bina session (tiada Firebase Auth uid — guna doc id sebagai uid)
+  // 5. Sign in anonymously — bagi request.auth kepada Firestore rules
+  // Tiap pencatat dapat token unik walaupun kongsi PIN yang sama
+  await signInAnonymously(auth)
+
+  // 6. Bina session
   return {
     uid:        userDoc.id,
     email:      userData.email || '',
@@ -452,6 +457,9 @@ export async function loginPengurus(schoolId, kodSekolah, pin, schoolSlug = '') 
   }
 
   await clearAttempts(attemptKey)
+
+  // Sign in anonymously — bagi request.auth kepada Firestore rules
+  await signInAnonymously(auth)
 
   // schoolSlug disimpan dalam session — digunakan oleh RequirePengurus untuk
   // semak URL slug match session sekolah (cegah konflik multi-tenant)
