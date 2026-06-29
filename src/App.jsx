@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AdminLayout from './components/AdminLayout'
 
@@ -113,6 +113,41 @@ function AdminRoute({ children }) {
   )
 }
 
+// Guard khusus pengurus — semak slug dalam URL match schoolId dalam session
+// Ini yang cegah konflik multi-tenant: schoolId datang dari URL, bukan session semata
+function RequirePengurus({ children }) {
+  const { user, userRole, loading, userData } = useAuth()
+  const { slug } = useParams()
+  const location = useLocation()
+
+  if (loading) return null
+
+  // Belum login — hantar ke login page sekolah ini (bawa slug dalam URL)
+  if (!user || userRole !== 'pengurus') {
+    return <Navigate to={`/${slug}/pengurus`} state={{ from: location }} replace />
+  }
+
+  // Selamat: login tapi schoolId tidak match slug sekolah ini
+  // Ini berlaku bila Sekolah A cuba akses URL Sekolah B
+  if (userData?.schoolId) {
+    // Resolve slug semasa → schoolId (dari session yang ada)
+    // Kita simpan slug dalam session semasa login — semak di sini
+    const sessionSlug = userData?.schoolSlug || ''
+    if (sessionSlug && sessionSlug !== slug) {
+      // Session milik sekolah lain — halang akses, redirect ke login sekolah betul
+      return <Navigate to={`/${slug}/pengurus`} replace />
+    }
+  }
+
+  return children
+}
+
+// Redirect dinamik ke dashboard dengan slug dari URL
+function NavigateToPengurusDashboard() {
+  const { slug } = useParams()
+  return <Navigate to={`/${slug}/pengurus/dashboard`} replace />
+}
+
 function StaticPage({ title, children }) {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 max-w-2xl mx-auto">
@@ -219,19 +254,24 @@ function AppRoutes() {
           </RequireAuth>
         } />
 
-        {/* Pengurus Pasukan */}
+        {/* Pengurus Pasukan — login global (fallback, pengurus taip slug sendiri) */}
         <Route path="/pengurus/login" element={<PengurusLogin />} />
-        <Route path="/pengurus/*" element={
-          <RequireAuth roles={['pengurus']}>
+
+        {/* Pengurus Pasukan — entry point per sekolah (slug dalam URL, tiada konflik) */}
+        <Route path="/:slug/pengurus" element={<PengurusLogin />} />
+
+        {/* Pengurus Pasukan — dashboard per sekolah (schoolId terikat kepada slug) */}
+        <Route path="/:slug/pengurus/*" element={
+          <RequirePengurus>
             <PengurusLayout>
               <Routes>
-                <Route path="dashboard"         element={<PengurusDashboard />} />
-                <Route path="buku-kongsi"        element={<BukuKongsiPP />} />
-                <Route path="sijil-pencapaian"   element={<SijilPencapaianPP />} />
-                <Route path="*"                  element={<Navigate to="/pengurus/dashboard" replace />} />
+                <Route path="dashboard"        element={<PengurusDashboard />} />
+                <Route path="buku-kongsi"      element={<BukuKongsiPP />} />
+                <Route path="sijil-pencapaian" element={<SijilPencapaianPP />} />
+                <Route path="*"                element={<NavigateToPengurusDashboard />} />
               </Routes>
             </PengurusLayout>
-          </RequireAuth>
+          </RequirePengurus>
         } />
 
         {/* URL per sekolah */}

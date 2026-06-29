@@ -1,10 +1,18 @@
 /**
- * PengurusLogin — /pengurus/login
- * Login pengurus pasukan via schoolId (dari slugIndex) + kodSekolah + PIN
+ * PengurusLogin
+ *
+ * Dua mod penggunaan:
+ *   1. /:slug/pengurus        — slug ada dalam URL params (dari SchoolLanding)
+ *                               schoolId auto-resolve, pengurus terus isi kod+PIN
+ *   2. /pengurus/login        — fallback global, pengurus taip slug sendiri
+ *
+ * Selepas login berjaya → redirect ke /:slug/pengurus/dashboard
+ * schoolSlug disimpan dalam session → RequirePengurus guna untuk semak
+ * URL slug match session (cegah konflik multi-tenant)
  */
 
 import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -13,27 +21,34 @@ export default function PengurusLogin() {
   const { loginPengurus, userData } = useAuth()
   const navigate  = useNavigate()
   const location  = useLocation()
+  const { slug: slugFromUrl } = useParams()   // ada jika route /:slug/pengurus
 
-  // Boleh dapat schoolId dari state (dari SchoolLanding) atau dari slugIndex
+  // slug boleh datang dari URL param atau dari SchoolLanding state
+  const initSlug      = slugFromUrl || location.state?.schoolSlug || ''
   const stateSchoolId = location.state?.schoolId || ''
   const stateNama     = location.state?.namaSekolah || ''
 
-  const [slug,       setSlug]       = useState(location.state?.schoolSlug || '')
-  const [kodSekolah, setKodSekolah] = useState('')
-  const [pin,        setPin]        = useState('')
-  const [schoolId,   setSchoolId]   = useState(stateSchoolId)
-  const [namaOrg,    setNamaOrg]    = useState(stateNama)
+  const [slug,        setSlug]        = useState(initSlug)
+  const [kodSekolah,  setKodSekolah]  = useState('')
+  const [pin,         setPin]         = useState('')
+  const [schoolId,    setSchoolId]    = useState(stateSchoolId)
+  const [namaOrg,     setNamaOrg]     = useState(stateNama)
   const [slugLoading, setSlugLoading] = useState(false)
-  const [loading,    setLoading]    = useState(false)
-  const [ralat,      setRalat]      = useState('')
-  const [pinVisible, setPinVisible] = useState(false)
+  const [loading,     setLoading]     = useState(false)
+  const [ralat,       setRalat]       = useState('')
+  const [pinVisible,  setPinVisible]  = useState(false)
 
-  // Redirect kalau dah login sebagai pengurus
+  // Redirect kalau dah login sebagai pengurus — hantar ke slug sekolah sendiri
   useEffect(() => {
-    if (userData?.role === 'pengurus') navigate('/pengurus/dashboard', { replace: true })
+    if (userData?.role === 'pengurus') {
+      const dest = userData.schoolSlug
+        ? `/${userData.schoolSlug}/pengurus/dashboard`
+        : '/pengurus/dashboard'
+      navigate(dest, { replace: true })
+    }
   }, [userData])
 
-  // Resolve slug → schoolId bila slug berubah (jika tiada stateSchoolId)
+  // Resolve slug → schoolId (dengan debounce 600ms)
   useEffect(() => {
     if (!slug.trim() || stateSchoolId) return
     setSchoolId('')
@@ -45,37 +60,67 @@ export default function PengurusLogin() {
         if (snap.exists() && snap.data().aktif !== false) {
           const sId = snap.data().schoolId || ''
           setSchoolId(sId)
-          // Ambil namaSekolah dari tenants doc (slugIndex tiada namaSekolah)
           if (sId) {
             const tSnap = await getDoc(doc(db, 'tenants', sId))
             setNamaOrg(tSnap.exists() ? (tSnap.data().namaSekolah || sId) : sId)
           }
         } else {
           setSchoolId('')
+          setNamaOrg('')
         }
-      } catch { setSchoolId('') }
-      finally { setSlugLoading(false) }
+      } catch {
+        setSchoolId('')
+        setNamaOrg('')
+      } finally {
+        setSlugLoading(false)
+      }
     }, 600)
     return () => clearTimeout(t)
   }, [slug, stateSchoolId])
 
+  // Jika slug dari URL param — auto resolve terus tanpa debounce
+  useEffect(() => {
+    if (!slugFromUrl || stateSchoolId) return
+    ;(async () => {
+      setSlugLoading(true)
+      try {
+        const snap = await getDoc(doc(db, 'slugIndex', slugFromUrl.toLowerCase()))
+        if (snap.exists() && snap.data().aktif !== false) {
+          const sId = snap.data().schoolId || ''
+          setSchoolId(sId)
+          if (sId) {
+            const tSnap = await getDoc(doc(db, 'tenants', sId))
+            setNamaOrg(tSnap.exists() ? (tSnap.data().namaSekolah || sId) : sId)
+          }
+        }
+      } catch { /* abaikan */ }
+      finally { setSlugLoading(false) }
+    })()
+  }, []) // sekali sahaja semasa mount
+
   async function handleSubmit(e) {
     e.preventDefault()
     setRalat('')
+    const effectiveSlug = slugFromUrl || slug.trim().toLowerCase()
     if (!schoolId) return setRalat('Kod organisasi tidak sah. Semak ejaan.')
     if (!kodSekolah.trim()) return setRalat('Kod sekolah diperlukan.')
     if (!pin) return setRalat('PIN diperlukan.')
 
     setLoading(true)
     try {
-      await loginPengurus(schoolId, kodSekolah, pin)
-      navigate('/pengurus/dashboard', { replace: true })
+      // Pass schoolSlug → disimpan dalam session untuk semak multi-tenant
+      await loginPengurus(schoolId, kodSekolah, pin, effectiveSlug)
+      navigate(`/${effectiveSlug}/pengurus/dashboard`, { replace: true })
     } catch (err) {
       setRalat(err.message || 'Log masuk gagal.')
     } finally {
       setLoading(false)
     }
   }
+
+  // Tunjuk nama org jika sudah resolved (sama ada dari URL slug atau state)
+  const orgResolved = schoolId && (namaOrg || stateNama)
+  const showSlugInput = !slugFromUrl && !stateSchoolId
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#003399] to-[#001a66] flex flex-col items-center justify-center px-4 py-10">
@@ -101,8 +146,34 @@ export default function PengurusLogin() {
             </div>
           )}
 
-          {/* Kod Organisasi (slug) — sorok jika dah dapat dari state */}
-          {!stateSchoolId && (
+          {/* Nama org resolved dari slug URL — tunjuk sebagai badge */}
+          {slugFromUrl && (
+            <div className={`border rounded-xl px-3 py-2.5 ${
+              orgResolved
+                ? 'bg-[#003399]/5 border-[#003399]/10'
+                : 'bg-gray-50 border-gray-100'
+            }`}>
+              {slugLoading ? (
+                <div className="flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <span className="text-xs text-gray-400">Mengesahkan organisasi…</span>
+                </div>
+              ) : orgResolved ? (
+                <>
+                  <p className="text-[10px] text-[#003399]/60 uppercase tracking-widest font-bold">Organisasi</p>
+                  <p className="text-sm font-bold text-[#003399]">{namaOrg || stateNama}</p>
+                </>
+              ) : (
+                <p className="text-xs text-red-500">Organisasi tidak dijumpai. Semak URL anda.</p>
+              )}
+            </div>
+          )}
+
+          {/* Input slug — hanya untuk mod fallback /pengurus/login */}
+          {showSlugInput && (
             <div>
               <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
                 Kod Organisasi
@@ -134,11 +205,11 @@ export default function PengurusLogin() {
             </div>
           )}
 
-          {/* Tunjuk nama organisasi jika dari state */}
-          {stateSchoolId && namaOrg && (
+          {/* Nama org dari state (SchoolLanding → /pengurus/login lama) */}
+          {stateSchoolId && (namaOrg || stateNama) && (
             <div className="bg-[#003399]/5 border border-[#003399]/10 rounded-xl px-3 py-2.5">
               <p className="text-[10px] text-[#003399]/60 uppercase tracking-widest font-bold">Organisasi</p>
-              <p className="text-sm font-bold text-[#003399]">{namaOrg}</p>
+              <p className="text-sm font-bold text-[#003399]">{namaOrg || stateNama}</p>
             </div>
           )}
 
@@ -180,10 +251,10 @@ export default function PengurusLogin() {
                 }
               </button>
             </div>
-            <p className="text-[10px] text-gray-400 mt-1">PIN ditetapkan oleh pentadbir sistem. Hubungi pentadbir jika lupa PIN.</p>
+            <p className="text-[10px] text-gray-400 mt-1">PIN ditetapkan oleh pentadbir sistem.</p>
           </div>
 
-          <button type="submit" disabled={loading || (!schoolId && !stateSchoolId)}
+          <button type="submit" disabled={loading || (!schoolId && !stateSchoolId) || (slugFromUrl && !schoolId)}
             className="w-full bg-[#003399] hover:bg-[#002277] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2">
             {loading
               ? <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Mengesahkan…</>

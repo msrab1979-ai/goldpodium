@@ -146,8 +146,8 @@ export function AuthProvider({ children }) {
     return session
   }
 
-  async function loginPengurus(schoolId, kodSekolah, pin) {
-    const session = await loginPengurusFn(schoolId, kodSekolah, pin)
+  async function loginPengurus(schoolId, kodSekolah, pin, schoolSlug = '') {
+    const session = await loginPengurusFn(schoolId, kodSekolah, pin, schoolSlug)
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
     setUser({ uid: session.uid, email: session.email })
     setUserData(session)

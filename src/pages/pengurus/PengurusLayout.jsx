@@ -13,26 +13,28 @@
  */
 
 import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-// ─── Nav — hanya item berkaitan pengurus pasukan ──────────────────────────────
+// ─── Nav items — guna fungsi supaya slug boleh dimasukkan dalam path ─────────
 
-const NAV_ITEMS = [
-  {
-    section: 'UTAMA',
-    items: [
-      { label: 'Dashboard',          path: '/pengurus/dashboard',       icon: 'home',    exact: true },
-    ],
-  },
-  {
-    section: 'SIJIL & DOKUMEN',
-    items: [
-      { label: 'Buku Kongsi',        path: '/pengurus/buku-kongsi',     icon: 'book' },
-      { label: 'Sijil Pencapaian',   path: '/pengurus/sijil-pencapaian',icon: 'sijil' },
-    ],
-  },
-]
+function buildNavItems(slug) {
+  return [
+    {
+      section: 'UTAMA',
+      items: [
+        { label: 'Dashboard',        path: `/${slug}/pengurus/dashboard`,       icon: 'home',  exact: true },
+      ],
+    },
+    {
+      section: 'SIJIL & DOKUMEN',
+      items: [
+        { label: 'Buku Kongsi',      path: `/${slug}/pengurus/buku-kongsi`,     icon: 'book' },
+        { label: 'Sijil Pencapaian', path: `/${slug}/pengurus/sijil-pencapaian`,icon: 'sijil' },
+      ],
+    },
+  ]
+}
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -85,9 +87,10 @@ const Icons = {
 
 // ─── Sidebar Content ──────────────────────────────────────────────────────────
 
-function SidebarContent({ userData, onLogout, onNavClick }) {
+function SidebarContent({ userData, slug, onLogout, onNavClick }) {
   const namaSekolah = userData?.namaSekolah || userData?.kodSekolah || 'Pengurus Pasukan'
   const kodSekolah  = userData?.kodSekolah  || ''
+  const navItems    = buildNavItems(slug)
 
   return (
     <div className="flex flex-col h-full">
@@ -117,7 +120,7 @@ function SidebarContent({ userData, onLogout, onNavClick }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2">
-        {NAV_ITEMS.map(group => (
+        {navItems.map(group => (
           <div key={group.section} className="mb-1">
             <p className="px-4 pt-3 pb-1 text-[9px] font-bold text-white/30 uppercase tracking-widest">
               {group.section}
@@ -161,11 +164,14 @@ function SidebarContent({ userData, onLogout, onNavClick }) {
 export default function PengurusLayout({ children }) {
   const { userData, logout } = useAuth()
   const navigate = useNavigate()
+  const { slug } = useParams()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   async function handleLogout() {
     await logout()
-    navigate('/pengurus/login', { replace: true })
+    // Redirect ke login sekolah yang betul berdasarkan slug dalam URL
+    const dest = slug ? `/${slug}/pengurus` : '/pengurus/login'
+    navigate(dest, { replace: true })
   }
 
   return (
@@ -188,6 +194,7 @@ export default function PengurusLayout({ children }) {
       `}>
         <SidebarContent
           userData={userData}
+          slug={slug || userData?.schoolSlug || ''}
           onLogout={handleLogout}
           onNavClick={() => setSidebarOpen(false)}
         />

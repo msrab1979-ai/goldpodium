@@ -419,7 +419,7 @@ export async function loginPencatat(slug, kodAkses, pin) {
 
 // ── Login Pengurus Pasukan (kodSekolah + PIN, tanpa Firebase Auth) ─────────────
 
-export async function loginPengurus(schoolId, kodSekolah, pin) {
+export async function loginPengurus(schoolId, kodSekolah, pin, schoolSlug = '') {
   const kodBersih = kodSekolah.trim().toUpperCase()
 
   // 1. Rate limit
@@ -452,16 +452,19 @@ export async function loginPengurus(schoolId, kodSekolah, pin) {
 
   await clearAttempts(attemptKey)
 
+  // schoolSlug disimpan dalam session — digunakan oleh RequirePengurus untuk
+  // semak URL slug match session sekolah (cegah konflik multi-tenant)
   return {
-    uid:        `pengurus_${schoolId}_${kodBersih}`,
-    email:      sekolahData.email || '',
-    name:       sekolahData.namaSekolah || kodBersih,
-    role:       'pengurus',
+    uid:         `pengurus_${schoolId}_${kodBersih}`,
+    email:       sekolahData.email || '',
+    name:        sekolahData.namaSekolah || kodBersih,
+    role:        'pengurus',
     schoolId,
-    kodSekolah: kodBersih,
+    schoolSlug:  schoolSlug.toLowerCase().trim(),
+    kodSekolah:  kodBersih,
     namaSekolah: sekolahData.namaSekolah || kodBersih,
-    isAktif:    true,
-    _savedAt:   Date.now(),
+    isAktif:     true,
+    _savedAt:    Date.now(),
   }
 }
 
