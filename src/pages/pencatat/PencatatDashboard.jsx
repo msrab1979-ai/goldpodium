@@ -340,47 +340,61 @@ function TabKeputusan({ schoolId, kej }) {
 }
 
 function HeatKeputusan({ heat }) {
-  const keputusan = heat.keputusan || {}
-  const isLorong  = heat.jenisAcara === 'lorong' || heat.jenisAcara === 'relay'
-  const isPadang  = heat.jenisAcara === 'padang_lompat' || heat.jenisAcara === 'padang_balin'
-  const isMass    = heat.jenisAcara === 'mass_start'
+  const peserta = heat.peserta || []
+  const isLorong = heat.jenisAcara === 'lorong' || heat.jenisAcara === 'relay'
+  const isPadang = heat.jenisAcara === 'padang_lompat' || heat.jenisAcara === 'padang_balin'
+  const isMass   = heat.jenisAcara === 'mass_start'
 
   const fasaLabel = heat.fasa === 'final' ? 'Final'
     : heat.fasa === 'saringan' || heat.fasa === 'heat' ? `Heat ${heat.noHeat || ''}`
     : heat.fasa === 'terus_final' ? 'Terus Final'
     : heat.fasa || `Heat ${heat.noHeat || ''}`
 
-  // Bina senarai peserta dengan keputusan
+  // Bina senarai peserta dari heat.peserta[]
   let rows = []
 
   if (isLorong || isMass) {
-    const slots = Array.from({ length: heat.bilanganLorong || 8 }, (_, i) => i + 1)
-    rows = slots.map(s => {
-      const kp = keputusan[s] || {}
-      return {
-        key: s,
-        label: `Lorong ${s}`,
-        nama: kp.nama || kp.namaAtlet || '—',
-        pasukan: kp.pasukan || kp.namaSekolah || '',
-        keputusan: kp.keputusan,
-        status: kp.status,
-        tempat: kp.tempat,
-      }
-    }).filter(r => r.nama !== '—')
+    rows = peserta
+      .filter(p => p.namaAtlet || p.nama)
+      .map(p => ({
+        key: p.lorong ?? p.noBib ?? p.namaAtlet,
+        label: p.lorong ? `Lorong ${p.lorong}` : '',
+        nama: p.namaAtlet || p.nama || '—',
+        pasukan: p.namaSekolah || p.pasukan || '',
+        keputusan: p.keputusan,
+        status: p.status,
+        tempat: p.kedudukan ?? p.tempat,
+        noBib: p.noBib,
+      }))
       .sort((a, b) => (a.tempat || 99) - (b.tempat || 99))
   } else if (isPadang) {
-    Object.entries(keputusan).forEach(([key, kp]) => {
-      rows.push({
-        key,
+    rows = peserta
+      .filter(p => p.namaAtlet || p.nama)
+      .map(p => ({
+        key: p.noBib ?? p.namaAtlet,
         label: '',
-        nama: kp.nama || kp.namaAtlet || key,
-        pasukan: kp.pasukan || kp.namaSekolah || '',
-        keputusan: kp.keputusan,
-        status: kp.status,
-        tempat: kp.tempat,
-      })
-    })
-    rows.sort((a, b) => (a.tempat || 99) - (b.tempat || 99))
+        nama: p.namaAtlet || p.nama || '—',
+        pasukan: p.namaSekolah || p.pasukan || '',
+        keputusan: p.keputusan,
+        status: p.status,
+        tempat: p.kedudukan ?? p.tempat,
+        noBib: p.noBib,
+      }))
+      .sort((a, b) => (a.tempat || 99) - (b.tempat || 99))
+  } else {
+    rows = peserta
+      .filter(p => p.namaAtlet || p.nama)
+      .map(p => ({
+        key: p.noBib ?? p.namaAtlet,
+        label: '',
+        nama: p.namaAtlet || p.nama || '—',
+        pasukan: p.namaSekolah || p.pasukan || '',
+        keputusan: p.keputusan,
+        status: p.status,
+        tempat: p.kedudukan ?? p.tempat,
+        noBib: p.noBib,
+      }))
+      .sort((a, b) => (a.tempat || 99) - (b.tempat || 99))
   }
 
   return (

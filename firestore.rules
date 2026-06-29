@@ -72,7 +72,8 @@ service cloud.firestore {
 
     // ── Atlet ─────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/atlet/{atletId} {
-      allow read, write: if true;
+      allow read:  if true;
+      allow write: if isAuth();
     }
 
     // ── Kejohanan ─────────────────────────────────────────────────────────────
@@ -82,6 +83,8 @@ service cloud.firestore {
     }
 
     // ── Heat ──────────────────────────────────────────────────────────────────
+    // write: if true — pencatat guna PIN + sessionStorage, tiada Firebase Auth.
+    // Concurrent write dilindungi oleh runTransaction dalam InputKeputusan.jsx.
     match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
       allow read, write: if true;
     }
@@ -117,12 +120,15 @@ service cloud.firestore {
 
     // ── Pengesahan ────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/pengesahan/{docId} {
-      allow read, write: if true;
+      allow read:  if true;
+      allow write: if true;
     }
 
     // ── Pendaftaran ───────────────────────────────────────────────────────────
+    // write: if true — pencatat/pasukan pendaftaran tiada Firebase Auth (PIN-based)
     match /tenants/{schoolId}/kejohanan/{kejId}/pendaftaran/{docId} {
-      allow read, write: if true;
+      allow read:  if true;
+      allow write: if true;
     }
 
     // ── Pendaftaran counter ───────────────────────────────────────────────────
