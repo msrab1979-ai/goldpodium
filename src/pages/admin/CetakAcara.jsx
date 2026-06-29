@@ -462,7 +462,9 @@ function cetakBorangTeknikal({ acara, allHeatsList, namaKej, cfg }) {
 export default function CetakAcara() {
   const { userData, userRole } = useAuth()
   const navigate = useNavigate()
-  const isSuperadmin = userRole === 'superadmin'
+  const isSuperadmin  = userRole === 'superadmin'
+  const isPencatat    = userRole === 'pencatat'
+  const pencatatSlug  = userData?.schoolSlug || ''
   const viewSchoolId = isSuperadmin
     ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
     : null
@@ -660,7 +662,7 @@ export default function CetakAcara() {
     <div className="min-h-screen bg-gray-50">
       {/* Nav Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate('/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
+        <button onClick={() => navigate(isPencatat ? `/${pencatatSlug}/pencatat/dashboard` : '/admin')} className="text-xs text-gray-500 hover:text-[#003399]">← Kembali</button>
         <div>
           <h1 className="text-sm font-bold text-gray-800">Cetak Acara</h1>
           <p className="text-xs text-gray-500 mt-0.5">{namaKej}</p>

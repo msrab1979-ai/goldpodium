@@ -34,6 +34,10 @@ const PencatatLayout     = lazy(() => import('./pages/pencatat/PencatatLayout'))
 const PencatatHome       = lazy(() => import('./pages/pencatat/PencatatHome'))
 const PencatatInputKej   = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
+const PencatatCetakanHadiah = lazy(() => import('./pages/pencatat/CetakanHadiah'))
+const PencatatStartList  = lazy(() => import('./pages/admin/StartListSetup'))
+const PencatatRekod      = lazy(() => import('./pages/admin/Rekod'))
+const PencatatCetakAcara = lazy(() => import('./pages/admin/CetakAcara'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
 const AnalisisPendaftaran = lazy(() => import('./pages/admin/AnalisisPendaftaran'))
 const Backup             = lazy(() => import('./pages/admin/Backup'))
@@ -263,6 +267,10 @@ function AppRoutes() {
                 <Route path="dashboard"                  element={<PencatatHome />} />
                 <Route path="input-keputusan"            element={<PencatatInputKej />} />
                 <Route path="kejohanan/:kejId/keputusan" element={<PencatatInput />} />
+                <Route path="cetakan-hadiah"             element={<PencatatCetakanHadiah />} />
+                <Route path="startlist"                  element={<PencatatStartList />} />
+                <Route path="rekod"                      element={<PencatatRekod />} />
+                <Route path="cetak-acara"                element={<PencatatCetakAcara />} />
                 <Route path="*"                          element={<NavigateToPencatatDashboard />} />
               </Routes>
             </PencatatLayout>

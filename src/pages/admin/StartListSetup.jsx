@@ -636,12 +636,23 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
 export default function StartListSetup() {
   const navigate = useNavigate()
   const { userData, logout } = useAuth()
-  const isSuperadmin = userData?.role === 'superadmin'
+  const isSuperadmin  = userData?.role === 'superadmin'
+  const isPencatat    = userData?.role === 'pencatat'
+  const pencatatSlug  = userData?.schoolSlug || ''
 
   const ctx      = getKejContext()
   const schoolId = ctx.schoolId || ''
   const kejId    = ctx.id       || ''
   const namaKej  = ctx.namaKejohanan || ctx.nama || ''
+
+  function navBack() {
+    if (isPencatat) return navigate(`/${pencatatSlug}/pencatat/input-keputusan`)
+    return navigate(`/admin/kejohanan/${kejId}`)
+  }
+  function navGuardBack() {
+    if (isPencatat) return navigate(`/${pencatatSlug}/pencatat/input-keputusan`)
+    return navigate('/admin')
+  }
 
   const [acaraList,      setAcaraList]      = useState([])
   const [kategoriList,   setKategoriList]   = useState([])
@@ -659,7 +670,7 @@ export default function StartListSetup() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-4 p-6">
         <p className="text-sm text-gray-500 font-semibold">Tiada kejohanan dipilih.</p>
-        <button onClick={() => navigate('/admin')}
+        <button onClick={navGuardBack}
           className="text-xs text-[#003399] border border-[#003399] rounded-xl px-4 py-2 hover:bg-[#003399] hover:text-white transition-colors">
           ← Balik Dashboard
         </button>
@@ -761,7 +772,7 @@ export default function StartListSetup() {
       {/* Header */}
       <header className="bg-[#003399] text-white px-4 py-3 flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(`/admin/kejohanan/${kejId}`)}
+          <button onClick={navBack}
             className="text-white/60 hover:text-white transition-colors p-1 -ml-1">
             {Ikon.balik}
           </button>

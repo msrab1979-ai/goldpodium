@@ -900,8 +900,10 @@ function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved, school
 export default function Rekod() {
   const { userData } = useAuth()
   const navigate = useNavigate()
-  const userRole = userData?.role
-  const isSuperadmin = userRole === 'superadmin'
+  const userRole      = userData?.role
+  const isSuperadmin  = userRole === 'superadmin'
+  const isPencatat    = userRole === 'pencatat'
+  const pencatatSlug  = userData?.schoolSlug || ''
   const viewSchoolId = isSuperadmin
     ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
     : null
@@ -1787,14 +1789,14 @@ export default function Rekod() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-[#003399] text-white px-4 py-3 flex items-center gap-3 shadow-lg">
-        <button onClick={() => navigate('/admin')}
+        <button onClick={() => navigate(isPencatat ? `/${pencatatSlug}/pencatat/dashboard` : '/admin')}
           className="text-white/70 hover:text-white transition-colors p-1">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </button>
         <div>
-          <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Admin</p>
+          <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">{isPencatat ? 'Pencatat' : 'Admin'}</p>
           <p className="text-sm font-black">Rekod Kejohanan</p>
         </div>
       </header>
