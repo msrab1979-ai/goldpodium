@@ -2100,16 +2100,20 @@ export default function PengurusDashboard() {
         columnStyles: { 0: { halign: 'center', cellWidth: 8 }, 1: { cellWidth: 22, fontStyle: 'bold' }, 3: { cellWidth: 28, font: 'courier' }, 4: { halign: 'center', cellWidth: 8 }, 5: { halign: 'center', cellWidth: 10 } },
         margin: { left: 12, right: 12 },
       })
-      const fy = pdf.lastAutoTable.finalY + 15
+      // Footer — setara KOAM
+      const fy = (pdf.lastAutoTable?.finalY || startY + 20) + 15
       pdf.setFontSize(8); pdf.setFont('helvetica', 'normal')
       pdf.text(`Dicetak: ${tarikhCetak}`, 12, fy)
       pdf.text(`Jumlah Atlet: ${atletSekolah.length}   |   Jumlah Pendaftaran: ${totalDaftar}`, 12, fy + 5)
       pdf.setFont('helvetica', 'bold')
-      pdf.text('Tandatangan Guru Pengiring:', pageW - 80, fy)
+      pdf.text('Disediakan oleh:', pageW - 80, fy)
+      pdf.text('Tandatangan Guru Pengiring:', pageW - 80, fy + 5)
       pdf.setFont('helvetica', 'normal')
-      pdf.text('_________________________', pageW - 80, fy + 13)
-      pdf.text('Cop Sekolah:', pageW - 80, fy + 17)
-      pdf.text('_________________________', pageW - 80, fy + 27)
+      pdf.text('_________________________', pageW - 80, fy + 18)
+      pdf.text('Cop Sekolah:', pageW - 80, fy + 22)
+      pdf.text('_________________________', pageW - 80, fy + 32)
+      pdf.setDrawColor(0, 51, 153); pdf.setLineWidth(0.3)
+      pdf.line(12, fy + 38, pageW - 12, fy + 38)
       pdf.save(`PendaftaranAtlet_${kodSekolah}_${Date.now()}.pdf`)
     }
 
@@ -2145,15 +2149,19 @@ export default function PengurusDashboard() {
           margin: { left: 12, right: 12 },
         })
       }
+      // Footer — setara KOAM
       const fy = (pdf.lastAutoTable?.finalY || startY + 20) + 15
       pdf.setFontSize(8); pdf.setFont('helvetica', 'normal')
       pdf.text(`Dicetak: ${tarikhCetak}`, 12, fy)
+      pdf.text(`Jumlah Acara Didaftarkan: ${rows.length}`, 12, fy + 5)
       pdf.setFont('helvetica', 'bold')
       pdf.text('Disahkan oleh Guru Pengiring:', pageW - 80, fy)
       pdf.setFont('helvetica', 'normal')
       pdf.text('_________________________', pageW - 80, fy + 12)
       pdf.text('Cop Sekolah:', pageW - 80, fy + 16)
       pdf.text('_________________________', pageW - 80, fy + 26)
+      pdf.setDrawColor(0, 51, 153); pdf.setLineWidth(0.3)
+      pdf.line(12, fy + 32, pageW - 12, fy + 32)
       pdf.save(`PendaftaranAcara_${kodSekolah}_${Date.now()}.pdf`)
     }
 
