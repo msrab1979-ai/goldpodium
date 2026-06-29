@@ -170,7 +170,7 @@ export default function PengurusLayout({ children }) {
   async function handleLogout() {
     await logout()
     // Redirect ke login sekolah yang betul berdasarkan slug dalam URL
-    const dest = slug ? `/${slug}/pengurus` : '/pengurus/login'
+    const dest = slug ? `/${slug}` : '/'
     navigate(dest, { replace: true })
   }
 
