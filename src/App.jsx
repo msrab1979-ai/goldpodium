@@ -30,7 +30,9 @@ const Olahragawan        = lazy(() => import('./pages/admin/Olahragawan'))
 const AnalisaPingat      = lazy(() => import('./pages/admin/AnalisaPingat'))
 const ResetSistem        = lazy(() => import('./pages/admin/ResetSistem'))
 const HealthCheck        = lazy(() => import('./pages/admin/HealthCheck'))
-const PencatatDashboard  = lazy(() => import('./pages/pencatat/PencatatDashboard'))
+const PencatatLayout     = lazy(() => import('./pages/pencatat/PencatatLayout'))
+const PencatatHome       = lazy(() => import('./pages/pencatat/PencatatHome'))
+const PencatatInputKej   = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
 const AnalisisPendaftaran = lazy(() => import('./pages/admin/AnalisisPendaftaran'))
@@ -256,11 +258,14 @@ function AppRoutes() {
         {/* Pencatat — slug-based, multi-tenant safe */}
         <Route path="/:slug/pencatat/*" element={
           <RequirePencatat>
-            <Routes>
-              <Route path="dashboard"                      element={<PencatatDashboard />} />
-              <Route path="kejohanan/:kejId/keputusan"     element={<PencatatInput />} />
-              <Route path="*"                              element={<NavigateToPencatatDashboard />} />
-            </Routes>
+            <PencatatLayout>
+              <Routes>
+                <Route path="dashboard"                  element={<PencatatHome />} />
+                <Route path="input-keputusan"            element={<PencatatInputKej />} />
+                <Route path="kejohanan/:kejId/keputusan" element={<PencatatInput />} />
+                <Route path="*"                          element={<NavigateToPencatatDashboard />} />
+              </Routes>
+            </PencatatLayout>
           </RequirePencatat>
         } />
 

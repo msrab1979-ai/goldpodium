@@ -1,10 +1,3 @@
-/**
- * PencatatDashboard — /dashboard
- * Tab 1: Pilih Kejohanan → navigate ke InputKeputusan
- * Tab 2: Semak Jadual (read-only, real-time, by hari)
- * Tab 3: Semak Keputusan (read-only, real-time)
- */
-
 import { useState, useEffect, useRef } from 'react'
 import {
   collection, getDocs, query, orderBy, onSnapshot, where,
@@ -48,7 +41,7 @@ function namaHari(str) {
 
 // ─── Tab Pilih Kejohanan ──────────────────────────────────────────────────────
 
-function TabKejohanan({ schoolId, onSelect }) {
+function TabKejohanan({ schoolId, slug, onSelect }) {
   const navigate  = useNavigate()
   const [list, setList]     = useState([])
   const [loading, setLoading] = useState(true)
@@ -479,16 +472,14 @@ const TABS = [
   { id: 'keputusan', label: 'Keputusan', ikon: '📋' },
 ]
 
-export default function PencatatDashboard() {
-  const { userData, logout } = useAuth()
-  const navigate = useNavigate()
-  const { slug }  = useParams()
-  const schoolId  = userData?.schoolId || ''
+export default function PencatatInputKeputusanPage() {
+  const { userData } = useAuth()
+  const { slug }     = useParams()
+  const schoolId     = userData?.schoolId || ''
 
-  const [tab, setTab]         = useState('kejohanan')
+  const [tab, setTab]           = useState('kejohanan')
   const [kejAktif, setKejAktif] = useState(null)
 
-  // Cuba muat kejohanan aktif dari sessionStorage (dari sesi lepas)
   useEffect(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem('gp_kej_aktif') || '{}')
@@ -503,38 +494,8 @@ export default function PencatatDashboard() {
     }))
   }
 
-  async function handleLogout() {
-    await logout()
-    navigate(`/${slug}`)
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-
-      {/* Header */}
-      <header className="bg-[#003399] text-white px-4 py-3.5 flex items-center justify-between shadow-lg shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center shrink-0">
-            <svg className="w-5 h-5 text-[#003399]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-[9px] text-white/50 uppercase tracking-widest">Gold Podium</p>
-            <p className="text-sm font-bold leading-tight">
-              Pencatat{kejAktif ? ` · ${kejAktif.namaKejohanan}` : ''}
-            </p>
-          </div>
-        </div>
-        <button onClick={handleLogout}
-          className="flex items-center gap-1.5 text-white/60 hover:text-white text-xs transition-colors px-2 py-1.5 rounded-lg hover:bg-white/10">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          Log Keluar
-        </button>
-      </header>
-
+    <div className="flex flex-col h-full">
       {/* Tab Bar */}
       <div className="bg-white border-b border-gray-100 flex shrink-0">
         {TABS.map(t => (
@@ -552,15 +513,9 @@ export default function PencatatDashboard() {
 
       {/* Content */}
       <div className="flex-1 max-w-lg mx-auto w-full px-4 py-5 overflow-y-auto">
-        {tab === 'kejohanan' && (
-          <TabKejohanan schoolId={schoolId} onSelect={handleSelect} />
-        )}
-        {tab === 'jadual' && (
-          <TabJadual schoolId={schoolId} kej={kejAktif} />
-        )}
-        {tab === 'keputusan' && (
-          <TabKeputusan schoolId={schoolId} kej={kejAktif} />
-        )}
+        {tab === 'kejohanan' && <TabKejohanan schoolId={schoolId} slug={slug} onSelect={handleSelect} />}
+        {tab === 'jadual'    && <TabJadual    schoolId={schoolId} kej={kejAktif} />}
+        {tab === 'keputusan' && <TabKeputusan schoolId={schoolId} kej={kejAktif} />}
       </div>
     </div>
   )
