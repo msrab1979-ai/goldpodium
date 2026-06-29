@@ -37,9 +37,10 @@ export function AuthProvider({ children }) {
       }
     }
 
-    // Firebase Auth state listener — untuk superadmin (Firebase Auth)
+    // Firebase Auth state listener — untuk superadmin/admin (Firebase Auth sahaja)
+    // Anonymous user (pencatat/pengurus PIN) — skip, session diurus via sessionStorage
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
+      if (firebaseUser && !firebaseUser.isAnonymous) {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
           if (snap.exists()) {
