@@ -158,6 +158,13 @@ service cloud.firestore {
       allow write: if canAccessSchool(schoolId);
     }
 
+    // ── Pengesahan — pengurus pasukan (tiada Firebase Auth) perlu baca+tulis ───
+    // Pengurus sahkan & kunci pendaftaran pasukan mereka sendiri.
+    match /tenants/{schoolId}/kejohanan/{kejId}/pengesahan/{docId} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
     // ── Pendaftaran — pengurus pasukan (tiada Firebase Auth) perlu baca+tulis ──
     // Pengurus login via PIN sahaja (tiada request.auth). Data: noKP, noBib, noAcara.
     // PDPA: noKP ada tapi terhad kepada schoolId dalam path (pengurus tahu schoolId sendiri).
