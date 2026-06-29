@@ -22,19 +22,14 @@ const NAV_ITEMS = [
   {
     section: 'UTAMA',
     items: [
-      { label: 'Dashboard',         path: '/dashboard',             icon: 'home',     exact: true },
+      { label: 'Dashboard',          path: '/pengurus/dashboard',       icon: 'home',    exact: true },
     ],
   },
   {
-    section: 'PENGURUSAN',
+    section: 'SIJIL & DOKUMEN',
     items: [
-      { label: 'Pendaftaran Atlet', path: '/dashboard/pendaftaran', icon: 'userPlus' },
-    ],
-  },
-  {
-    section: 'SIJIL',
-    items: [
-      { label: 'E-Sijil',           path: '/dashboard/sijilsaya',   icon: 'sijil' },
+      { label: 'Buku Kongsi',        path: '/pengurus/buku-kongsi',     icon: 'book' },
+      { label: 'Sijil Pencapaian',   path: '/pengurus/sijil-pencapaian',icon: 'sijil' },
     ],
   },
 ]
@@ -81,6 +76,11 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
     </svg>
   ),
+  book: (
+    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+    </svg>
+  ),
 }
 
 // ─── Sidebar Content ──────────────────────────────────────────────────────────
@@ -93,9 +93,8 @@ function SidebarContent({ userData, onLogout, onNavClick }) {
     <div className="flex flex-col h-full">
       {/* Branding */}
       <div className="px-4 py-4 border-b border-white/10">
-        <p className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Sistem KOAM</p>
+        <p className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Gold Podium</p>
         <p className="text-sm font-bold text-white leading-tight mt-0.5">Panel Pengurus Pasukan</p>
-        <p className="text-[10px] text-white/40 mt-0.5">mssdkemaman-olahraga</p>
       </div>
 
       {/* User info */}
@@ -166,7 +165,7 @@ export default function PengurusLayout({ children }) {
 
   async function handleLogout() {
     await logout()
-    navigate('/', { replace: true })
+    navigate('/pengurus/login', { replace: true })
   }
 
   return (

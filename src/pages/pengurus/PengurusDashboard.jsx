@@ -4,15 +4,13 @@
  * Firestore: tenants/{schoolId}/atlet/{noKP}
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   collection, query, where, onSnapshot,
   doc, setDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
-import { hashPin } from '../../utils/hashPin'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -223,12 +221,10 @@ function BariAtlet({ atlet, onEdit }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function PengurusDashboard() {
-  const { userData, logout } = useAuth()
-  const navigate = useNavigate()
+  const { userData } = useAuth()
 
   const schoolId   = userData?.schoolId   || ''
   const kodSekolah = userData?.kodSekolah || ''
-  const namaSekolah = userData?.namaSekolah || kodSekolah
 
   const [atlet,     setAtlet]     = useState([])
   const [loading,   setLoading]   = useState(true)
@@ -258,8 +254,6 @@ export default function PengurusDashboard() {
   function handleEdit(a) { setEditAtlet(a); setModal(true) }
   function handleTambah() { setEditAtlet(null); setModal(true) }
 
-  async function handleLogout() { await logout(); navigate('/pengurus/login') }
-
   const carianBersih = carian.trim().toLowerCase()
   const atletTapis = atlet.filter(a =>
     !carianBersih ||
@@ -272,33 +266,9 @@ export default function PengurusDashboard() {
   const perempuan = atlet.filter(a => a.jantina === 'P' && a.isAktif !== false).length
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="p-6 space-y-4 max-w-2xl">
 
-      {/* Header */}
-      <header className="bg-[#003399] text-white px-4 py-3.5 flex items-center justify-between shadow-lg shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center shrink-0">
-            <svg className="w-5 h-5 text-[#003399]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-[9px] text-white/50 uppercase tracking-widest">Pengurus Pasukan</p>
-            <p className="text-sm font-bold leading-tight truncate max-w-[180px]">{namaSekolah}</p>
-          </div>
-        </div>
-        <button onClick={handleLogout}
-          className="flex items-center gap-1.5 text-white/60 hover:text-white text-xs transition-colors px-2 py-1.5 rounded-lg hover:bg-white/10">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          Log Keluar
-        </button>
-      </header>
-
-      <div className="max-w-lg mx-auto w-full px-4 py-5 space-y-4">
-
-        {/* Stats */}
+      {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white border border-gray-100 rounded-xl p-3 text-center">
             <p className="text-2xl font-black text-[#003399]">{atlet.filter(a => a.isAktif !== false).length}</p>
@@ -367,10 +337,9 @@ export default function PengurusDashboard() {
           )}
         </div>
 
-        <p className="text-center text-[10px] text-gray-300">
-          Nota: Perubahan atlet dipaparkan secara langsung. Hubungi pentadbir jika atlet perlu dipadamkan.
-        </p>
-      </div>
+      <p className="text-center text-[10px] text-gray-300">
+        Nota: Perubahan atlet dipaparkan secara langsung. Hubungi pentadbir jika atlet perlu dipadamkan.
+      </p>
 
       {modal && (
         <ModalAtlet
@@ -384,3 +353,4 @@ export default function PengurusDashboard() {
     </div>
   )
 }
+

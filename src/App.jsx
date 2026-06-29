@@ -50,6 +50,9 @@ const MuatTurunSijil     = lazy(() => import('./pages/admin/MuatTurunSijil'))
 const SijilPengurus      = lazy(() => import('./pages/admin/SijilPengurus'))
 const PengurusLogin      = lazy(() => import('./pages/pengurus/PengurusLogin'))
 const PengurusDashboard  = lazy(() => import('./pages/pengurus/PengurusDashboard'))
+const BukuKongsiPP       = lazy(() => import('./pages/pengurus/BukuKongsiPP'))
+const SijilPencapaianPP  = lazy(() => import('./pages/pengurus/SijilPencapaianPP'))
+const PengurusLayout     = lazy(() => import('./pages/pengurus/PengurusLayout'))
 
 // ── Spinner ringkas semasa lazy load ─────────────────────────────────────────
 function PageLoader() {
@@ -218,9 +221,16 @@ function AppRoutes() {
 
         {/* Pengurus Pasukan */}
         <Route path="/pengurus/login" element={<PengurusLogin />} />
-        <Route path="/pengurus/dashboard" element={
+        <Route path="/pengurus/*" element={
           <RequireAuth roles={['pengurus']}>
-            <PengurusDashboard />
+            <PengurusLayout>
+              <Routes>
+                <Route path="dashboard"         element={<PengurusDashboard />} />
+                <Route path="buku-kongsi"        element={<BukuKongsiPP />} />
+                <Route path="sijil-pencapaian"   element={<SijilPencapaianPP />} />
+                <Route path="*"                  element={<Navigate to="/pengurus/dashboard" replace />} />
+              </Routes>
+            </PengurusLayout>
           </RequireAuth>
         } />
 
