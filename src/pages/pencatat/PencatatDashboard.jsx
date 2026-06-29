@@ -503,8 +503,9 @@ export default function PencatatDashboard() {
   }
 
   async function handleLogout() {
+    const slug = userData?.schoolSlug || ''
     await logout()
-    navigate('/login')
+    navigate(slug ? `/${slug}` : '/login')
   }
 
   return (

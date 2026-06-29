@@ -69,12 +69,13 @@ function PageLoader() {
 // ── Route Guards ──────────────────────────────────────────────────────────────
 
 function RequireAuth({ children, roles }) {
-  const { user, userRole, loading, needsSetup, mustChangePassword } = useAuth()
+  const { user, userRole, userData, loading, needsSetup, mustChangePassword } = useAuth()
   const location = useLocation()
 
   if (loading) return null
 
-  if (!user) return <Navigate to="/login" state={{ from: location }} replace />
+  // Allow sessionStorage-based sessions (pencatat, pengurus) — userData exists even when Firebase Auth user is null
+  if (!user && !userData) return <Navigate to="/login" state={{ from: location }} replace />
 
   if (needsSetup || userRole === 'pending_setup') return <Navigate to="/superadmin/setup" replace />
 

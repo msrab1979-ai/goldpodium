@@ -489,11 +489,9 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
     const kodBerubah = isEdit && kodBaru !== kodLama
 
     setBusy(true)
-    console.log('[SekolahModal] schoolId:', schoolId, 'kodBaru:', kodBaru)
     try {
       // Semak kod baru tidak bertindih
       if (!isEdit || kodBerubah) {
-        console.log('[SekolahModal] step1: getDoc sekolah')
         const snap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kodBaru))
         if (snap.exists()) {
           setErr(`Kod "${kodBaru}" sudah digunakan. Sila guna kod lain.`)
@@ -507,7 +505,6 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
       const kategoriSemasa = form.kategori?.trim() || ''
       const prefixBerubah = isEdit ? prefixBaru !== (initial?.bibPrefix || '').toUpperCase() : true
       if (prefixBerubah) {
-        console.log('[SekolahModal] step2: query bibPrefix')
         const prefixSnap = await getDocs(query(
           collection(db, 'tenants', schoolId, 'sekolah'),
           where('bibPrefix', '==', prefixBaru)
@@ -535,7 +532,6 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
 
       if (!isEdit) {
         // ── TAMBAH BARU — hash PIN sebelum simpan ────────────────────────────
-        console.log('[SekolahModal] step3: setDoc sekolah baru')
         const ph = await hashPin(form.pin)
         await setDoc(doc(db, 'tenants', schoolId, 'sekolah', kodBaru), {
           kodSekolah:  kodBaru,
@@ -1061,7 +1057,6 @@ export default function SekolahSetup() {
     ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
     : null
   const schoolId = viewSchoolId || userData?.schoolId || ''
-  console.log('[SekolahSetup] userRole:', userRole, '| schoolId:', schoolId, '| userData.schoolId:', userData?.schoolId, '| viewSchoolId:', viewSchoolId)
 
   const [list,    setList]    = useState([])
   const [loading, setLoading] = useState(true)

@@ -406,14 +406,15 @@ export async function loginPencatat(slug, kodAkses, pin) {
 
   // 5. Bina session (tiada Firebase Auth uid — guna doc id sebagai uid)
   return {
-    uid:      userDoc.id,
-    email:    userData.email || '',
-    name:     userData.nama  || kodAkses,
-    role:     userData.role  || 'pencatat',
+    uid:        userDoc.id,
+    email:      userData.email || '',
+    name:       userData.nama  || kodAkses,
+    role:       userData.role  || 'pencatat',
     schoolId,
+    schoolSlug: slug,
     kodAkses,
-    isAktif:  true,
-    _savedAt: Date.now(),
+    isAktif:    true,
+    _savedAt:   Date.now(),
   }
 }
 
