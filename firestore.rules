@@ -158,8 +158,23 @@ service cloud.firestore {
       allow write: if canAccessSchool(schoolId);
     }
 
+    // ── Pendaftaran — pengurus pasukan (tiada Firebase Auth) perlu baca+tulis ──
+    // Pengurus login via PIN sahaja (tiada request.auth). Data: noKP, noBib, noAcara.
+    // PDPA: noKP ada tapi terhad kepada schoolId dalam path (pengurus tahu schoolId sendiri).
+    // v2.0: guna Anonymous Auth → ketatkan semula.
+    match /tenants/{schoolId}/kejohanan/{kejId}/pendaftaran/{docId} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // ── Pendaftaran counter — Firestore Transaction untuk noBib selamat ───────
+    // Pengurus pasukan perlu runTransaction pada doc ini (tiada Firebase Auth).
+    match /tenants/{schoolId}/pendaftaran_counter/{docId} {
+      allow read, write: if true;
+    }
+
     // ── Semua subcollection lain dalam kejohanan ──────────────────────────────
-    // (kategori, pendaftaran, pengesahan, pilihan_olahragawan, anugerah_custom, dll)
+    // (kategori, pengesahan, pilihan_olahragawan, anugerah_custom, dll)
     match /tenants/{schoolId}/kejohanan/{kejId}/{subcol}/{docId} {
       allow read:  if canReadSchool(schoolId);
       allow write: if canAccessSchool(schoolId);

@@ -1,219 +1,1656 @@
 /**
  * PengurusDashboard — /pengurus/dashboard
- * Pengurus pasukan lihat + tambah + edit atlet sekolah mereka
- * Firestore: tenants/{schoolId}/atlet/{noKP}
+ *
+ * Dua tab:
+ *  Tab 1 — Urus Atlet    : CRUD master atlet + import Excel
+ *  Tab 2 — Daftar Acara  : Daftar atlet ke acara (dengan 8-gate validation)
+ *
+ * GP Multi-tenant:
+ *  atlet      → tenants/{schoolId}/atlet/{noKP}
+ *  pendaftaran → tenants/{schoolId}/kejohanan/{kejId}/pendaftaran/{noKP}
+ *  acara       → tenants/{schoolId}/kejohanan/{kejId}/acara/{id}
+ *  kategori    → tenants/{schoolId}/kejohanan/{kejId}/kategori/{id}
+ *  sekolah     → tenants/{schoolId}/sekolah/{kodSekolah}
+ *  counter     → tenants/{schoolId}/pendaftaran_counter/{kejId}_{kodSekolah}
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  collection, query, where, onSnapshot,
-  doc, setDoc, serverTimestamp,
+  collection, getDocs, doc, setDoc, updateDoc, deleteDoc,
+  serverTimestamp, query, where, getDoc, writeBatch, runTransaction,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { validasiPendaftaran } from '../../utils/validasiPendaftaran'
+import * as XLSX from 'xlsx'
+
+// ─── Konstanta ────────────────────────────────────────────────────────────────
+
+const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
+  'focus:outline-none focus:ring-2 focus:ring-[#003399]/25 focus:border-[#003399] bg-gray-50'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseIC(digits) {
-  if (!digits || digits.length < 6) return { tarikhLahir: '', jantina: '' }
-  const yy = parseInt(digits.slice(0, 2))
-  const mm = parseInt(digits.slice(2, 4))
-  const dd = parseInt(digits.slice(4, 6))
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return { tarikhLahir: '', jantina: '' }
-  const year = yy <= 25 ? 2000 + yy : 1900 + yy
-  const tarikhLahir = `${year}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`
-  const lastDigit = parseInt(digits[digits.length - 1])
-  const jantina = !isNaN(lastDigit) ? (lastDigit % 2 === 1 ? 'L' : 'P') : ''
-  return { tarikhLahir, jantina }
+function layakUmurMSSM(tarikhLahir, umurHad, umurMin, tahunKejohanan) {
+  if (!tarikhLahir || !umurHad || !tahunKejohanan) return true
+  const tKej = Number(tahunKejohanan)
+  const tarikhTerawal = new Date(`${tKej - Number(umurHad)}-01-02`)
+  const tarikhTerkini = umurMin
+    ? new Date(`${tKej - Number(umurMin) + 1}-01-01`)
+    : new Date(`${tKej + 1}-01-01`)
+  const tLahir = new Date(tarikhLahir)
+  return tLahir >= tarikhTerawal && tLahir < tarikhTerkini
 }
 
-function formatIC(digits) {
-  if (digits.length >= 12) return `${digits.slice(0,6)}-${digits.slice(6,8)}-${digits.slice(8,12)}`
-  return digits
+function kiraKategori(tarikhLahir, jantina, tahunKejohanan, kategoriList = []) {
+  if (!tarikhLahir || !tahunKejohanan) return null
+  if (kategoriList.length > 0) {
+    const filtered = kategoriList.filter(k => {
+      if (!k.kod) return false
+      if (!k.umurHad) return false
+      const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
+      if (lbl.includes('OPEN')) return false
+      if (jantina === 'L' && !lbl.startsWith('L')) return false
+      if (jantina === 'P' && !lbl.startsWith('P')) return false
+      return true
+    })
+    const candidates = filtered.filter(k =>
+      layakUmurMSSM(tarikhLahir, k.umurHad, k.umurMin, tahunKejohanan)
+    )
+    if (candidates.length === 0) return null
+    candidates.sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
+    return candidates[0].kod
+  }
+  return null
 }
 
-function umurDari(tarikhLahir) {
-  if (!tarikhLahir) return null
-  const thn = new Date().getFullYear() - new Date(tarikhLahir).getFullYear()
-  return thn
+function formatNoKP(raw) {
+  const digits = String(raw || '').replace(/\D/g, '').slice(0, 12)
+  if (digits.length < 12) return null
+  return `${digits.slice(0,6)}-${digits.slice(6,8)}-${digits.slice(8)}`
 }
 
-// ─── Modal Tambah/Edit Atlet ──────────────────────────────────────────────────
+function autoTarikhLahir(noKP12) {
+  const yy = parseInt(noKP12.slice(0,2), 10)
+  const mm = parseInt(noKP12.slice(2,4), 10)
+  const dd = parseInt(noKP12.slice(4,6), 10)
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null
+  const curYY = new Date().getFullYear() % 100
+  const year  = (yy <= curYY ? 2000 : 1900) + yy
+  return `${year}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`
+}
 
-function ModalAtlet({ schoolId, kodSekolah, atlet, onTutup, onSaved }) {
-  const isEdit = !!atlet
+function autoJantina(noKP12) {
+  const lastDigit = parseInt(noKP12.slice(11), 10)
+  return lastDigit % 2 === 0 ? 'P' : 'L'
+}
 
-  const [form, setForm] = useState({
-    noKP:       atlet?.noKP || '',
-    nama:       atlet?.nama || '',
-    jantina:    atlet?.jantina || 'L',
-    tarikhLahir: atlet?.tarikhLahir || '',
-    noBib:      atlet?.noBib || '',
-    isAktif:    atlet?.isAktif !== false,
+function formatDeadlineMY(isoStr) {
+  if (!isoStr) return ''
+  const d = new Date(isoStr)
+  if (isNaN(d)) return isoStr
+  return d.toLocaleString('ms-MY', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
   })
-  const [saving, setSaving] = useState(false)
-  const [err,    setErr]    = useState('')
+}
 
-  function set(k, v) { setForm(f => ({ ...f, [k]: v })); setErr('') }
+// ─── Download Template: Atlet ─────────────────────────────────────────────────
 
-  function handleNoKP(val) {
-    const digits = val.replace(/\D/g, '').slice(0, 12)
-    const { tarikhLahir, jantina } = parseIC(digits)
-    setForm(f => ({
-      ...f,
-      noKP: formatIC(digits),
-      ...(tarikhLahir ? { tarikhLahir } : {}),
-      ...(jantina     ? { jantina }     : {}),
-    }))
-    setErr('')
+function downloadTemplateAtlet(bibPrefix = '', bibFormat = 3) {
+  const wb  = XLSX.utils.book_new()
+  const p   = bibPrefix || 'XXX'
+  const fmt = n => p + String(n).padStart(bibFormat, '0')
+  const headers = ['noKP (12 digit)', 'nama', 'noBib']
+  const examples = [
+    ['120115-12-0001', 'Ahmad bin Ali',    fmt(1)],
+    ['130220-14-0002', 'Siti binti Bakar', fmt(2)],
+    ['140305-16-0003', 'Raju a/l Muthu',   fmt(3)],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...examples])
+  ws['!cols'] = [{ wch:20 }, { wch:35 }, { wch:12 }]
+  XLSX.utils.book_append_sheet(wb, ws, 'ATLET')
+
+  const panduan = [
+    ['PANDUAN PENGISIAN TEMPLAT ATLET — GOLD PODIUM'],
+    [''],
+    ['Kolum', 'Wajib', 'Penerangan'],
+    ['noKP (12 digit)', 'Ya', 'No. Kad Pengenalan — 12 digit (boleh ada sempang atau tidak)'],
+    ['nama',            'Ya', 'Nama penuh atlet seperti dalam kad pengenalan'],
+    ['noBib',           'Ya', `No. Badan atlet — contoh: ${fmt(1)}, ${fmt(2)}, ${fmt(3)}`],
+    [''],
+    ['AUTO-DETECT dari No. KP (tidak perlu isi):', '', ''],
+    ['Jantina',      '(auto)', 'Digit terakhir No. KP — ganjil = Lelaki, genap = Perempuan'],
+    ['Tarikh Lahir', '(auto)', '6 digit pertama No. KP (YYMMDD) → auto tukar ke YYYY-MM-DD'],
+    [''],
+    ['NOTA:', 'Baris pertama adalah HEADER — jangan padam atau ubah.', ''],
+    ['', 'Fail boleh disimpan semula sebagai .xlsx atau .csv.', ''],
+  ]
+  const ws2 = XLSX.utils.aoa_to_sheet(panduan)
+  ws2['!cols'] = [{ wch:22 }, { wch:65 }, { wch:5 }]
+  XLSX.utils.book_append_sheet(wb, ws2, 'PANDUAN')
+
+  XLSX.writeFile(wb, 'template_atlet_gp.xlsx')
+}
+
+// ─── Download Template: Daftar Acara ─────────────────────────────────────────
+
+function downloadTemplateDaftar(bibPrefix = '', bibFormat = 3, acaraList = []) {
+  const wb  = XLSX.utils.book_new()
+  const p   = bibPrefix || 'XXX'
+  const fmt = n => p + String(n).padStart(bibFormat, '0')
+
+  const headers = ['noBib', 'noKP', 'noAcara']
+  const examples = [
+    [fmt(1), '120115-12-0001', '101'],
+    [fmt(2), '130220-14-0002', '102'],
+    [fmt(3), '140305-16-0003', '101'],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...examples])
+  ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 10 }]
+  XLSX.utils.book_append_sheet(wb, ws, 'DAFTAR')
+
+  if (acaraList.length > 0) {
+    const aHdrs = ['noAcara', 'namaAcara', 'kategori', 'jantina']
+    const aRows = acaraList
+      .filter(a => a.isAktif !== false && !a.parentAcaraId)
+      .sort((a, b) => (Number(a.noAcara) || 0) - (Number(b.noAcara) || 0))
+      .map(a => [a.noAcara, a.namaAcara, a.kategoriKod, a.jantina === 'L' ? 'Lelaki' : a.jantina === 'P' ? 'Perempuan' : a.jantina])
+    const ws2 = XLSX.utils.aoa_to_sheet([aHdrs, ...aRows])
+    ws2['!cols'] = [{ wch: 10 }, { wch: 40 }, { wch: 10 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, ws2, 'SENARAI ACARA')
   }
 
-  async function handleSimpan(e) {
-    e.preventDefault()
-    const noKPClean = form.noKP.replace(/-/g, '').trim()
-    if (noKPClean.length < 6) return setErr('No. IC tidak lengkap.')
-    if (!form.nama.trim())    return setErr('Nama atlet diperlukan.')
-    if (!form.tarikhLahir)    return setErr('Tarikh lahir diperlukan.')
+  const panduan = [
+    ['PANDUAN IMPORT DAFTAR ACARA — GOLD PODIUM'],
+    [''],
+    ['Kolum', 'Wajib', 'Penerangan'],
+    ['noBib',   'Ya', `No. Badan — mesti bermula dengan prefix "${p}" (cth: ${fmt(1)}, ${fmt(2)})`],
+    ['noKP',    'Ya', 'No. Kad Pengenalan — 12 digit (boleh ada sempang atau tidak)'],
+    ['noAcara', 'Ya', 'No. Acara — rujuk sheet "SENARAI ACARA" (cth: 101, 102, 201)'],
+    [''],
+    ['NOTA:', 'Baris 1 adalah HEADER — jangan padam atau ubah nama kolum.', ''],
+    ['', 'Satu atlet boleh didaftar ke pelbagai acara — satu baris per acara.', ''],
+    ['', 'Atlet mesti sudah ada dalam tab "Urus Atlet" sebelum import daftar.', ''],
+  ]
+  const ws3 = XLSX.utils.aoa_to_sheet(panduan)
+  ws3['!cols'] = [{ wch: 12 }, { wch: 5 }, { wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, ws3, 'PANDUAN')
+
+  XLSX.writeFile(wb, 'template_daftar_acara_gp.xlsx')
+}
+
+// ─── Sub-Components ───────────────────────────────────────────────────────────
+
+const FormField = ({ label, hint, required, children }) => (
+  <div>
+    <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
+      {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+    </label>
+    {children}
+    {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
+  </div>
+)
+
+function JantinaBadge({ j }) {
+  return (
+    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${j==='L'?'bg-blue-100 text-blue-700':'bg-pink-100 text-pink-700'}`}>{j}</span>
+  )
+}
+
+function KategoriBadge({ kat, kategoriList = [] }) {
+  if (!kat) return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">?</span>
+  const found = kategoriList.find(k => (k.kod || k.id) === kat)
+  const label = found?.label || found?.nama || kat
+  const lbl = label.toUpperCase()
+  let colorClass
+  if (lbl.startsWith('L')) colorClass = 'bg-blue-100 text-blue-700'
+  else if (lbl.startsWith('P')) colorClass = 'bg-pink-100 text-pink-700'
+  else if (lbl.includes('OPEN')) colorClass = 'bg-violet-100 text-violet-700'
+  else colorClass = 'bg-gray-100 text-gray-500'
+  return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colorClass}`}>{label}</span>
+}
+
+// ─── Modal: Tambah / Edit Atlet ───────────────────────────────────────────────
+
+function AtletModal({ mode, initial, schoolId, kodSekolah, sekolahData, existingBibs,
+                      myPendaftaran, kejohananId, tahunKej, kategoriList, onClose, onSaved }) {
+  const isEdit    = mode === 'edit'
+  const bibPrefix = (sekolahData?.bibPrefix || '').toUpperCase()
+  const bibFormat = Number(sekolahData?.bibFormat) || 3
+  const initBibNum = initial?.noBib?.startsWith(bibPrefix)
+    ? initial.noBib.slice(bibPrefix.length)
+    : (initial?.noBib || '')
+
+  const [form, setForm] = useState({
+    noKP:        initial?.noKP        || '',
+    nama:        initial?.nama        || '',
+    jantina:     initial?.jantina     || 'L',
+    tarikhLahir: initial?.tarikhLahir || '',
+  })
+  const [bibNum, setBibNum]     = useState(initBibNum)
+  const [saving, setSaving]     = useState(false)
+  const [err, setErr]           = useState('')
+  const [warnPending, setWarnPending] = useState(false)
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  function handleNoKPChange(raw) {
+    const digits = raw.replace(/\D/g, '').slice(0, 12)
+    let fmt = digits
+    if (digits.length > 6) fmt = digits.slice(0,6) + '-' + digits.slice(6)
+    if (digits.length > 8) fmt = digits.slice(0,6) + '-' + digits.slice(6,8) + '-' + digits.slice(8)
+    let tarikhLahir = form.tarikhLahir
+    if (digits.length >= 6) {
+      const tl = autoTarikhLahir(digits.padEnd(12, '0'))
+      if (tl) tarikhLahir = tl
+    }
+    let jantina = form.jantina
+    if (digits.length === 12) jantina = autoJantina(digits)
+    setForm(f => ({ ...f, noKP: fmt, tarikhLahir, jantina }))
+  }
+
+  const fullNoBib = bibPrefix && bibNum
+    ? bibPrefix + String(bibNum).padStart(bibFormat, '0')
+    : bibNum
+
+  const kategori = kiraKategori(form.tarikhLahir, form.jantina, tahunKej, kategoriList)
+
+  const sensitiveChanged = isEdit && (
+    form.jantina !== initial?.jantina ||
+    form.tarikhLahir !== initial?.tarikhLahir
+  )
+  const atletPend  = (myPendaftaran || []).filter(p => p.noKP === initial?.noKP)
+  const acaraCount = atletPend.flatMap(p => p.acaraIds || []).length
+
+  async function doSave() {
+    setErr('')
+    if (!form.noKP.trim())   return setErr('No. Kad Pengenalan wajib diisi.')
+    if (!form.nama.trim())   return setErr('Nama atlet wajib diisi.')
+    if (!form.tarikhLahir)   return setErr('Tarikh lahir wajib diisi.')
+    if (!fullNoBib?.trim())  return setErr('Nombor Badan wajib diisi.')
+
+    const maxBibNum = Math.pow(10, bibFormat) - 1
+    const bibNumInt = parseInt(bibNum, 10)
+    if (bibPrefix && bibNum) {
+      if (isNaN(bibNumInt) || bibNumInt < 1 || bibNumInt > maxBibNum) {
+        return setErr(`Nombor Badan melebihi format ${bibFormat} digit. Julat sah: 1–${maxBibNum}.`)
+      }
+    }
+    const noKP = form.noKP.replace(/-/g, '')
+    if (!/^\d{12}$/.test(noKP)) return setErr('Format No. K/P tidak sah — 12 digit diperlukan.')
+    const finalNoKP = `${noKP.slice(0,6)}-${noKP.slice(6,8)}-${noKP.slice(8)}`
+    const finalBib  = fullNoBib.trim().toUpperCase()
+    const bibDup    = (existingBibs || []).filter(b => b === finalBib)
+    const isSameBib = isEdit && initial?.noBib === finalBib
+    if (bibDup.length > 0 && !isSameBib) return setErr(`Nombor Badan "${finalBib}" sudah digunakan.`)
 
     setSaving(true)
     try {
-      const data = {
-        noKP:        noKPClean,
-        nama:        form.nama.trim().toUpperCase(),
-        jantina:     form.jantina,
-        tarikhLahir: form.tarikhLahir,
-        noBib:       form.noBib.trim().toUpperCase(),
-        kodSekolah,
-        isAktif:     form.isAktif,
-        updatedAt:   serverTimestamp(),
+      // Padam pendaftaran lama jika maklumat kritikal berubah
+      if (sensitiveChanged && acaraCount > 0 && kejohananId) {
+        const batch = writeBatch(db)
+        atletPend.forEach(p => batch.delete(
+          doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', p.id || p.noKP)
+        ))
+        await batch.commit()
       }
-      if (!isEdit) data.createdAt = serverTimestamp()
 
-      await setDoc(
-        doc(db, 'tenants', schoolId, 'atlet', noKPClean),
-        data,
-        { merge: isEdit }
-      )
-      onSaved()
-      onTutup()
-    } catch (ex) {
-      setErr('Gagal simpan: ' + ex.message)
-    } finally {
-      setSaving(false)
+      if (!isEdit) {
+        const ex = await getDoc(doc(db, 'tenants', schoolId, 'atlet', finalNoKP))
+        if (ex.exists()) { setSaving(false); return setErr(`Atlet ${finalNoKP} sudah wujud.`) }
+      }
+
+      const payload = {
+        noKP: finalNoKP, nama: form.nama.trim(),
+        jantina: form.jantina, tarikhLahir: form.tarikhLahir,
+        noBib:           finalBib,
+        kodSekolah:      sekolahData?.kodSekolah || kodSekolah || '',
+        kategoriSekolah: sekolahData?.kategori   || 'SM',
+        negeri:          sekolahData?.negeri      || '',
+        daerah:          sekolahData?.daerah      || '',
+        warganegara: 'MY', isAktif: true,
+        updatedAt: serverTimestamp(),
+      }
+      if (!isEdit) payload.createdAt = serverTimestamp()
+      await setDoc(doc(db, 'tenants', schoolId, 'atlet', finalNoKP), payload, { merge: isEdit })
+
+      // Sync namaAtlet dalam pendaftaran doc
+      if (isEdit && form.nama?.trim() && kejohananId) {
+        const pendSnap = await getDocs(
+          collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran')
+        )
+        const batch2 = writeBatch(db)
+        let n = 0
+        pendSnap.docs.forEach(d => {
+          if (d.data().noKP === finalNoKP) {
+            batch2.update(d.ref, { namaAtlet: form.nama.trim(), updatedAt: serverTimestamp() })
+            n++
+          }
+        })
+        if (n > 0) await batch2.commit()
+      }
+
+      onSaved(); onClose()
+    } catch (e) { setErr(e.message) }
+    finally { setSaving(false) }
+  }
+
+  function handleSave() {
+    if (isEdit && sensitiveChanged && acaraCount > 0) {
+      setWarnPending(true)
+    } else {
+      doSave()
     }
   }
 
-  const umur = umurDari(form.tarikhLahir)
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-      onClick={e => e.target === e.currentTarget && onTutup()}>
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-
-        <div className="bg-[#003399] px-5 py-4 flex items-center justify-between">
-          <p className="text-sm font-bold text-white">{isEdit ? 'Kemaskini Atlet' : 'Tambah Atlet Baru'}</p>
-          <button onClick={onTutup} className="text-white/50 hover:text-white">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[94vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h2 className="text-sm font-bold text-gray-800">{isEdit ? 'Edit Maklumat Atlet' : 'Tambah Atlet Baru'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
         </div>
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
 
-        <form onSubmit={handleSimpan} className="p-5 space-y-3">
-          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
-
-          <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">No. IC</label>
-            <input type="text" value={form.noKP}
-              onChange={e => handleNoKP(e.target.value)}
-              disabled={isEdit}
-              placeholder="000000-00-0000"
-              inputMode="numeric"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50 font-mono disabled:bg-gray-100 disabled:text-gray-400" />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Nama Penuh</label>
-            <input type="text" value={form.nama}
-              onChange={e => set('nama', e.target.value)}
-              placeholder="NAMA PENUH ATLET"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50 uppercase" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Jantina</label>
-              <select value={form.jantina} onChange={e => set('jantina', e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50">
-                <option value="L">Lelaki</option>
-                <option value="P">Perempuan</option>
-              </select>
+          {warnPending && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-bold text-amber-800">Amaran — Maklumat Kritikal Berubah</p>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Anda menukar{' '}
+                <strong>
+                  {[form.jantina !== initial?.jantina && 'Jantina',
+                    form.tarikhLahir !== initial?.tarikhLahir && 'Tarikh Lahir'].filter(Boolean).join(' & ')}
+                </strong>
+                . Perubahan ini akan memadamkan <strong>{acaraCount} pendaftaran acara</strong> bagi atlet ini.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setWarnPending(false)} disabled={saving}
+                  className="flex-1 px-3 py-2 text-xs font-bold border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-100">
+                  Batal
+                </button>
+                <button onClick={doSave} disabled={saving}
+                  className="flex-1 px-3 py-2 text-xs font-bold bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                  {saving ? 'Memproses…' : 'Teruskan & Padam Pendaftaran'}
+                </button>
+              </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
-                Tarikh Lahir {umur !== null && <span className="text-[#003399] font-bold normal-case">({umur} thn)</span>}
-              </label>
-              <input type="date" value={form.tarikhLahir}
-                onChange={e => set('tarikhLahir', e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50" />
-            </div>
-          </div>
+          )}
 
-          <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">No. BIB (pilihan)</label>
-            <input type="text" value={form.noBib}
-              onChange={e => set('noBib', e.target.value.toUpperCase())}
-              placeholder="cth: A001"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-gray-50 font-mono" />
-          </div>
+          {!warnPending && (
+            <>
+              {/* Nombor Badan */}
+              {(() => {
+                const maxBibNum = Math.pow(10, bibFormat) - 1
+                const contoh    = bibPrefix
+                  ? `${bibPrefix}${String(sekolahData?.bibMula || 1).padStart(bibFormat, '0')}`
+                  : 'PP001'
+                const hintText  = bibPrefix
+                  ? `Prefix: ${bibPrefix} | Format: ${bibFormat} digit (cth: ${contoh}) | Julat: 1–${maxBibNum}`
+                  : `Masukkan nombor badan (cth: ${contoh})`
+                return (
+                  <FormField label="Nombor Badan" required hint={hintText}>
+                    {bibPrefix ? (
+                      <div className="flex">
+                        <span className="inline-flex items-center px-3 py-2 rounded-l-lg border border-r-0 border-gray-200 bg-gray-100 text-xs font-mono font-bold text-gray-600 select-none">
+                          {bibPrefix}
+                        </span>
+                        <input type="number" min={1} max={maxBibNum}
+                          value={bibNum} onChange={e => setBibNum(e.target.value)}
+                          placeholder={String(sekolahData?.bibMula || 1)}
+                          className={inputCls + ' rounded-l-none font-mono'} />
+                      </div>
+                    ) : (
+                      <input value={fullNoBib} onChange={e => setBibNum(e.target.value.toUpperCase())}
+                        placeholder={contoh} className={inputCls + ' font-mono'} />
+                    )}
+                    {fullNoBib && (
+                      <p className="text-[10px] text-[#003399] font-mono font-bold mt-1">
+                        Nombor Badan: <span className="text-sm">{fullNoBib}</span>
+                      </p>
+                    )}
+                  </FormField>
+                )
+              })()}
 
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="isAktif" checked={form.isAktif}
-              onChange={e => set('isAktif', e.target.checked)}
-              className="w-4 h-4 rounded accent-[#003399]" />
-            <label htmlFor="isAktif" className="text-xs text-gray-600 font-semibold">Atlet aktif</label>
-          </div>
+              <FormField label="No. Kad Pengenalan" required hint="Taip 12 digit — sempang & tarikh lahir auto diisi.">
+                <input value={form.noKP} onChange={e => handleNoKPChange(e.target.value)}
+                  placeholder="020101145678" className={inputCls + ' font-mono tracking-wider'}
+                  disabled={isEdit} maxLength={14} />
+              </FormField>
 
-          <button type="submit" disabled={saving}
-            className="w-full bg-[#003399] hover:bg-[#002277] disabled:bg-gray-300 text-white font-bold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2">
-            {saving
-              ? <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Menyimpan…</>
-              : isEdit ? 'Kemaskini' : 'Tambah Atlet'
-            }
-          </button>
-        </form>
+              <FormField label="Nama Penuh" required>
+                <input value={form.nama} onChange={e => set('nama', e.target.value)}
+                  placeholder="Nama seperti dalam kad pengenalan" className={inputCls} />
+              </FormField>
+
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="Jantina" required>
+                  <div className="flex gap-2 h-[38px]">
+                    {[{v:'L',l:'Lelaki'},{v:'P',l:'Perempuan'}].map(o => (
+                      <button key={o.v} type="button" onClick={() => set('jantina', o.v)}
+                        className={`flex-1 rounded-lg text-xs font-bold border transition-colors ${
+                          form.jantina===o.v
+                            ? o.v==='L'?'bg-blue-600 text-white border-blue-600':'bg-pink-500 text-white border-pink-500'
+                            : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                        }`}>{o.l}</button>
+                    ))}
+                  </div>
+                  {isEdit && form.jantina !== initial?.jantina && (
+                    <p className="text-[10px] text-amber-600 mt-1">⚠ Perubahan ini akan padam pendaftaran atlet.</p>
+                  )}
+                </FormField>
+                <FormField label="Tarikh Lahir" required
+                  hint={!isEdit && form.tarikhLahir && form.noKP.replace(/-/g,'').length >= 6 ? 'Auto dari No. KP' : undefined}>
+                  <input type="date" value={form.tarikhLahir}
+                    readOnly={!isEdit}
+                    onChange={isEdit ? e => set('tarikhLahir', e.target.value) : undefined}
+                    className={inputCls + (!isEdit ? ' cursor-default' : '')} />
+                  {isEdit && form.tarikhLahir !== initial?.tarikhLahir && (
+                    <p className="text-[10px] text-amber-600 mt-1">⚠ Perubahan ini akan padam pendaftaran atlet.</p>
+                  )}
+                </FormField>
+              </div>
+
+              {form.tarikhLahir && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                  <span className="text-[10px] text-gray-500">Kategori MSSM:</span>
+                  {kategori
+                    ? <KategoriBadge kat={kategori} kategoriList={kategoriList} />
+                    : <span className="text-[10px] text-red-500 font-semibold">Di luar julat kategori</span>}
+                </div>
+              )}
+
+              {err && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">{err}</div>
+              )}
+            </>
+          )}
+        </div>
+        {!warnPending && (
+          <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2 shrink-0">
+            <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg">Batal</button>
+            <button onClick={handleSave} disabled={saving}
+              className="px-5 py-2 text-xs font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-50">
+              {saving ? 'Menyimpan…' : isEdit ? 'Kemaskini' : 'Tambah Atlet'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// ─── Baris Atlet ──────────────────────────────────────────────────────────────
+// ─── Modal: Padam Atlet ───────────────────────────────────────────────────────
 
-function BariAtlet({ atlet, onEdit }) {
-  const umur = umurDari(atlet.tarikhLahir)
+function PadamAtletModal({ atlet, schoolId, myPendaftaran, kejohananId, onClose, onSaved }) {
+  const atletPend  = (myPendaftaran || []).filter(p => p.noKP === atlet.noKP)
+  const acaraCount = atletPend.flatMap(p => p.acaraIds || []).length
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState('')
+
+  async function handleDelete() {
+    setSaving(true)
+    try {
+      const batch = writeBatch(db)
+      if (kejohananId) {
+        atletPend.forEach(p => batch.delete(
+          doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', p.id || p.noKP)
+        ))
+      }
+      batch.delete(doc(db, 'tenants', schoolId, 'atlet', atlet.noKP))
+      await batch.commit()
+      onSaved(); onClose()
+    } catch (e) { setErr(e.message); setSaving(false) }
+  }
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-black ${
-        atlet.jantina === 'L' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
-      }`}>
-        {atlet.jantina === 'L' ? 'L' : 'P'}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5">
+        <h2 className="text-sm font-bold text-gray-800 mb-3">Padam Atlet</h2>
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
+          <p className="text-xs font-bold text-red-800">{atlet.nama}</p>
+          <p className="text-[10px] font-mono text-red-600">{atlet.noKP}</p>
+          {acaraCount > 0 ? (
+            <p className="text-xs text-red-700 mt-2">
+              ⚠ Atlet ini mempunyai <strong>{acaraCount} pendaftaran acara</strong>. Semua pendaftaran akan dipadam bersama.
+            </p>
+          ) : (
+            <p className="text-xs text-red-700 mt-2">Atlet ini belum mendaftar mana-mana acara.</p>
+          )}
+        </div>
+        {err && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg mb-3">{err}</div>}
+        <div className="flex gap-2">
+          <button onClick={onClose} disabled={saving}
+            className="flex-1 px-3 py-2 text-xs font-semibold border border-gray-200 rounded-lg hover:bg-gray-50">Batal</button>
+          <button onClick={handleDelete} disabled={saving}
+            className="flex-1 px-3 py-2 text-xs font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+            {saving ? 'Memproses…' : 'Padam Atlet'}
+          </button>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-gray-800 truncate">{atlet.nama || '—'}</p>
-        <p className="text-[11px] text-gray-400">
-          {atlet.noBib ? <span className="font-mono mr-2">{atlet.noBib}</span> : null}
-          {umur !== null ? `${umur} thn` : ''}
-          {atlet.kategoriKod ? ` · ${atlet.kategoriKod}` : ''}
-          {!atlet.isAktif ? ' · Tidak Aktif' : ''}
+    </div>
+  )
+}
+
+// ─── Modal: Import Atlet dari Excel ──────────────────────────────────────────
+
+const COL_ALIAS = {
+  noKP:  ['nokp','no kp','no. kp','no kad pengenalan','ic','icno','no. k/p','nokp (12 digit)'],
+  nama:  ['nama','name','nama penuh','full name'],
+  noBib: ['nobib','no bib','no. bib','bib','nombor bib','bib number','no badan','no. badan'],
+}
+function findCol(headers, field) {
+  const aliases = COL_ALIAS[field]
+  return headers.find(h => aliases.includes(h.toLowerCase().trim().replace(/\s+/g,' ')))
+}
+
+function ImportAtletModal({ schoolId, kodSekolah, sekolahData, existingBibs, onClose, onSaved }) {
+  const [rows,     setRows]     = useState([])
+  const [saving,   setSaving]   = useState(false)
+  const [fileErr,  setFileErr]  = useState('')
+  const [done,     setDone]     = useState(false)
+  const [saveInfo, setSaveInfo] = useState({ ok: 0, skip: 0 })
+
+  const bibPrefix = (sekolahData?.bibPrefix || '').toUpperCase()
+  const bibFormat = Number(sekolahData?.bibFormat) || 3
+
+  function parseFile(file) {
+    setFileErr('')
+    setRows([])
+    setDone(false)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const wb  = XLSX.read(new Uint8Array(e.target.result), { type: 'array' })
+        const ws  = wb.Sheets[wb.SheetNames[0]]
+        const raw = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        if (raw.length === 0) { setFileErr('Fail kosong atau tiada data.'); return }
+
+        const hdrs     = Object.keys(raw[0])
+        const colNoKP  = findCol(hdrs, 'noKP')
+        const colNama  = findCol(hdrs, 'nama')
+        const colNoBib = findCol(hdrs, 'noBib')
+
+        if (!colNoKP || !colNama) {
+          setFileErr('Kolum wajib tidak dijumpai. Pastikan header ada: noKP, nama, noBib.')
+          return
+        }
+        if (!colNoBib) {
+          setFileErr('Kolum "noBib" tidak dijumpai. Sila gunakan templat yang disediakan.')
+          return
+        }
+
+        const bibSet  = new Set(existingBibs || [])
+        const seenKP  = new Set()
+        const seenBib = new Set()
+
+        const parsed = raw.map((r, i) => {
+          const errs = []
+          const noKPRaw = String(r[colNoKP] || '').trim()
+          const digits  = noKPRaw.replace(/\D/g, '')
+          const noKP    = formatNoKP(noKPRaw)
+
+          if (!noKPRaw) errs.push('No. K/P kosong')
+          else if (digits.length < 12) errs.push(`No. K/P kurang digit — ada ${digits.length}, perlu 12`)
+          else if (!noKP) errs.push('No. K/P tidak sah')
+          else if (seenKP.has(noKP)) errs.push('No. K/P berganda dalam fail ini')
+          if (noKP) seenKP.add(noKP)
+
+          const nama = String(r[colNama] || '').trim()
+          if (!nama) errs.push('Nama kosong')
+
+          const noBib = String(r[colNoBib] || '').trim().toUpperCase()
+          if (!noBib) errs.push('No. BIB kosong — wajib diisi')
+          else if (bibSet.has(noBib)) errs.push(`No. BIB "${noBib}" sudah digunakan`)
+          else if (seenBib.has(noBib)) errs.push(`No. BIB "${noBib}" berganda dalam fail`)
+          if (noBib && !bibSet.has(noBib)) seenBib.add(noBib)
+
+          const jantina    = noKP ? autoJantina(noKP.replace(/-/g,'')) : ''
+          const tarikhLahir = noKP ? (autoTarikhLahir(noKP.replace(/-/g,'')) || '') : ''
+          if (noKP && !tarikhLahir) errs.push('Tarikh lahir tidak dapat dikesan dari No. K/P')
+
+          return { row: i + 2, noKP, noKPRaw, nama, jantina, tarikhLahir, noBib, errs }
+        })
+
+        setRows(parsed)
+      } catch (ex) {
+        setFileErr(`Gagal baca fail: ${ex.message}`)
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  async function handleSave() {
+    const valid = rows.filter(r => r.errs.length === 0)
+    if (valid.length === 0) return
+    setSaving(true)
+    let ok = 0, skip = 0
+    try {
+      for (const r of valid) {
+        const snap = await getDoc(doc(db, 'tenants', schoolId, 'atlet', r.noKP))
+        if (snap.exists()) { skip++; continue }
+        await setDoc(doc(db, 'tenants', schoolId, 'atlet', r.noKP), {
+          noKP:            r.noKP,
+          nama:            r.nama,
+          jantina:         r.jantina,
+          tarikhLahir:     r.tarikhLahir,
+          warganegara:     'MY',
+          noBib:           r.noBib,
+          kodSekolah:      sekolahData?.kodSekolah || kodSekolah || '',
+          kategoriSekolah: sekolahData?.kategori   || '',
+          negeri:          sekolahData?.negeri      || '',
+          daerah:          sekolahData?.daerah      || '',
+          isAktif:         true,
+          createdAt:       serverTimestamp(),
+          updatedAt:       serverTimestamp(),
+        })
+        ok++
+      }
+      setSaveInfo({ ok, skip })
+      setDone(true)
+      setTimeout(() => { onSaved(); onClose() }, 2000)
+    } catch (e) {
+      setFileErr(`Gagal simpan: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const validCount   = rows.filter(r => r.errs.length === 0).length
+  const invalidCount = rows.filter(r => r.errs.length  > 0).length
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-sm font-bold text-gray-800">Import Atlet dari Excel / CSV</h2>
+            <p className="text-[10px] text-gray-400 mt-0.5">Muat naik fail Excel (.xlsx) atau CSV (.csv).</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {/* Langkah 1 */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold text-blue-800">Langkah 1 — Muat turun templat</p>
+              <p className="text-[10px] text-blue-600 mt-1">
+                <strong>3 kolum wajib</strong>: <strong>noKP</strong>, <strong>nama</strong>, <strong>noBib</strong><br/>
+                Jantina &amp; tarikh lahir <strong>auto-detect</strong> dari No. K/P
+              </p>
+            </div>
+            <button onClick={() => downloadTemplateAtlet(bibPrefix, bibFormat)}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Muat Turun Templat
+            </button>
+          </div>
+
+          {/* Langkah 2 */}
+          <div>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">Langkah 2 — Muat naik fail</p>
+            <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+              <svg className="w-7 h-7 text-gray-400 mb-1" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-xs text-gray-500">Klik atau seret fail <strong>.xlsx</strong> / <strong>.csv</strong> ke sini</span>
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                onChange={e => e.target.files?.[0] && parseFile(e.target.files[0])} />
+            </label>
+            {fileErr && (
+              <div className="mt-2 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-red-700 font-semibold">{fileErr}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Langkah 3 */}
+          {rows.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Langkah 3 — Semak sebelum simpan</p>
+                <div className="flex gap-2">
+                  {validCount > 0 && <span className="text-[10px] font-bold px-2.5 py-1 bg-green-100 text-green-700 rounded-full">{validCount} sah</span>}
+                  {invalidCount > 0 && <span className="text-[10px] font-bold px-2.5 py-1 bg-red-100 text-red-700 rounded-full">{invalidCount} ada ralat</span>}
+                </div>
+              </div>
+
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto max-h-72">
+                  <table className="w-full text-xs min-w-[640px]">
+                    <thead className="sticky top-0 bg-gray-50 z-10 border-b border-gray-200">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide w-8">Baris</th>
+                        <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">No. Kad Pengenalan</th>
+                        <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Nama Penuh</th>
+                        <th className="px-3 py-2.5 text-center text-[9px] font-bold text-gray-400 uppercase tracking-wide w-20">Jantina</th>
+                        <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Tarikh Lahir</th>
+                        <th className="px-3 py-2.5 text-center text-[9px] font-bold text-gray-400 uppercase tracking-wide">No. BIB</th>
+                        <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, i) => {
+                        const isOk = r.errs.length === 0
+                        return (
+                          <tr key={i} className={`border-b border-gray-50 ${!isOk ? 'bg-red-50' : 'hover:bg-gray-50/50'}`}>
+                            <td className="px-3 py-2 text-[9px] font-mono text-gray-400">{r.row}</td>
+                            <td className="px-3 py-2 font-mono text-[10px] text-gray-700">{r.noKP || <span className="text-red-400 italic text-[9px]">{r.noKPRaw || '(kosong)'}</span>}</td>
+                            <td className="px-3 py-2 font-semibold text-gray-800 max-w-[180px] truncate">{r.nama || <span className="text-red-400 italic text-[9px]">(kosong)</span>}</td>
+                            <td className="px-3 py-2 text-center">
+                              {r.jantina === 'L' ? <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Lelaki</span>
+                               : r.jantina === 'P' ? <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700">Perempuan</span>
+                               : <span className="text-[9px] text-red-400 font-semibold">—</span>}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[10px] text-gray-600">{r.tarikhLahir || <span className="text-red-400 italic text-[9px]">—</span>}</td>
+                            <td className="px-3 py-2 text-center">
+                              {r.noBib
+                                ? <span className="text-[10px] font-black text-[#003399] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">{r.noBib}</span>
+                                : <span className="text-[9px] text-gray-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2">
+                              {isOk
+                                ? <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Sah</span>
+                                : <div className="space-y-0.5">{r.errs.map((e, j) => <p key={j} className="text-[9px] text-red-600 font-semibold">{e}</p>)}</div>}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {invalidCount > 0 && (
+                <div className="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <p className="text-[10px] text-amber-800">
+                    <strong>{invalidCount} baris ada ralat</strong> dan akan dilangkau.
+                    Hanya <strong>{validCount} baris sah</strong> yang akan disimpan.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {done && (
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+              <svg className="w-5 h-5 text-green-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <div>
+                <p className="text-xs font-bold text-green-800">Import berjaya!</p>
+                <p className="text-[10px] text-green-700 mt-0.5">
+                  {saveInfo.ok} atlet disimpan{saveInfo.skip > 0 ? `, ${saveInfo.skip} dilangkau (noKP sudah wujud)` : ''}.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between shrink-0">
+          <p className="text-[10px] text-gray-400">
+            {bibPrefix ? `Prefix BIB: ${bibPrefix}` : 'Tiada bibPrefix — tetapkan dalam Tetapan Sekolah'}
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg">Batal</button>
+            <button onClick={handleSave} disabled={saving || validCount === 0 || done}
+              className="px-5 py-2 text-xs font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-50 flex items-center gap-2">
+              {saving ? (
+                <><svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Menyimpan…</>
+              ) : `Simpan ${validCount} Atlet`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal: Daftar Atlet ke Acara ─────────────────────────────────────────────
+
+function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList, kategoriList, onClose, onSaved }) {
+  const [selected,   setSelected]   = useState([])
+  const [saving,     setSaving]     = useState(false)
+  const [validating, setValidating] = useState(false)
+  const [err, setErr]               = useState('')
+  const [errGate, setErrGate]       = useState('')
+  const [warn, setWarn]             = useState('')
+
+  const tahunKej = kejohanan?.tarikhMula
+    ? new Date(kejohanan.tarikhMula?.toDate?.() || kejohanan.tarikhMula).getFullYear()
+    : new Date().getFullYear()
+
+  const sudahDaftar = pendaftaranList
+    .filter(p => p.acaraIds?.includes(acara.aceraId || acara.id))
+    .map(p => p.noKP)
+
+  const _katObj = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
+
+  const atletLayak = atletSekolah.filter(a => {
+    if (a.isAktif === false) return false
+    if (a.jantina !== acara.jantina) return false
+    if (sudahDaftar.includes(a.noKP)) return false
+    if (_katObj?.isTerbuka) {
+      const tLahir = a.tarikhLahir ? parseInt(a.tarikhLahir.substring(0,4)) : 0
+      if (!tLahir) return false
+      const umur = tahunKej - tLahir
+      return umur >= (_katObj.umurMin ? Number(_katObj.umurMin) : 0) &&
+             umur <= (_katObj.umurHad ? Number(_katObj.umurHad) : 99)
+    }
+    const katKira = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+    const kat = katKira || a.kategoriKod
+    return kat === acara.kategoriKod
+  })
+
+  const hadAcara = (() => {
+    if (acara.jenisAcara === 'relay' && _katObj) {
+      const saizPasukan = Number(_katObj.saizPasukan) || 4
+      const hadPasukan  = acara.jantina === 'P'
+        ? (Number(_katObj.hadPasukanP) || 1)
+        : (Number(_katObj.hadPasukanL) || 1)
+      return saizPasukan * hadPasukan
+    }
+    return acara.hadAtletPerSekolah || 2
+  })()
+
+  const aceraId     = acara.aceraId || acara.id
+  const sekolahSudah = pendaftaranList.filter(p => p.acaraIds?.includes(aceraId)).length
+  const slotBaki    = hadAcara - sekolahSudah
+
+  function toggleSelect(noKP) {
+    setSelected(s => s.includes(noKP) ? s.filter(x => x !== noKP) : [...s, noKP])
+  }
+
+  async function handleSave() {
+    setErr(''); setErrGate(''); setWarn('')
+    if (selected.length === 0) return setErr('Pilih sekurang-kurangnya seorang atlet.')
+
+    const kejohananId = kejohanan.id
+
+    setValidating(true)
+    let jadualWarning = ''
+    try {
+      for (const noKP of selected) {
+        const atlet = atletSekolah.find(a => a.noKP === noKP)
+        if (!atlet) continue
+        const hasil = await validasiPendaftaran({
+          schoolId,
+          noKP,
+          tarikhLahir:    atlet.tarikhLahir,
+          jantina:        atlet.jantina,
+          kodSekolah:     atlet.kodSekolah,
+          kejohananId,
+          aceraId,
+          kategoriId:     acara.kategoriKod,
+          jenisAcara:     acara.jenisAcara,
+          tahunKejohanan: tahunKej,
+          bypassHeat:     false,
+        })
+        if (!hasil.valid) {
+          setErr(`${atlet.nama || noKP} — ${hasil.mesej}`)
+          setErrGate(hasil.gate)
+          return
+        }
+        if (hasil.warning && !jadualWarning) jadualWarning = `${atlet.nama || noKP} — ${hasil.warning}`
+      }
+    } catch (e) {
+      setErr('Ralat semasa validasi: ' + e.message)
+      return
+    } finally {
+      setValidating(false)
+    }
+    if (jadualWarning) setWarn(jadualWarning)
+
+    setSaving(true)
+    try {
+      const sekolahSnap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', atletSekolah[0]?.kodSekolah || ''))
+      const sekolahDataLive = sekolahSnap.exists() ? sekolahSnap.data() : {}
+      const bibPfx = sekolahDataLive.bibPrefix || atletSekolah[0]?.kodSekolah || 'BIB'
+      const bibFmt = Number(sekolahDataLive.bibFormat) || 3
+
+      const pendSnap = await getDocs(
+        collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran')
+      )
+      const noBibSedia  = pendSnap.docs.map(d => d.data().noBib).filter(Boolean)
+      const noBibAtlet  = atletSekolah.map(a => a.noBib).filter(Boolean)
+      const senaraiNoBib = [...new Set([...noBibSedia, ...noBibAtlet])]
+
+      const pendLiveByKP = {}
+      pendSnap.docs.forEach(d => {
+        const p = d.data()
+        if (p.noKP) pendLiveByKP[p.noKP] = { ...p }
+      })
+
+      const toUpdate = []
+      const toCreate = []
+      for (const noKP of selected) {
+        const atlet = atletSekolah.find(a => a.noKP === noKP)
+        if (!atlet) continue
+        const pRec = pendLiveByKP[noKP]
+        if (pRec) toUpdate.push({ noKP, pRec })
+        else       toCreate.push({ atlet })
+      }
+
+      for (const { pRec } of toUpdate) {
+        const acaraIds = [...new Set([...(pRec.acaraIds || []), aceraId])]
+        await updateDoc(
+          doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', pRec.noKP),
+          { acaraIds, updatedAt: serverTimestamp() }
+        )
+      }
+
+      if (toCreate.length > 0) {
+        const kodSekolahCounter = atletSekolah[0]?.kodSekolah || bibPfx
+        const counterRef = doc(db, 'tenants', schoolId, 'pendaftaran_counter', `${kejohananId}_${kodSekolahCounter}`)
+        await runTransaction(db, async (transaction) => {
+          const counterSnap = await transaction.get(counterRef)
+          let lastNum = counterSnap.exists() ? (counterSnap.data().lastBibNum || 0) : 0
+          senaraiNoBib.forEach(nb => {
+            if (nb.startsWith(bibPfx)) {
+              const n = parseInt(nb.slice(bibPfx.length), 10)
+              if (!isNaN(n) && n > lastNum) lastNum = n
+            }
+          })
+
+          for (const { atlet } of toCreate) {
+            lastNum++
+            const noBib = bibPfx + String(lastNum).padStart(bibFmt, '0')
+            transaction.set(
+              doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', atlet.noKP),
+              {
+                noBib,
+                noKP:        atlet.noKP,
+                namaAtlet:   atlet.nama,
+                jantina:     atlet.jantina,
+                tarikhLahir: atlet.tarikhLahir,
+                kodSekolah:  atlet.kodSekolah,
+                namaSekolah: sekolahDataLive.namaSekolah || atlet.kodSekolah,
+                kategoriKod: kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList),
+                acaraIds:    [aceraId],
+                isAktif:     true,
+                isRelay:     false,
+                createdAt:   serverTimestamp(),
+                updatedAt:   serverTimestamp(),
+              }
+            )
+          }
+
+          transaction.set(counterRef, {
+            lastBibNum:  lastNum,
+            bibPrefix:   bibPfx,
+            kodSekolah:  kodSekolahCounter,
+            kejohananId,
+            updatedAt:   serverTimestamp(),
+          })
+        })
+      }
+
+      onSaved(); onClose()
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-gray-800">Daftar ke Acara</h2>
+              <p className="text-xs text-gray-500 mt-0.5 font-semibold">
+                {acara.namaAcara} — Kat {acara.kategoriKod} {acara.jantina==='L'?'Lelaki':'Perempuan'}
+              </p>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+          </div>
+          <div className="flex gap-2 mt-2 flex-wrap">
+            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+              slotBaki > 0 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
+            }`}>
+              {slotBaki > 0 ? `${sekolahSudah}/${hadAcara} slot` : `${sekolahSudah}/${hadAcara} PENUH`}
+            </span>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-3">
+          {slotBaki <= 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-red-600 font-semibold">Had pendaftaran sekolah ini penuh.</p>
+              <p className="text-xs text-gray-400 mt-1">Maks {hadAcara} atlet dari sekolah ini untuk acara ini.</p>
+            </div>
+          ) : atletLayak.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-gray-500">Tiada atlet yang layak.</p>
+              <p className="text-xs text-gray-400 mt-1">Semak: jantina, kategori (umur), dan sama ada sudah didaftarkan.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">Pilih Atlet ({atletLayak.length} layak)</p>
+              {atletLayak.map(a => {
+                const katKira = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                const kat = katKira || a.kategoriKod
+                const isSelected  = selected.includes(a.noKP)
+                const willExceed  = !isSelected && selected.length >= slotBaki
+                return (
+                  <button key={a.noKP} type="button"
+                    onClick={() => !willExceed && toggleSelect(a.noKP)}
+                    disabled={willExceed}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
+                      isSelected ? 'border-[#003399] bg-blue-50'
+                      : willExceed ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
+                      : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${isSelected?'border-[#003399] bg-[#003399]':'border-gray-300'}`}>
+                        {isSelected && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <p className="text-xs font-bold text-gray-800 truncate">{a.nama}</p>
+                        <p className="text-[9px] text-gray-400 font-mono">{a.noKP}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <KategoriBadge kat={kat} kategoriList={kategoriList} />
+                      <JantinaBadge j={a.jantina} />
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {selected.length > 0 && (
+          <div className="px-5 py-2 bg-blue-50 border-t border-blue-100 shrink-0">
+            <p className="text-xs font-semibold text-[#003399]">{selected.length} atlet dipilih</p>
+          </div>
+        )}
+
+        {err && (
+          <div className="mx-5 mb-2 bg-red-50 border border-red-200 rounded-lg overflow-hidden">
+            {errGate && (
+              <div className="px-3 py-1 bg-red-100 border-b border-red-200 flex items-center gap-1.5">
+                <span className="text-[9px] font-black text-red-600 font-mono">{errGate}</span>
+                <span className="text-[9px] text-red-500">Gagal</span>
+              </div>
+            )}
+            <p className="text-red-700 text-xs px-3 py-2">{err}</p>
+          </div>
+        )}
+
+        {warn && !err && (
+          <div className="mx-5 mb-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
+            <p className="text-amber-800 text-xs">{warn}</p>
+          </div>
+        )}
+
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg">Batal</button>
+          <button onClick={handleSave}
+            disabled={saving || validating || selected.length === 0 || slotBaki <= 0}
+            className="px-5 py-2 text-xs font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-50 flex items-center gap-2">
+            {validating ? (
+              <><svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Menyemak…</>
+            ) : saving ? 'Mendaftar…' : `Daftar ${selected.length} Atlet`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal: Buang Atlet dari Acara ────────────────────────────────────────────
+
+function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, onSaved }) {
+  const [saving, setSaving] = useState(false)
+
+  async function handleBuang() {
+    setSaving(true)
+    try {
+      const docId   = pRec.id || pRec.noKP
+      const aceraId = acara.aceraId || acara.id
+      const acaraBaru = (pRec.acaraIds || []).filter(id => id !== aceraId)
+      const ref = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', docId)
+      if (acaraBaru.length === 0) {
+        await deleteDoc(ref)
+      } else {
+        await updateDoc(ref, { acaraIds: acaraBaru, updatedAt: serverTimestamp() })
+      }
+      onSaved(); onClose()
+    } catch (e) { alert(e.message); setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5 text-center">
+        <div className="w-11 h-11 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+          <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6" />
+          </svg>
+        </div>
+        <h3 className="text-sm font-bold text-gray-800 mb-1">Buang Pendaftaran?</h3>
+        <p className="text-xs text-gray-500 mb-4">
+          Buang <strong>{atlet?.namaAtlet || atlet?.nama}</strong> dari <strong>{acara.namaAcara}</strong>?
         </p>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Batal</button>
+          <button onClick={handleBuang} disabled={saving}
+            className="flex-1 py-2 text-xs font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
+            {saving ? 'Membuang…' : 'Buang'}
+          </button>
+        </div>
       </div>
-      <button onClick={() => onEdit(atlet)}
-        className="shrink-0 text-gray-300 hover:text-[#003399] transition-colors p-1.5 rounded-lg hover:bg-[#003399]/5">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
-      </button>
+    </div>
+  )
+}
+
+// ─── Tab 1: Urus Atlet ────────────────────────────────────────────────────────
+
+function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, kejohananId, myPendaftaran, onRefreshPend }) {
+  const [atletList,   setAtletList]   = useState([])
+  const [loading,     setLoading]     = useState(false)
+  const [filterJ,     setFilterJ]     = useState('semua')
+  const [search,      setSearch]      = useState('')
+  const [modal,       setModal]       = useState(null) // null | { type: 'add'|'edit', data? }
+  const [showImport,  setShowImport]  = useState(false)
+  const [toast,       setToast]       = useState('')
+  const [confirmDel,  setConfirmDel]  = useState(null)
+
+  function showToast(msg) {
+    setToast(msg)
+    setTimeout(() => setToast(''), 3000)
+  }
+
+  const fetchAtlet = useCallback(async () => {
+    if (!schoolId || !kodSekolah) return
+    setLoading(true)
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'tenants', schoolId, 'atlet'), where('kodSekolah', '==', kodSekolah))
+      )
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      data.sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'ms'))
+      setAtletList(data)
+    } catch (e) { console.error('fetchAtlet:', e) }
+    finally { setLoading(false) }
+  }, [schoolId, kodSekolah])
+
+  useEffect(() => { fetchAtlet() }, [fetchAtlet])
+
+  const filtered = atletList.filter(a => {
+    if (filterJ !== 'semua' && a.jantina !== filterJ) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return a.nama?.toLowerCase().includes(q) || a.noKP?.includes(q) || a.noBib?.toLowerCase().includes(q)
+    }
+    return true
+  })
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Cari nama / No. KP / BIB…"
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#003399]/25" />
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
+            {['semua','L','P'].map(f => (
+              <button key={f} onClick={() => setFilterJ(f)}
+                className={`px-2.5 py-1.5 font-semibold transition-colors ${filterJ===f?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
+                {f === 'semua' ? 'L+P' : f}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowImport(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-[#003399] text-[#003399] text-xs font-bold rounded-lg hover:bg-blue-50">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Import Excel
+          </button>
+          <button onClick={() => setModal({ type: 'add' })}
+            className="flex items-center gap-2 px-4 py-2 bg-[#003399] text-white text-xs font-bold rounded-lg hover:bg-[#002288]">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Tambah Atlet
+          </button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { l:'Jumlah', v:filtered.length, c:'text-[#003399]', bg:'bg-blue-50' },
+          { l:'Lelaki',  v:filtered.filter(a=>a.jantina==='L').length, c:'text-blue-700', bg:'bg-blue-50' },
+          { l:'Perempuan', v:filtered.filter(a=>a.jantina==='P').length, c:'text-pink-700', bg:'bg-pink-50' },
+        ].map(s => (
+          <div key={s.l} className={`${s.bg} rounded-xl px-3 py-2 text-center`}>
+            <p className={`text-xl font-black ${s.c}`}>{s.v}</p>
+            <p className="text-[9px] text-gray-500 uppercase tracking-wide">{s.l}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="py-10 text-center text-sm text-gray-400">Memuatkan…</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-400">
+            {atletList.length === 0 ? 'Tiada atlet. Tambah atlet baru.' : 'Tiada hasil carian.'}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">BIB</th>
+                  <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Nama</th>
+                  <th className="px-3 py-2.5 text-center text-[9px] font-bold text-gray-400 uppercase tracking-wide">J</th>
+                  <th className="px-3 py-2.5 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wide">Tarikh Lahir</th>
+                  <th className="px-3 py-2.5 text-center text-[9px] font-bold text-gray-400 uppercase tracking-wide">Kategori</th>
+                  <th className="px-3 py-2.5 text-center text-[9px] font-bold text-gray-400 uppercase tracking-wide">Tindakan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(a => {
+                  const katAuto = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                  const katVal  = katAuto || a.kategoriKod || ''
+                  return (
+                    <tr key={a.noKP} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${!a.isAktif?'opacity-50':''}`}>
+                      <td className="px-3 py-2.5">
+                        <span className="text-[10px] font-black font-mono text-[#003399] bg-blue-50 px-2 py-0.5 rounded">{a.noBib || '—'}</span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <p className="font-bold text-gray-800">{a.nama}</p>
+                        <p className="text-[9px] font-mono text-gray-400">{a.noKP}</p>
+                      </td>
+                      <td className="px-3 py-2.5 text-center"><JantinaBadge j={a.jantina} /></td>
+                      <td className="px-3 py-2.5 text-gray-600">{a.tarikhLahir}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        {katVal ? <KategoriBadge kat={katVal} kategoriList={kategoriList} /> : <span className="text-[9px] text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={() => setModal({ type:'edit', data:a })}
+                            className="p-1 text-gray-400 hover:text-[#003399] hover:bg-blue-50 rounded transition-colors" title="Edit">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                          </button>
+                          <button onClick={() => setConfirmDel(a)}
+                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Padam">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {modal?.type === 'add' && (
+        <AtletModal mode="add" schoolId={schoolId} kodSekolah={kodSekolah}
+          sekolahData={sekolahData}
+          existingBibs={atletList.map(a => a.noBib).filter(Boolean)}
+          myPendaftaran={myPendaftaran}
+          kejohananId={kejohananId}
+          tahunKej={tahunKej}
+          kategoriList={kategoriList}
+          onClose={() => setModal(null)}
+          onSaved={() => { fetchAtlet(); onRefreshPend(); showToast('Atlet berjaya didaftarkan.') }} />
+      )}
+      {modal?.type === 'edit' && (
+        <AtletModal mode="edit" initial={modal.data} schoolId={schoolId} kodSekolah={kodSekolah}
+          sekolahData={sekolahData}
+          existingBibs={atletList.map(a => a.noBib).filter(Boolean)}
+          myPendaftaran={myPendaftaran}
+          kejohananId={kejohananId}
+          tahunKej={tahunKej}
+          kategoriList={kategoriList}
+          onClose={() => setModal(null)}
+          onSaved={() => { fetchAtlet(); onRefreshPend(); showToast('Maklumat atlet dikemas kini.') }} />
+      )}
+      {showImport && (
+        <ImportAtletModal
+          schoolId={schoolId} kodSekolah={kodSekolah}
+          sekolahData={sekolahData}
+          existingBibs={atletList.map(a => a.noBib).filter(Boolean)}
+          onClose={() => setShowImport(false)}
+          onSaved={() => { fetchAtlet(); showToast('Import atlet berjaya.') }} />
+      )}
+      {confirmDel && (
+        <PadamAtletModal
+          atlet={confirmDel} schoolId={schoolId}
+          myPendaftaran={myPendaftaran}
+          kejohananId={kejohananId}
+          onClose={() => setConfirmDel(null)}
+          onSaved={() => { fetchAtlet(); onRefreshPend(); showToast('Atlet berjaya dipadam.') }} />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white text-sm font-semibold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          {toast}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Tab 2: Daftar Acara ──────────────────────────────────────────────────────
+
+function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kategoriList,
+                     atletSekolah, pendaftaranList, acaraList, loading, fetchErr, onRefresh }) {
+  const [selectedAcara, setSelectedAcara] = useState(null)
+  const [modal,         setModal]         = useState(null)
+  const [filterKat,     setFilterKat]     = useState('semua')
+  const [filterJenis,   setFilterJenis]   = useState('semua')
+
+  const tarikhTamatDaftar = kejohanan?.tarikhTamatDaftar || null
+  const [countdownStr, setCountdownStr] = useState('')
+
+  useEffect(() => {
+    if (!tarikhTamatDaftar) { setCountdownStr(''); return }
+    function tick() {
+      const ms = new Date(tarikhTamatDaftar) - new Date()
+      if (ms <= 0) { setCountdownStr('TAMAT'); return }
+      const s = Math.floor(ms / 1000)
+      const m = Math.floor(s / 60)
+      const h = Math.floor(m / 60)
+      const d = Math.floor(h / 24)
+      setCountdownStr(d > 0
+        ? `${d} hari ${String(h%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`
+        : `${String(h%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [tarikhTamatDaftar])
+
+  const tamatDaftarLepas  = tarikhTamatDaftar && new Date() > new Date(tarikhTamatDaftar)
+  const pendaftaranTutup  = tamatDaftarLepas
+
+  // Hanya acara saringan (tanpa parentAcaraId)
+  const jenisShort = { lorong:'Lorong', mass_start:'Mass', padang_lompat:'Lompat', padang_balin:'Balin', relay:'Relay' }
+  const acaraSaringan = acaraList.filter(a => !a.parentAcaraId && a.isAktif !== false)
+  const katList = [...new Set(acaraSaringan.map(a => a.kategoriKod))].sort()
+
+  const acaraFiltered = acaraSaringan.filter(a => {
+    if (filterKat !== 'semua' && a.kategoriKod !== filterKat) return false
+    if (filterJenis !== 'semua' && a.jenisAcara !== filterJenis) return false
+    return true
+  })
+
+  const pesertaByAcara = useMemo(() => {
+    const map = {}
+    pendaftaranList.forEach(p => {
+      (p.acaraIds || []).forEach(id => {
+        if (!map[id]) map[id] = []
+        map[id].push(p)
+      })
+    })
+    return map
+  }, [pendaftaranList])
+
+  const pesertaSekolahByAcara = useMemo(() => {
+    const map = {}
+    pendaftaranList.forEach(p => {
+      if (p.kodSekolah !== kodSekolah) return
+      (p.acaraIds || []).forEach(id => {
+        if (!map[id]) map[id] = []
+        map[id].push(p)
+      })
+    })
+    return map
+  }, [pendaftaranList, kodSekolah])
+
+  // Stats
+  const myPend = pendaftaranList.filter(p => p.kodSekolah === kodSekolah)
+
+  return (
+    <div className="space-y-4">
+      {kejohanan?.namaKejohanan && (
+        <p className="text-xs font-semibold text-[#003399]">{kejohanan.namaKejohanan}</p>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { l:'Jumlah Acara',   v: acaraList.filter(a=>a.isAktif!==false).length, c:'text-[#003399]', bg:'bg-blue-50' },
+          { l:'Atlet Sekolah',  v: myPend.length, c:'text-green-700', bg:'bg-green-50' },
+          { l:'Atlet Lelaki',   v: myPend.filter(p=>p.jantina==='L').length, c:'text-blue-700', bg:'bg-blue-50' },
+          { l:'Atlet Perempuan',v: myPend.filter(p=>p.jantina==='P').length, c:'text-pink-700', bg:'bg-pink-50' },
+        ].map(s => (
+          <div key={s.l} className={`${s.bg} rounded-xl px-3 py-2.5 text-center`}>
+            <p className={`text-xl font-black ${s.c}`}>{s.v}</p>
+            <p className="text-[9px] text-gray-500 uppercase tracking-wide">{s.l}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Deadline / Countdown */}
+      {!tarikhTamatDaftar && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl">
+          <svg className="w-4 h-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-xs text-gray-500">Tarikh tutup pendaftaran belum ditetapkan. Hubungi pentadbir untuk maklumat lanjut.</p>
+        </div>
+      )}
+
+      {pendaftaranTutup && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+          <svg className="w-4 h-4 shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <div>
+            <p className="text-xs font-bold text-red-800">Tempoh Pendaftaran Telah Tamat — {formatDeadlineMY(tarikhTamatDaftar)}</p>
+            <p className="text-[10px] text-red-600 mt-0.5">Senarai peserta boleh dilihat. Pendaftaran baru tidak dibenarkan.</p>
+          </div>
+        </div>
+      )}
+
+      {tarikhTamatDaftar && !tamatDaftarLepas && countdownStr && (
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
+          countdownStr === 'TAMAT' || countdownStr.startsWith('00:')
+            ? 'bg-red-50 border-red-200 text-red-800'
+            : countdownStr.startsWith('1 hari') || countdownStr.startsWith('2 hari') || countdownStr.startsWith('3 hari')
+              ? 'bg-amber-50 border-amber-200 text-amber-800'
+              : 'bg-blue-50 border-blue-200 text-blue-800'
+        }`}>
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">Masa Tutup Pendaftaran Acara</p>
+            <p className="text-xs font-bold">{formatDeadlineMY(tarikhTamatDaftar)}</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">Masa Tinggal</p>
+            <p className="text-sm font-black font-mono tracking-wider">{countdownStr}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Filter */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-wrap rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
+          {['semua', ...katList].map(k => (
+            <button key={k} onClick={() => setFilterKat(k)}
+              className={`px-2.5 py-1.5 font-bold transition-colors ${filterKat===k?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
+              {k === 'semua' ? 'Semua' : `Kat ${k}`}
+            </button>
+          ))}
+        </div>
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
+          {['semua', 'lorong', 'mass_start', 'padang_lompat', 'padang_balin', 'relay'].map(j => (
+            <button key={j} onClick={() => setFilterJenis(j)}
+              className={`px-2.5 py-1.5 font-semibold transition-colors ${filterJenis===j?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
+              {j === 'semua' ? 'Semua' : jenisShort[j] || j}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Error */}
+      {fetchErr && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-4 py-3 rounded-xl">
+          <span className="font-bold">Ralat:</span> {fetchErr}
+        </div>
+      )}
+
+      {/* Senarai Acara */}
+      {loading ? (
+        <div className="py-12 text-center text-sm text-gray-400">Memuatkan…</div>
+      ) : acaraFiltered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm py-10 text-center">
+          <p className="text-sm text-gray-400">Tiada acara. Tambah acara dalam Setup Acara dahulu.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {acaraFiltered.map(acara => {
+            const aceraId    = acara.aceraId || acara.id
+            const peserta    = pesertaByAcara[aceraId] || []
+            const pesertaSek = pesertaSekolahByAcara[aceraId] || []
+            const _katObj    = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
+            const hadAcara   = (() => {
+              if (acara.jenisAcara === 'relay' && _katObj) {
+                const saizPasukan = Number(_katObj.saizPasukan) || 4
+                const hadPasukan  = acara.jantina === 'P'
+                  ? (Number(_katObj.hadPasukanP) || 1)
+                  : (Number(_katObj.hadPasukanL) || 1)
+                return saizPasukan * hadPasukan
+              }
+              return acara.hadAtletPerSekolah || 2
+            })()
+            const slotBaki   = hadAcara - pesertaSek.length
+            const isSelected = selectedAcara?.aceraId === aceraId || selectedAcara?.id === aceraId
+
+            return (
+              <div key={aceraId} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <button className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50/60 transition-colors"
+                  onClick={() => setSelectedAcara(isSelected ? null : acara)}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-bold text-gray-800">{acara.namaAcara}</p>
+                        <KategoriBadge kat={acara.kategoriKod} kategoriList={kategoriList} />
+                        <JantinaBadge j={acara.jantina} />
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                          {lorong:'bg-blue-50 border-blue-200 text-blue-700',mass_start:'bg-cyan-50 border-cyan-200 text-cyan-700',padang_lompat:'bg-green-50 border-green-200 text-green-700',padang_balin:'bg-orange-50 border-orange-200 text-orange-700',relay:'bg-purple-50 border-purple-200 text-purple-700'}[acara.jenisAcara]||'bg-gray-50 border-gray-200 text-gray-600'
+                        }`}>{jenisShort[acara.jenisAcara] || acara.jenisAcara}</span>
+                      </div>
+                      <p className="text-[9px] font-mono text-gray-400 mt-0.5">{aceraId}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      <p className="text-xs font-black text-gray-700">{peserta.length}</p>
+                      <p className="text-[9px] text-gray-400">peserta</p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${
+                      slotBaki > 0 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
+                    }`}>
+                      {slotBaki > 0 ? `${pesertaSek.length}/${hadAcara}` : 'PENUH'}
+                    </span>
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform ${isSelected?'rotate-180':''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
+
+                {isSelected && (
+                  <div className="border-t border-gray-100 bg-white px-4 py-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Peserta Berdaftar</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => !pendaftaranTutup && setModal({ type:'daftar', acara })}
+                          disabled={pendaftaranTutup || slotBaki <= 0}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          {pendaftaranTutup
+                            ? <><svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>Tutup</>
+                            : <><svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>Daftar Atlet</>
+                          }
+                        </button>
+                      </div>
+                    </div>
+
+                    {pesertaSek.length === 0 ? (
+                      <p className="text-xs text-gray-400 py-3 text-center">Tiada peserta dari sekolah ini lagi.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {pesertaSek.map(p => {
+                          const kat = kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
+                          return (
+                            <div key={p.noBib || p.noKP} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-[9px] font-black font-mono text-[#003399] bg-blue-50 px-1.5 py-0.5 rounded">{p.noBib}</span>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-gray-800 truncate">{p.namaAtlet}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {kat && <KategoriBadge kat={kat} kategoriList={kategoriList} />}
+                                <JantinaBadge j={p.jantina} />
+                                <button onClick={() => setModal({ type:'buang', atlet:p, acara })}
+                                  className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Modals */}
+      {modal?.type === 'daftar' && kejohanan && (
+        <DaftarModal
+          acara={modal.acara}
+          schoolId={schoolId}
+          kejohanan={kejohanan}
+          atletSekolah={atletSekolah}
+          pendaftaranList={pendaftaranList}
+          kategoriList={kategoriList}
+          onClose={() => setModal(null)}
+          onSaved={onRefresh}
+        />
+      )}
+      {modal?.type === 'buang' && kejohanan && (
+        <BuangDaftarModal
+          atlet={modal.atlet}
+          acara={modal.acara}
+          pRec={modal.atlet}
+          schoolId={schoolId}
+          kejohananId={kejohanan.id}
+          onClose={() => setModal(null)}
+          onSaved={onRefresh}
+        />
+      )}
     </div>
   )
 }
@@ -226,131 +1663,169 @@ export default function PengurusDashboard() {
   const schoolId   = userData?.schoolId   || ''
   const kodSekolah = userData?.kodSekolah || ''
 
-  const [atlet,     setAtlet]     = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [modal,     setModal]     = useState(false)
-  const [editAtlet, setEditAtlet] = useState(null)
-  const [carian,    setCarian]    = useState('')
+  const [activeTab, setActiveTab] = useState('atlet')
 
-  useEffect(() => {
-    if (!schoolId || !kodSekolah) { setLoading(false); return }
+  // Shared state
+  const [kejohanan,       setKejohanan]       = useState(null)
+  const [acaraList,       setAcaraList]       = useState([])
+  const [pendaftaranList, setPendaftaranList] = useState([])
+  const [kategoriList,    setKategoriList]    = useState([])
+  const [atletSekolah,    setAtletSekolah]    = useState([])
+  const [sekolahData,     setSekolahData]     = useState(null)
+  const [loading,         setLoading]         = useState(false)
+  const [fetchErr,        setFetchErr]        = useState('')
 
-    const unsub = onSnapshot(
-      query(
-        collection(db, 'tenants', schoolId, 'atlet'),
-        where('kodSekolah', '==', kodSekolah)
-      ),
-      snap => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        list.sort((a, b) => (a.nama || '').localeCompare(b.nama || ''))
-        setAtlet(list)
+  const tahunKej = kejohanan?.tarikhMula
+    ? new Date(kejohanan.tarikhMula?.toDate?.() || kejohanan.tarikhMula).getFullYear()
+    : new Date().getFullYear()
+
+  const fetchAll = useCallback(async () => {
+    if (!schoolId || !kodSekolah) return
+    setLoading(true)
+    setFetchErr('')
+    try {
+      // Sekolah data
+      const sklSnap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kodSekolah))
+      if (sklSnap.exists()) setSekolahData({ id: sklSnap.id, ...sklSnap.data() })
+
+      // Kejohanan aktif
+      const kejSnap = await getDocs(
+        query(
+          collection(db, 'tenants', schoolId, 'kejohanan'),
+          where('statusKejohanan', 'in', ['aktif', 'persediaan'])
+        )
+      )
+      if (kejSnap.empty) {
+        setKejohanan(null)
+        setAcaraList([])
+        setPendaftaranList([])
+        setKategoriList([])
+        setAtletSekolah([])
         setLoading(false)
-      },
-      () => setLoading(false)
-    )
-    return () => unsub()
+        return
+      }
+      const kejDoc = kejSnap.docs[0]
+      const kej    = { id: kejDoc.id, ...kejDoc.data() }
+      setKejohanan(kej)
+
+      const [acaraSnap, pendSnap, katSnap, atletSnap] = await Promise.all([
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'pendaftaran')),
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'kategori')),
+        getDocs(query(
+          collection(db, 'tenants', schoolId, 'atlet'),
+          where('kodSekolah', '==', kodSekolah)
+        )),
+      ])
+
+      setAcaraList(acaraSnap.docs.map(d => ({ id: d.id, aceraId: d.id, ...d.data() })))
+      setPendaftaranList(pendSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setKategoriList(katSnap.docs.map(d => ({ id: d.id, kod: d.id, ...d.data() })))
+      const atletData = atletSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      atletData.sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'ms'))
+      setAtletSekolah(atletData)
+    } catch (e) {
+      console.error('fetchAll:', e)
+      setFetchErr(e.message || 'Ralat memuatkan data.')
+    } finally {
+      setLoading(false)
+    }
   }, [schoolId, kodSekolah])
 
-  function handleEdit(a) { setEditAtlet(a); setModal(true) }
-  function handleTambah() { setEditAtlet(null); setModal(true) }
+  useEffect(() => { fetchAll() }, [fetchAll])
 
-  const carianBersih = carian.trim().toLowerCase()
-  const atletTapis = atlet.filter(a =>
-    !carianBersih ||
-    (a.nama || '').toLowerCase().includes(carianBersih) ||
-    (a.noBib || '').toLowerCase().includes(carianBersih) ||
-    (a.noKP  || '').includes(carianBersih)
-  )
+  // Refresh pendaftaran sahaja (selepas daftar/buang)
+  const refreshPend = useCallback(async () => {
+    if (!schoolId || !kejohanan?.id) return
+    try {
+      const snap = await getDocs(
+        collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran')
+      )
+      setPendaftaranList(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    } catch (e) { console.error('refreshPend:', e) }
+  }, [schoolId, kejohanan])
 
-  const lelaki   = atlet.filter(a => a.jantina === 'L' && a.isAktif !== false).length
-  const perempuan = atlet.filter(a => a.jantina === 'P' && a.isAktif !== false).length
+  const myPendaftaran = pendaftaranList.filter(p => p.kodSekolah === kodSekolah)
+
+  if (!schoolId || !kodSekolah) {
+    return (
+      <div className="p-6 text-center text-sm text-gray-400">
+        Akaun tidak lengkap. Hubungi pentadbir.
+      </div>
+    )
+  }
 
   return (
-    <div className="p-6 space-y-4 max-w-2xl">
-
-      {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white border border-gray-100 rounded-xl p-3 text-center">
-            <p className="text-2xl font-black text-[#003399]">{atlet.filter(a => a.isAktif !== false).length}</p>
-            <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Jumlah Aktif</p>
-          </div>
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-            <p className="text-2xl font-black text-blue-700">{lelaki}</p>
-            <p className="text-[10px] text-blue-500 font-semibold mt-0.5">Lelaki</p>
-          </div>
-          <div className="bg-pink-50 border border-pink-100 rounded-xl p-3 text-center">
-            <p className="text-2xl font-black text-pink-700">{perempuan}</p>
-            <p className="text-[10px] text-pink-500 font-semibold mt-0.5">Perempuan</p>
-          </div>
-        </div>
-
-        {/* Carian + Tambah */}
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input type="text" value={carian} onChange={e => setCarian(e.target.value)}
-              placeholder="Cari nama, BIB, IC…"
-              className="w-full border border-gray-200 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399] bg-white" />
-          </div>
-          <button onClick={handleTambah}
-            className="flex items-center gap-1.5 bg-[#003399] hover:bg-[#002277] text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shrink-0">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Tambah
-          </button>
-        </div>
-
-        {/* Senarai Atlet */}
-        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center py-12 gap-2 text-gray-400">
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>
-              <span className="text-sm">Memuatkan atlet…</span>
-            </div>
-          ) : atletTapis.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-4xl mb-2">🏃</p>
-              <p className="text-sm font-bold text-gray-600 mb-1">
-                {carian ? 'Tiada atlet ditemui' : 'Belum ada atlet'}
-              </p>
-              <p className="text-xs text-gray-400">
-                {carian ? 'Cuba carian lain.' : 'Klik "Tambah" untuk daftar atlet pertama.'}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                  {atletTapis.length} atlet {carian ? '(ditapis)' : ''}
-                </p>
-              </div>
-              {atletTapis.map(a => (
-                <BariAtlet key={a.id} atlet={a} onEdit={handleEdit} />
-              ))}
-            </>
+    <div className="p-4 sm:p-6 space-y-4 max-w-4xl">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-base font-bold text-gray-900">Panel Pengurus Pasukan</h1>
+          {sekolahData?.namaSekolah && (
+            <p className="text-xs text-gray-500 mt-0.5">{sekolahData.namaSekolah}</p>
           )}
         </div>
+        {kejohanan && (
+          <div className="text-right">
+            <p className="text-[10px] text-gray-400">Kejohanan Aktif</p>
+            <p className="text-xs font-bold text-[#003399]">{kejohanan.namaKejohanan}</p>
+          </div>
+        )}
+      </div>
 
-      <p className="text-center text-[10px] text-gray-300">
-        Nota: Perubahan atlet dipaparkan secara langsung. Hubungi pentadbir jika atlet perlu dipadamkan.
-      </p>
+      {!kejohanan && !loading && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800">
+          Tiada kejohanan aktif. Hubungi pentadbir untuk aktifkan kejohanan.
+        </div>
+      )}
 
-      {modal && (
-        <ModalAtlet
+      {/* Tab Bar */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+        {[
+          { key: 'atlet', label: 'Urus Atlet' },
+          { key: 'daftar', label: 'Daftar Acara' },
+        ].map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+              activeTab === t.key
+                ? 'bg-white text-[#003399] shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'atlet' && (
+        <TabAtlet
           schoolId={schoolId}
           kodSekolah={kodSekolah}
-          atlet={editAtlet}
-          onTutup={() => { setModal(false); setEditAtlet(null) }}
-          onSaved={() => {}}
+          sekolahData={sekolahData}
+          tahunKej={tahunKej}
+          kategoriList={kategoriList}
+          kejohananId={kejohanan?.id || null}
+          myPendaftaran={myPendaftaran}
+          onRefreshPend={refreshPend}
+        />
+      )}
+
+      {activeTab === 'daftar' && (
+        <TabDaftar
+          schoolId={schoolId}
+          kodSekolah={kodSekolah}
+          sekolahData={sekolahData}
+          kejohanan={kejohanan}
+          tahunKej={tahunKej}
+          kategoriList={kategoriList}
+          atletSekolah={atletSekolah}
+          pendaftaranList={pendaftaranList}
+          acaraList={acaraList}
+          loading={loading}
+          fetchErr={fetchErr}
+          onRefresh={refreshPend}
         />
       )}
     </div>
   )
 }
-
