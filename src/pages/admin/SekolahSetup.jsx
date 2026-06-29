@@ -489,9 +489,11 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
     const kodBerubah = isEdit && kodBaru !== kodLama
 
     setBusy(true)
+    console.log('[SekolahModal] schoolId:', schoolId, 'kodBaru:', kodBaru)
     try {
       // Semak kod baru tidak bertindih
       if (!isEdit || kodBerubah) {
+        console.log('[SekolahModal] step1: getDoc sekolah')
         const snap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kodBaru))
         if (snap.exists()) {
           setErr(`Kod "${kodBaru}" sudah digunakan. Sila guna kod lain.`)
@@ -505,6 +507,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
       const kategoriSemasa = form.kategori?.trim() || ''
       const prefixBerubah = isEdit ? prefixBaru !== (initial?.bibPrefix || '').toUpperCase() : true
       if (prefixBerubah) {
+        console.log('[SekolahModal] step2: query bibPrefix')
         const prefixSnap = await getDocs(query(
           collection(db, 'tenants', schoolId, 'sekolah'),
           where('bibPrefix', '==', prefixBaru)
@@ -532,6 +535,7 @@ function SekolahModal({ initial, onClose, onSaved, jenisList = KATEGORI_LIST_FAL
 
       if (!isEdit) {
         // ── TAMBAH BARU — hash PIN sebelum simpan ────────────────────────────
+        console.log('[SekolahModal] step3: setDoc sekolah baru')
         const ph = await hashPin(form.pin)
         await setDoc(doc(db, 'tenants', schoolId, 'sekolah', kodBaru), {
           kodSekolah:  kodBaru,
@@ -1057,6 +1061,7 @@ export default function SekolahSetup() {
     ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
     : null
   const schoolId = viewSchoolId || userData?.schoolId || ''
+  console.log('[SekolahSetup] userRole:', userRole, '| schoolId:', schoolId, '| userData.schoolId:', userData?.schoolId, '| viewSchoolId:', viewSchoolId)
 
   const [list,    setList]    = useState([])
   const [loading, setLoading] = useState(true)
@@ -1272,6 +1277,17 @@ export default function SekolahSetup() {
       || s.daerah?.toLowerCase().includes(q)
     return matchKat && matchSrch
   })
+
+  if (!schoolId) return (
+    <div className="p-6 max-w-xl mx-auto mt-16 text-center">
+      <p className="text-4xl mb-4">🏫</p>
+      <p className="text-sm font-bold text-gray-700 mb-2">Tiada sekolah dipilih</p>
+      <p className="text-xs text-gray-400 mb-6">Sila pilih sekolah dari Panel Superadmin terlebih dahulu.</p>
+      <a href="/superadmin" className="inline-block px-5 py-2.5 bg-[#003399] text-white text-sm font-bold rounded-xl hover:bg-[#002277] transition-colors">
+        Pergi ke Panel Superadmin
+      </a>
+    </div>
+  )
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">

@@ -2,259 +2,193 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // HELPER FUNCTIONS
-    // ══════════════════════════════════════════════════════════════════════════
-
-    // Semak user log masuk
     function isAuth() {
       return request.auth != null;
     }
 
-    // Baca data user dari Firestore (cached oleh Firebase dalam 1 request)
-    function myData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    // Semak role
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function canAccessSchool(schoolId) {
+      return isAuth() && userExists() && (
+        userDoc().data.role == 'superadmin'
+        || (userDoc().data.role == 'admin' && userDoc().data.schoolId == schoolId)
+      );
+    }
+
+    function canReadSchool(schoolId) {
+      return isAuth() && userExists() && (
+        userDoc().data.role == 'superadmin'
+        || ((userDoc().data.role == 'admin' || userDoc().data.role == 'teacher') && userDoc().data.schoolId == schoolId)
+      );
+    }
+
     function isSuperadmin() {
-      return isAuth() && myData().get('role', '') == 'superadmin';
+      return isAuth() && userExists() && userDoc().data.role == 'superadmin';
     }
 
     function isAdmin() {
-      return isAuth() && myData().get('role', '') == 'admin';
+      return isAuth() && userExists() && userDoc().data.role == 'admin';
     }
 
-    function isTeacher() {
-      return isAuth() && myData().get('role', '') == 'teacher';
-    }
-
-    // Semak admin/teacher milik sekolah ini
-    function isMySchool(schoolId) {
-      return isAuth() && myData().get('schoolId', '') == schoolId;
-    }
-
-    // Admin atau superadmin untuk sekolah ini
-    function canAccessSchool(schoolId) {
-      return isSuperadmin() || (isAdmin() && isMySchool(schoolId));
-    }
-
-    // Admin/teacher/superadmin untuk sekolah ini (baca sahaja)
-    function canReadSchool(schoolId) {
-      return isSuperadmin()
-        || ((isAdmin() || isTeacher()) && isMySchool(schoolId));
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // LOGIN ATTEMPTS — rate limiting (buka penuh, tiada data sensitif)
-    // ══════════════════════════════════════════════════════════════════════════
-
+    // ── Login attempts ────────────────────────────────────────────────────────
     match /login_attempts/{docId} {
       allow read, write: if true;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // USERS — profil pengguna
-    // ══════════════════════════════════════════════════════════════════════════
-
+    // ── Users root collection ─────────────────────────────────────────────────
     match /users/{uid} {
-      // User baca profil sendiri; superadmin baca semua; admin baca user dalam schoolId sendiri
-      allow read: if isAuth() && (
-        request.auth.uid == uid
-        || isSuperadmin()
-        || (isAdmin() && myData().get('schoolId','') != '')
-      );
-
-      // Superadmin boleh tulis mana-mana; admin hanya tulis user dalam schoolId sendiri
-      allow write: if isSuperadmin()
-        || (isAdmin() && isMySchool(resource.data.get('schoolId','')));
-
-      // First-run: user baharu cipta profil sendiri (superadmin pertama sahaja)
-      allow create: if isAuth()
-                    && request.auth.uid == uid
-                    && request.resource.data.get('role', '') == 'superadmin';
-
-      // Senarai user: superadmin atau admin (admin urus teacher sekolah sendiri)
+      allow read: if isAuth() && (request.auth.uid == uid || isSuperadmin() || isAdmin());
       allow list: if isSuperadmin() || isAdmin();
+      allow write: if isSuperadmin()
+        || (isAdmin() && resource != null && userDoc().data.schoolId == resource.data.schoolId);
+      allow create: if isAuth()
+        && request.auth.uid == uid
+        && request.resource.data.role == 'superadmin'
+        && !userExists();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // TENANTS — data sekolah (multi-tenant root)
-    // ══════════════════════════════════════════════════════════════════════════
-
-    // Profil sekolah — read awam (namaSekolah, daerah, slug, status untuk landing page)
-    // Data sensitif (emelAdmin, adminUid) ada dalam doc tapi landing page tidak paparkan
+    // ── Tenants root doc ──────────────────────────────────────────────────────
     match /tenants/{schoolId} {
       allow read:  if true;
       allow write: if isSuperadmin();
     }
 
-    // ── Data sensitif admin — private, superadmin sahaja ─────────────────────
+    // ── Private ───────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/_private/{docId} {
       allow read, write: if isSuperadmin();
     }
 
-    // ── Tetapan awam — home, galeri, bukuKejohananLink, bukuProgram, atletTerbaik
-    // (dibaca oleh Home public page dan landing page)
+    // ── Tetapan ───────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/tetapan/{docId} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Atlet master ──────────────────────────────────────────────────────────
-    // Pengurus pasukan (PIN login, tiada Firebase Auth) perlu baca+tulis atlet
-    // sekolah mereka. Akses terhad oleh Firestore path (schoolId dalam URL).
-    // Risiko: unauthenticated users boleh akses jika tahu schoolId.
-    // Mitigasi: schoolId tidak didedahkan dalam UI awam, rate-limited oleh app.
-    // v2.0: guna Firebase Anonymous Auth untuk pengurus → dapat request.auth.
+    // ── Atlet ─────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/atlet/{atletId} {
-      allow read:   if true;
-      allow write:  if true;
+      allow read, write: if true;
     }
 
     // ── Kejohanan ─────────────────────────────────────────────────────────────
-    // Baca asas (nama, tarikh, status, lokasi) dibenar awam — untuk landing page sekolah
     match /tenants/{schoolId}/kejohanan/{kejId} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Heat — flat di bawah kejohanan (bukan nested dalam acara) ────────────
-    // Read: awam (keputusan boleh dilihat di Home public)
-    // Write: admin/superadmin (Firebase Auth) ATAU pencatat (tiada Firebase Auth,
-    //        login via PIN — client-side auth sahaja). Heat tiada data PDPA.
-    //        canWriteHeat() cover admin+teacher Firebase Auth.
-    //        allow write: if true cover pencatat PIN (tiada request.auth).
+    // ── Heat ──────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
-      allow read:  if true;
-      allow write: if true;
+      allow read, write: if true;
     }
 
-    // ── Acara, jadual — awam (jadual & keputusan untuk Home public) ──────────
+    // ── Acara ─────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/acara/{docId} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
+    // ── Jadual ────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/jadual/{docId} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
     match /tenants/{schoolId}/kejohanan/{kejId}/jadual_khas/{docId} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Medal tally — awam (untuk paparan Home) ───────────────────────────────
+    // ── Medal tally ───────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/medal_tally/{docId} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Mata olahragawan — private (ada noKP) ────────────────────────────────
+    // ── Mata olahragawan ──────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/mata_olahragawan/{docId} {
       allow read:  if canReadSchool(schoolId);
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Pengesahan — pengurus pasukan (tiada Firebase Auth) perlu baca+tulis ───
-    // Pengurus sahkan & kunci pendaftaran pasukan mereka sendiri.
+    // ── Pengesahan ────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/pengesahan/{docId} {
-      allow read:  if true;
-      allow write: if true;
+      allow read, write: if true;
     }
 
-    // ── Pendaftaran — pengurus pasukan (tiada Firebase Auth) perlu baca+tulis ──
-    // Pengurus login via PIN sahaja (tiada request.auth). Data: noKP, noBib, noAcara.
-    // PDPA: noKP ada tapi terhad kepada schoolId dalam path (pengurus tahu schoolId sendiri).
-    // v2.0: guna Anonymous Auth → ketatkan semula.
+    // ── Pendaftaran ───────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/pendaftaran/{docId} {
-      allow read:  if true;
-      allow write: if true;
+      allow read, write: if true;
     }
 
-    // ── Pendaftaran counter — Firestore Transaction untuk noBib selamat ───────
-    // Pengurus pasukan perlu runTransaction pada doc ini (tiada Firebase Auth).
+    // ── Pendaftaran counter ───────────────────────────────────────────────────
     match /tenants/{schoolId}/pendaftaran_counter/{docId} {
       allow read, write: if true;
     }
 
-    // ── Semua subcollection lain dalam kejohanan ──────────────────────────────
-    // (kategori, pengesahan, pilihan_olahragawan, anugerah_custom, dll)
+    // ── Subcollection kejohanan lain ──────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/{subcol}/{docId} {
-      allow read:  if canReadSchool(schoolId);
-      allow write: if canAccessSchool(schoolId);
+      allow read:  if true;
+      allow write: if isAuth();
     }
 
-    // Wildcard untuk subcollection yang lebih dalam jika ada
     match /tenants/{schoolId}/kejohanan/{kejId}/{path=**} {
-      allow read:  if canReadSchool(schoolId);
-      allow write: if canAccessSchool(schoolId);
+      allow read:  if true;
+      allow write: if isAuth();
     }
 
-    // ── Rekod kejohanan — baca awam (untuk landing page), tulis admin sahaja ──
+    // ── Rekod ─────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/rekod/{rekodKey} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Rekod sejarah — private ───────────────────────────────────────────────
+    // ── Rekod sejarah ─────────────────────────────────────────────────────────
     match /tenants/{schoolId}/rekod_sejarah/{docId} {
       allow read:  if canReadSchool(schoolId);
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Sekolah pasukan — baca oleh teacher (untuk login) ────────────────────
+    // ── Sekolah pasukan ───────────────────────────────────────────────────────
     match /tenants/{schoolId}/sekolah/{kodSekolah} {
-      allow read:  if true;   // diperlukan untuk Lupa PIN (public)
-      allow write: if canAccessSchool(schoolId);
+      allow read:  if true;
+      allow write: if isAuth();
     }
 
-    // ── Users per-tenant (pencatat, dll) ─────────────────────────────────────
-    // Read: allow true — diperlukan untuk loginPencatat() yang query by kodAkses
-    // tanpa Firebase Auth. Data: nama, kodAkses, pinHash, role — bukan data PDPA kritikal.
-    // noKP/ic TIDAK disimpan dalam users doc.
-    // Write: admin/superadmin sahaja.
+    // ── Users per-tenant ──────────────────────────────────────────────────────
     match /tenants/{schoolId}/users/{uid} {
       allow read:  if true;
-      allow write: if canAccessSchool(schoolId);
+      allow write: if isAuth();
     }
 
-    // ── Login attempts per-tenant — tulis tanpa auth (proses login) ──────────
+    // ── Login attempts per-tenant ─────────────────────────────────────────────
     match /tenants/{schoolId}/login_attempts/{docId} {
       allow read, write: if true;
     }
 
-    // Wildcard untuk semua lain dalam tenant (selamat, ikut sekolah)
+    // ── Wildcard tenant ───────────────────────────────────────────────────────
     match /tenants/{schoolId}/{path=**} {
-      allow read:  if canReadSchool(schoolId);
-      allow write: if canAccessSchool(schoolId);
+      allow read:  if true;
+      allow write: if isAuth();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // SLUG INDEX — lookup awam untuk URL per sekolah (/ska, /skb, dll)
-    // Tiada data sensitif: hanya namaSekolah, daerah, slug, aktif
-    // ══════════════════════════════════════════════════════════════════════════
-
+    // ── Slug index ────────────────────────────────────────────────────────────
     match /slugIndex/{slug} {
       allow read:  if true;
       allow write: if isSuperadmin();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // DEMO — data awam untuk demo/landing
-    // ══════════════════════════════════════════════════════════════════════════
-
+    // ── Demo ──────────────────────────────────────────────────────────────────
     match /demo/{document=**} {
       allow read:  if true;
       allow write: if isSuperadmin();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // BLOCK SEMUA — default deny
-    // ══════════════════════════════════════════════════════════════════════════
-
+    // ── Default deny ──────────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

@@ -253,7 +253,7 @@ function KejohananModal({ mode, initial, onClose, onSaved, schoolId }) {
         {/* Header */}
         <div className="bg-[#003399] text-white px-5 py-4 rounded-t flex items-center justify-between">
           <div>
-            <p className="text-[10px] opacity-60 uppercase tracking-widest">Sistem KOAM</p>
+            <p className="text-[10px] opacity-60 uppercase tracking-widest">Gold Podium</p>
             <p className="text-sm font-bold">{isEdit ? 'Kemaskini Kejohanan' : 'Daftar Kejohanan Baru'}</p>
           </div>
           <button onClick={onClose} className="text-white/60 hover:text-white text-lg leading-none">✕</button>

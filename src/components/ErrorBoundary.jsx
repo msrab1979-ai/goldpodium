@@ -32,9 +32,8 @@ class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Log untuk debug — admin boleh check console
-    console.error('[KOAM ErrorBoundary]', error)
-    console.error('[KOAM ErrorBoundary Stack]', errorInfo?.componentStack)
+    console.error('[ErrorBoundary]', error)
+    console.error('[ErrorBoundary Stack]', errorInfo?.componentStack)
   }
 
   handleReload = () => {
@@ -85,13 +84,12 @@ class ErrorBoundary extends Component {
                 </button>
               </div>
 
-              {/* Technical detail — hanya tunjuk kalau dalam dev mode */}
               {this.state.errorMsg && (
-                <details className="mt-5 text-left">
+                <details className="mt-5 text-left" open>
                   <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">
-                    Maklumat teknikal
+                    ▸ Maklumat teknikal
                   </summary>
-                  <pre className="mt-2 p-2 bg-gray-50 rounded text-[9px] text-gray-600 overflow-auto max-h-24 font-mono">
+                  <pre className="mt-2 p-2 bg-gray-50 rounded text-[9px] text-red-600 overflow-auto max-h-32 font-mono whitespace-pre-wrap">
                     {this.state.errorMsg}
                   </pre>
                 </details>
@@ -99,7 +97,7 @@ class ErrorBoundary extends Component {
             </div>
 
             <p className="text-center text-[10px] text-gray-400 mt-4">
-              Sistem KOAM · MSSD Kemaman
+              Gold Podium
             </p>
           </div>
         </div>

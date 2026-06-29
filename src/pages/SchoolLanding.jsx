@@ -5,6 +5,7 @@ import {
   orderBy, limit, onSnapshot, where,
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
+import { useAuth } from '../context/AuthContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -452,39 +453,99 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
 
 // ─── Tab Medal Tally ──────────────────────────────────────────────────────────
 
-function TabMedalTally({ schoolId, kejId }) {
-  const [tally,   setTally]   = useState([])
-  const [loading, setLoading] = useState(true)
-  const unsubRef = useRef(null)
+const PALETTE = ['#003399','#166534','#7c3aed','#b45309','#0e7490','#9f1239','#374151']
+
+function sortAndRankRows(rows) {
+  rows.sort((a, b) => {
+    if (b.emas   !== a.emas)   return b.emas   - a.emas
+    if (b.perak  !== a.perak)  return b.perak  - a.perak
+    if (b.gangsa !== a.gangsa) return b.gangsa - a.gangsa
+    return (a.namaSekolah || '').localeCompare(b.namaSekolah || '')
+  })
+  let curR = 0
+  return rows.map((r, i, arr) => {
+    if (i === 0) { curR = 1; return { ...r, rank: 1 } }
+    const prev = arr[i - 1]
+    const tie  = ['emas','perak','gangsa'].every(k => r[k] === prev[k])
+    if (!tie) curR++
+    return { ...r, rank: curR }
+  })
+}
+
+function TabMedalTally({ schoolId, kejId, bilKed = 3 }) {
+  const [allRows,   setAllRows]   = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [openGrps,  setOpenGrps]  = useState(new Set())
+  const [jenisList, setJenisList] = useState([])
+  const unsubRef  = useRef(null)
+  const unsubRef2 = useRef(null)
+
+  useEffect(() => {
+    if (!schoolId) return
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'))
+      .then(s => setJenisList(s.exists() ? (s.data().list || []) : []))
+      .catch(() => setJenisList([]))
+  }, [schoolId])
 
   useEffect(() => {
     if (!schoolId || !kejId) return
     setLoading(true)
-    if (unsubRef.current) unsubRef.current()
+    if (unsubRef.current)  unsubRef.current()
+    if (unsubRef2.current) unsubRef2.current()
+
+    let medalMap    = {}
+    let sekolahMap  = {}
+    let medalReady  = false
+    let sekolahReady = false
+
+    function merge() {
+      // Tunggu kedua-dua listeners ready dulu baru render
+      if (!medalReady || !sekolahReady) return
+      const allKod = new Set([...Object.keys(sekolahMap), ...Object.keys(medalMap)])
+      const rows = [...allKod].map(kod => ({
+        id:          kod,
+        kodSekolah:  kod,
+        namaSekolah: sekolahMap[kod]?.namaSekolah || medalMap[kod]?.namaSekolah || kod,
+        kategori:    sekolahMap[kod]?.kategori    || 'Lain-lain',
+        emas:        medalMap[kod]?.emas    || 0,
+        perak:       medalMap[kod]?.perak   || 0,
+        gangsa:      medalMap[kod]?.gangsa  || 0,
+        tempat4:     medalMap[kod]?.tempat4 || 0,
+        tempat5:     medalMap[kod]?.tempat5 || 0,
+      }))
+      setAllRows(rows)
+      setLoading(false)
+    }
+
     unsubRef.current = onSnapshot(
       collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'),
       snap => {
-        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        rows.sort((a, b) => {
-          if ((b.emas  || 0) !== (a.emas  || 0)) return (b.emas  || 0) - (a.emas  || 0)
-          if ((b.perak || 0) !== (a.perak || 0)) return (b.perak || 0) - (a.perak || 0)
-          if ((b.gangsa|| 0) !== (a.gangsa|| 0)) return (b.gangsa|| 0) - (a.gangsa|| 0)
-          return (a.namaSekolah || '').localeCompare(b.namaSekolah || '')
-        })
-        let curR = 0
-        const ranked = rows.map((r, i, arr) => {
-          if (i === 0) { curR = 1; return { ...r, rank: 1 } }
-          const prev = arr[i - 1]
-          const tie  = ['emas','perak','gangsa'].every(k => (r[k]||0) === (prev[k]||0))
-          if (!tie) curR++
-          return { ...r, rank: curR }
-        })
-        setTally(ranked)
-        setLoading(false)
+        medalMap = {}
+        snap.docs.forEach(d => { medalMap[d.data().kodSekolah || d.id] = d.data() })
+        medalReady = true
+        merge()
       },
       () => setLoading(false)
     )
-    return () => { if (unsubRef.current) unsubRef.current() }
+
+    unsubRef2.current = onSnapshot(
+      collection(db, 'tenants', schoolId, 'sekolah'),
+      snap => {
+        sekolahMap = {}
+        snap.docs.forEach(d => {
+          const data = d.data()
+          sekolahMap[d.id] = { kodSekolah: d.id, namaSekolah: data.namaSekolah || d.id, kategori: data.kategori || 'Lain-lain' }
+        })
+        sekolahReady = true
+        merge()
+      },
+      () => { sekolahReady = true; merge() }
+    )
+
+    return () => {
+      if (unsubRef.current)  unsubRef.current()
+      if (unsubRef2.current) unsubRef2.current()
+    }
   }, [schoolId, kejId])
 
   const RANK_STYLE = {
@@ -493,81 +554,139 @@ function TabMedalTally({ schoolId, kejId }) {
     3: { row: 'bg-orange-50/60 border-l-4 border-l-orange-300', badge: 'bg-orange-300 text-white' },
   }
 
+  function toggleGrp(kat) {
+    setOpenGrps(prev => {
+      const next = new Set(prev)
+      if (next.has(kat)) next.delete(kat)
+      else next.add(kat)
+      return next
+    })
+  }
+
+  function renderTable(rows, bilKed) {
+    return (
+      <div className="overflow-x-auto border-t border-gray-100">
+        <table className="w-full">
+          <thead>
+            <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-200">
+              <th className="hidden sm:table-cell px-3 py-2.5 text-center w-10">No.</th>
+              <th className="px-3 py-2.5 text-left">Nama Sekolah</th>
+              <th className="px-2 py-2.5 text-center w-10" title="Emas"><span className="inline-block w-3.5 h-3.5 rounded-full bg-yellow-400 border border-yellow-500" /></th>
+              <th className="px-2 py-2.5 text-center w-10" title="Perak"><span className="inline-block w-3.5 h-3.5 rounded-full bg-gray-300 border border-gray-400" /></th>
+              <th className="px-2 py-2.5 text-center w-10" title="Gangsa"><span className="inline-block w-3.5 h-3.5 rounded-full bg-orange-300 border border-orange-400" /></th>
+              {bilKed >= 4 && <th className="hidden sm:table-cell px-2 py-2.5 text-center w-10 text-gray-400">T4</th>}
+              {bilKed >= 5 && <th className="hidden sm:table-cell px-2 py-2.5 text-center w-10 text-gray-400">T5</th>}
+              <th className="px-3 py-2.5 text-center w-12">Jml</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(t => {
+              const rs     = RANK_STYLE[t.rank] || {}
+              const jumlah = (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0)
+              return (
+                <tr key={t.id} className={`border-b border-gray-50 ${rs.row || ''}`}>
+                  <td className="hidden sm:table-cell px-3 py-3 text-center">
+                    {t.rank <= 3
+                      ? <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black ${rs.badge}`}>{t.rank}</span>
+                      : <span className="text-[10px] font-bold text-gray-400">{t.rank}</span>}
+                  </td>
+                  <td className="px-3 py-3">
+                    <p className="font-semibold text-xs text-gray-800">{t.namaSekolah || t.kodSekolah}</p>
+                    <p className="text-[9px] text-gray-300 font-mono mt-0.5">{t.kodSekolah}</p>
+                  </td>
+                  <td className="px-2 py-3 text-center"><span className={`text-sm font-black ${(t.emas||0)>0?'text-yellow-600':'text-gray-200'}`}>{t.emas||0}</span></td>
+                  <td className="px-2 py-3 text-center"><span className={`text-sm font-black ${(t.perak||0)>0?'text-gray-500':'text-gray-200'}`}>{t.perak||0}</span></td>
+                  <td className="px-2 py-3 text-center"><span className={`text-sm font-black ${(t.gangsa||0)>0?'text-orange-600':'text-gray-200'}`}>{t.gangsa||0}</span></td>
+                  {bilKed >= 4 && <td className="hidden sm:table-cell px-2 py-3 text-center"><span className={`text-sm font-black ${(t.tempat4||0)>0?'text-blue-400':'text-gray-200'}`}>{t.tempat4||0}</span></td>}
+                  {bilKed >= 5 && <td className="hidden sm:table-cell px-2 py-3 text-center"><span className={`text-sm font-black ${(t.tempat5||0)>0?'text-purple-400':'text-gray-200'}`}>{t.tempat5||0}</span></td>}
+                  <td className="px-3 py-3 text-center"><span className={`text-xs font-black ${jumlah>0?'text-gray-700':'text-gray-200'}`}>{jumlah}</span></td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="bg-gray-50 border-t-2 border-gray-200">
+              <td className="hidden sm:table-cell" />
+              <td className="px-3 py-2 text-[9px] font-bold text-gray-400 uppercase tracking-wide">{rows.length} sekolah</td>
+              <td className="px-2 py-2 text-center text-xs font-black text-yellow-600">{rows.reduce((s,t)=>s+(t.emas||0),0)}</td>
+              <td className="px-2 py-2 text-center text-xs font-black text-gray-500">{rows.reduce((s,t)=>s+(t.perak||0),0)}</td>
+              <td className="px-2 py-2 text-center text-xs font-black text-orange-600">{rows.reduce((s,t)=>s+(t.gangsa||0),0)}</td>
+              {bilKed >= 4 && <td className="hidden sm:table-cell px-2 py-2 text-center text-xs font-black text-blue-400">{rows.reduce((s,t)=>s+(t.tempat4||0),0)}</td>}
+              {bilKed >= 5 && <td className="hidden sm:table-cell px-2 py-2 text-center text-xs font-black text-purple-400">{rows.reduce((s,t)=>s+(t.tempat5||0),0)}</td>}
+              <td className="px-3 py-2 text-center text-xs font-black text-gray-600">
+                {rows.reduce((s,t)=>s+(t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0),0)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    )
+  }
+
   if (loading) return (
     <div className="flex justify-center py-12">
       <div className="w-7 h-7 border-[3px] border-[#003399] border-t-transparent rounded-full animate-spin" />
     </div>
   )
-  if (tally.length === 0) return (
+  if (allRows.length === 0) return (
     <div className="bg-white rounded-2xl border border-gray-100 py-12 text-center shadow-sm">
       <p className="text-3xl mb-3">🏆</p>
-      <p className="text-sm font-semibold text-gray-500">Belum ada keputusan final.</p>
+      <p className="text-sm font-semibold text-gray-500">Tiada sekolah berdaftar.</p>
     </div>
   )
 
+  // Kumpul kategori unik — ikut jenisList (dari tetapan), lain-lain di bawah
+  const allKat     = [...new Set(allRows.map(r => r.kategori || 'Lain-lain'))]
+  const katOrdered = [
+    ...jenisList.filter(k => allKat.includes(k)),
+    ...allKat.filter(k => !jenisList.includes(k)).sort(),
+  ]
+  const isPisah = katOrdered.length > 1
+
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-      <table className="w-full">
-        <thead>
-          <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-200">
-            <th className="hidden sm:table-cell px-3 py-2.5 text-center w-10">No.</th>
-            <th className="px-3 py-2.5 text-left">Nama Sekolah</th>
-            <th className="px-2 py-2.5 text-center w-10" title="Emas">
-              <span className="inline-block w-3.5 h-3.5 rounded-full bg-yellow-400 border border-yellow-500" />
-            </th>
-            <th className="px-2 py-2.5 text-center w-10" title="Perak">
-              <span className="inline-block w-3.5 h-3.5 rounded-full bg-gray-300 border border-gray-400" />
-            </th>
-            <th className="px-2 py-2.5 text-center w-10" title="Gangsa">
-              <span className="inline-block w-3.5 h-3.5 rounded-full bg-orange-300 border border-orange-400" />
-            </th>
-            <th className="px-3 py-2.5 text-center w-12">Jml</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tally.map((t, i) => {
-            const rs = RANK_STYLE[t.rank] || {}
-            const jumlah = (t.emas || 0) + (t.perak || 0) + (t.gangsa || 0)
-            return (
-              <tr key={t.id} className={`border-b border-gray-50 ${rs.row || ''}`}>
-                <td className="hidden sm:table-cell px-3 py-3 text-center">
-                  {t.rank <= 3
-                    ? <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black ${rs.badge}`}>{t.rank}</span>
-                    : <span className="text-[10px] font-bold text-gray-400">{t.rank}</span>}
-                </td>
-                <td className="px-3 py-3">
-                  <p className="font-semibold text-xs text-gray-800">{t.namaSekolah || t.kodSekolah}</p>
-                  <p className="text-[9px] text-gray-300 font-mono mt-0.5">{t.kodSekolah}</p>
-                </td>
-                <td className="px-2 py-3 text-center">
-                  <span className={`text-sm font-black ${(t.emas || 0) > 0 ? 'text-yellow-600' : 'text-gray-200'}`}>{t.emas || 0}</span>
-                </td>
-                <td className="px-2 py-3 text-center">
-                  <span className={`text-sm font-black ${(t.perak || 0) > 0 ? 'text-gray-500' : 'text-gray-200'}`}>{t.perak || 0}</span>
-                </td>
-                <td className="px-2 py-3 text-center">
-                  <span className={`text-sm font-black ${(t.gangsa || 0) > 0 ? 'text-orange-600' : 'text-gray-200'}`}>{t.gangsa || 0}</span>
-                </td>
-                <td className="px-3 py-3 text-center">
-                  <span className={`text-xs font-black ${jumlah > 0 ? 'text-gray-700' : 'text-gray-200'}`}>{jumlah}</span>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-        <tfoot>
-          <tr className="bg-gray-50 border-t-2 border-gray-200">
-            <td className="hidden sm:table-cell" />
-            <td className="px-3 py-2 text-[9px] font-bold text-gray-400 uppercase tracking-wide">{tally.length} sekolah</td>
-            <td className="px-2 py-2 text-center text-xs font-black text-yellow-600">{tally.reduce((s, t) => s + (t.emas || 0), 0)}</td>
-            <td className="px-2 py-2 text-center text-xs font-black text-gray-500">{tally.reduce((s, t) => s + (t.perak || 0), 0)}</td>
-            <td className="px-2 py-2 text-center text-xs font-black text-orange-600">{tally.reduce((s, t) => s + (t.gangsa || 0), 0)}</td>
-            <td className="px-3 py-2 text-center text-xs font-black text-gray-600">
-              {tally.reduce((s, t) => s + (t.emas || 0) + (t.perak || 0) + (t.gangsa || 0), 0)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+    <div className="space-y-2">
+      {katOrdered.map((kat, idx) => {
+        const rows    = sortAndRankRows(allRows.filter(r => (r.kategori || 'Lain-lain') === kat))
+        if (rows.length === 0) return null
+        const warna   = PALETTE[idx % PALETTE.length]
+        const cfg     = { warna, label: kat }
+        const isOpen  = openGrps.has(kat)
+        const top1    = rows[0]
+        const hasAny  = rows.some(r => (r.emas||0)+(r.perak||0)+(r.gangsa||0) > 0)
+        return (
+          <div key={kat} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <button
+              onClick={() => toggleGrp(kat)}
+              className="w-full flex items-center justify-between px-4 py-3 transition-colors hover:opacity-90"
+              style={isOpen ? { backgroundColor: cfg.warna } : {}}
+            >
+              <div className="flex items-center gap-2.5">
+                {!isOpen && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cfg.warna }} />}
+                <div className="text-left">
+                  <p className="text-xs font-black" style={{ color: isOpen ? '#fff' : cfg.warna }}>
+                    {isPisah ? cfg.label : 'Kedudukan Pingat'}
+                  </p>
+                  {!isOpen && (
+                    <p className="text-[9px] text-gray-400 mt-0.5">
+                      {rows.length} sekolah
+                      {hasAny && top1 && <span className="ml-1.5">· {top1.namaSekolah?.split(' ').slice(0,2).join(' ')} {top1.emas > 0 ? `🥇${top1.emas}` : ''}</span>}
+                      {!hasAny && <span className="ml-1 text-gray-300">· Belum ada pingat</span>}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {isOpen && <span className="text-[10px] font-semibold text-white/70">{rows.length} sekolah</span>}
+                <svg className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180 text-white' : 'text-gray-400'}`}
+                  fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </button>
+            {isOpen && renderTable(rows, bilKed)}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -616,6 +735,30 @@ export default function SchoolLanding() {
   const [staffModal,    setStaffModal]    = useState(false)
   const [lupaPinModal,  setLupaPinModal]  = useState(false)
   const [printingPdf,   setPrintingPdf]   = useState(false)
+
+  // Pencatat login
+  const { loginPencatat } = useAuth()
+  const [showPencatatForm, setShowPencatatForm] = useState(false)
+  const [pencatatKod,      setPencatatKod]      = useState('')
+  const [pencatatPin,      setPencatatPin]      = useState('')
+  const [pencatatErr,      setPencatatErr]      = useState('')
+  const [pencatatLoading,  setPencatatLoading]  = useState(false)
+
+  async function handlePencatatLogin(e) {
+    e.preventDefault()
+    setPencatatErr('')
+    if (!pencatatKod.trim()) return setPencatatErr('Kod akses diperlukan.')
+    if (!pencatatPin) return setPencatatErr('PIN diperlukan.')
+    setPencatatLoading(true)
+    try {
+      await loginPencatat(slug, pencatatKod.trim(), pencatatPin)
+      navigate(`/${slug}/pencatat`)
+    } catch (err) {
+      setPencatatErr(err.message || 'Log masuk gagal.')
+    } finally {
+      setPencatatLoading(false)
+    }
+  }
 
   // ── Resolve slug → schoolId ──
   useEffect(() => {
@@ -1353,7 +1496,7 @@ export default function SchoolLanding() {
             <div className="border-l-4 border-[#003399] pl-3 mb-4">
               <h2 className="text-base font-black text-gray-800 leading-tight">Kedudukan Pingat</h2>
             </div>
-            <TabMedalTally schoolId={schoolId} kejId={kej.id} />
+            <TabMedalTally schoolId={schoolId} kejId={kej.id} bilKed={kej.bilanganKedudukan ?? 3} />
           </div>
         </section>
       )}
@@ -1420,6 +1563,45 @@ export default function SchoolLanding() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
               </button>
+
+              {/* Pencatat */}
+              {!showPencatatForm ? (
+                <button onClick={() => { setPencatatErr(''); setShowPencatatForm(true) }}
+                  className="w-full flex items-center gap-3 p-3.5 rounded-xl border-2 border-gray-200 hover:border-emerald-500 hover:bg-emerald-50/50 transition-all group text-left">
+                  <span className="w-12 h-12 rounded-xl flex items-center justify-center text-white shrink-0 bg-emerald-500 shadow-md group-hover:scale-105 transition-transform">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                    </svg>
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-gray-800 uppercase tracking-wide">Pencatat</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Input keputusan acara live</p>
+                  </div>
+                  <svg className="w-4 h-4 text-gray-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              ) : (
+                <form onSubmit={handlePencatatLogin} className="border-2 border-emerald-200 rounded-xl p-4 space-y-3 bg-emerald-50/30">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-black text-emerald-700 uppercase tracking-wide">Log Masuk Pencatat</p>
+                    <button type="button" onClick={() => setShowPencatatForm(false)} className="text-gray-400 hover:text-gray-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                  {pencatatErr && <p className="text-[11px] text-red-600 bg-red-50 rounded-lg px-3 py-2">{pencatatErr}</p>}
+                  <input type="text" value={pencatatKod} onChange={e => { setPencatatKod(e.target.value.toUpperCase()); setPencatatErr('') }}
+                    placeholder="Kod Akses (cth: CATAT01)" autoComplete="off"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono uppercase bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400" />
+                  <input type="password" value={pencatatPin} onChange={e => { setPencatatPin(e.target.value.replace(/\D/g,'').slice(0,6)); setPencatatErr('') }}
+                    placeholder="PIN (6 digit)" inputMode="numeric" maxLength={6}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400" />
+                  <button type="submit" disabled={pencatatLoading}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-200 text-white text-xs font-bold rounded-lg transition-colors">
+                    {pencatatLoading ? 'Mengesahkan…' : 'Log Masuk'}
+                  </button>
+                </form>
+              )}
 
               {/* Admin login */}
               <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between">

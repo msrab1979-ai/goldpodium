@@ -79,7 +79,7 @@ function SidebarContent({ userData, onLogout, onNavClick }) {
     <div className="flex flex-col h-full">
       {/* Branding */}
       <div className="px-4 py-4 border-b border-white/10">
-        <p className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Sistem KOAM</p>
+        <p className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Gold Podium</p>
         <p className="text-sm font-bold text-white leading-tight mt-0.5">Panel Urusetia</p>
         <p className="text-[10px] text-white/40 mt-0.5">mssdkemaman-olahraga</p>
       </div>
