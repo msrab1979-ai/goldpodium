@@ -482,9 +482,47 @@ export async function validasiPendaftaran({
 
   // GATE 1 — Had acara per atlet (individu + berkumpulan)
   const acaraBaruDoc = await getDoc(acaraPath(schoolId, kejohananId, aceraId))
-  const acaraBaruIsIndividu = acaraBaruDoc.exists()
-    ? (acaraBaruDoc.data().isIndividu ?? (acaraBaruDoc.data().jenisAcara !== 'relay'))
-    : true
+  const acaraBaruData = acaraBaruDoc.exists() ? acaraBaruDoc.data() : {}
+  const acaraBaruIsIndividu = acaraBaruData.isIndividu ?? (acaraBaruData.jenisAcara !== 'relay')
+
+  // GATE TERBUKA — semak kategori atlet layak untuk acara terbuka
+  if (acaraBaruData.isTerbuka) {
+    const kategoriTerbuka = acaraBaruData.kategoriTerbuka || []
+    if (kategoriTerbuka.length === 0) {
+      return { valid: false, gate: 'GATE_TERBUKA', mesej: 'Acara terbuka belum dikonfigurasi — tiada kategori layak ditetapkan.', had: 0, semasa: 0 }
+    }
+    // Cari kategori atlet dari tarikhLahir + jantina
+    const kategoriSnap = await getDocs(katCol(schoolId, kejohananId))
+    const semuaKategori = kategoriSnap.docs.map(d => ({ kod: d.id, ...d.data() }))
+    const tKej = Number(tahunKejohanan) || new Date().getFullYear()
+    let kategoriAtlet = null
+    if (tarikhLahir && jantina) {
+      const candidates = semuaKategori.filter(k => {
+        if (!k.umurHad) return false
+        const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
+        if (lbl.includes('OPEN') || lbl.includes('TERBUKA')) return false
+        if (jantina === 'L' && !lbl.startsWith('L')) return false
+        if (jantina === 'P' && !lbl.startsWith('P')) return false
+        const tarikhTerawal = new Date(`${tKej - Number(k.umurHad)}-01-02`)
+        const tarikhTerkini = k.umurMin
+          ? new Date(`${tKej - Number(k.umurMin) + 1}-01-01`)
+          : new Date(`${tKej + 1}-01-01`)
+        const tLahir = new Date(tarikhLahir)
+        return tLahir >= tarikhTerawal && tLahir < tarikhTerkini
+      })
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
+        kategoriAtlet = candidates[0].kod
+      }
+    }
+    if (!kategoriAtlet) {
+      return { valid: false, gate: 'GATE_TERBUKA', mesej: 'Kategori atlet tidak dapat ditentukan. Semak tarikh lahir.', had: 0, semasa: 0 }
+    }
+    if (!kategoriTerbuka.includes(kategoriAtlet)) {
+      return { valid: false, gate: 'GATE_TERBUKA', mesej: `Kategori ${kategoriAtlet} tidak layak untuk acara terbuka ini. Kategori layak: ${kategoriTerbuka.join(', ')}.`, had: 0, semasa: 0 }
+    }
+  }
+
   result = await gate1_hadAcaraAtlet(schoolId, noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan)
   if (!result.valid) return result
 

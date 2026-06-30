@@ -266,8 +266,10 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     adaHandTiming:     acara.adaHandTiming     || false,
     isIndividu:        acara.isIndividu ?? (acara.jenisAcara !== 'relay'),
   })
-  const [saving, setSaving] = useState(false)
-  const [err, setErr]       = useState('')
+  const [saving, setSaving]             = useState(false)
+  const [err, setErr]                   = useState('')
+  const [isTerbuka, setIsTerbuka]       = useState(acara.isTerbuka || false)
+  const [katTerbuka, setKatTerbuka]     = useState(acara.kategoriTerbuka || [])
 
   // ── Tambah Final Serentak (untuk saringan yg dah ada) ────────────────────────
   const [withFinal,   setWithFinal]   = useState(false)
@@ -356,6 +358,8 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
         hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
         adaHandTiming:     form.adaHandTiming || false,
         isIndividu:        form.isIndividu,
+        isTerbuka:         isTerbuka,
+        kategoriTerbuka:   isTerbuka ? katTerbuka : [],
         updatedAt:         serverTimestamp(),
       }
       await updateDoc(doc(db, aPath, docId), updates)
@@ -476,6 +480,32 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
           </div>
         </td>
       </tr>
+      {/* Panel Acara Terbuka — EditAcaraRow */}
+      <tr className="bg-orange-50/60 border-b border-orange-100">
+        <td colSpan={10} className="px-3 py-1.5">
+          <div className="flex items-start gap-3 flex-wrap">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none mt-0.5">
+              <button type="button" onClick={() => setIsTerbuka(v => !v)}
+                className={`relative inline-flex h-4 w-8 shrink-0 rounded-full transition-colors ${isTerbuka ? 'bg-orange-500' : 'bg-gray-300'}`}>
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform mt-[1px] ${isTerbuka ? 'translate-x-[18px]' : 'translate-x-[1px]'}`} />
+              </button>
+              <span className="text-[10px] font-bold text-orange-700">Acara Terbuka</span>
+            </label>
+            {isTerbuka && (
+              <div className="flex flex-wrap gap-1">
+                {kategoriList.map(k => (
+                  <button key={k.kod} type="button"
+                    onClick={() => setKatTerbuka(prev => prev.includes(k.kod) ? prev.filter(x => x !== k.kod) : [...prev, k.kod])}
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${katTerbuka.includes(k.kod) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
+                    {k.kod}
+                  </button>
+                ))}
+                {katTerbuka.length === 0 && <span className="text-[9px] text-red-500">Pilih sekurang-kurangnya 1 kategori</span>}
+              </div>
+            )}
+          </div>
+        </td>
+      </tr>
       {/* Panel auto-create acara seterusnya — untuk Saringan, QF, SF */}
       {adaNextPanel && (
         <tr className="bg-purple-50/60 border-b border-purple-100">
@@ -569,10 +599,12 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     parentAcaraId:     '',
     isIndividu:        lastA?.isIndividu ?? (lastA?.jenisAcara !== 'relay'),
   })
-  const [saving, setSaving]       = useState(false)
-  const [err, setErr]             = useState('')
-  const [sisipMode, setSisipMode] = useState(false)   // tunjuk panel sisip
-  const [sisipLog, setSisipLog]   = useState('')       // progress semasa sisip
+  const [saving, setSaving]         = useState(false)
+  const [err, setErr]               = useState('')
+  const [isTerbuka, setIsTerbuka]   = useState(false)
+  const [katTerbuka, setKatTerbuka] = useState([])
+  const [sisipMode, setSisipMode]   = useState(false)
+  const [sisipLog, setSisipLog]     = useState('')
   const nameRef                   = React.useRef()
 
   useEffect(() => { nameRef.current?.focus() }, [])
@@ -692,6 +724,8 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       bilanganLorong: isPadang ? null : 8,
       bilanganFinalis: 8, bilanganCubaan: isPadang ? 6 : 0,
       hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
+      isTerbuka: isTerbuka,
+      kategoriTerbuka: isTerbuka ? katTerbuka : [],
       statusAcara: 'akan_datang', isAktif: true,
     }
   }
@@ -909,6 +943,32 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
               className="p-1.5 text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg hover:border-red-300 shrink-0">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
+          </div>
+        </td>
+      </tr>
+      {/* Panel Acara Terbuka — TambahAcaraRow */}
+      <tr className="bg-orange-50/60 border-b border-orange-100">
+        <td colSpan={10} className="px-3 py-1.5">
+          <div className="flex items-start gap-3 flex-wrap">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none mt-0.5">
+              <button type="button" onClick={() => setIsTerbuka(v => !v)}
+                className={`relative inline-flex h-4 w-8 shrink-0 rounded-full transition-colors ${isTerbuka ? 'bg-orange-500' : 'bg-gray-300'}`}>
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform mt-[1px] ${isTerbuka ? 'translate-x-[18px]' : 'translate-x-[1px]'}`} />
+              </button>
+              <span className="text-[10px] font-bold text-orange-700">Acara Terbuka</span>
+            </label>
+            {isTerbuka && (
+              <div className="flex flex-wrap gap-1">
+                {kategoriList.map(k => (
+                  <button key={k.kod} type="button"
+                    onClick={() => setKatTerbuka(prev => prev.includes(k.kod) ? prev.filter(x => x !== k.kod) : [...prev, k.kod])}
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${katTerbuka.includes(k.kod) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
+                    {k.kod}
+                  </button>
+                ))}
+                {katTerbuka.length === 0 && <span className="text-[9px] text-red-500">Pilih sekurang-kurangnya 1 kategori</span>}
+              </div>
+            )}
           </div>
         </td>
       </tr>
@@ -2140,7 +2200,10 @@ function HadPesertaPanel({ acaraList, schoolId, kejId, onRefresh, kategoriList =
                   <tbody>
                     {matching.map(a => (
                       <tr key={a.aceraId || a.id} className="border-t border-gray-50">
-                        <td className="px-3 py-2 font-semibold text-gray-700">{a.namaAcara}</td>
+                        <td className="px-3 py-2 font-semibold text-gray-700">
+                          {a.namaAcara}
+                          {a.isTerbuka && <span className="ml-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Terbuka</span>}
+                        </td>
                         <td className="px-3 py-2 text-center font-black text-[#003399]">{katLabel(a.kategoriKod, kategoriList)}</td>
                         <td className="px-3 py-2 text-center">
                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
@@ -2548,7 +2611,10 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
                             </td>
 
                             {/* Nama Acara */}
-                            <td className="px-3 py-2.5 font-semibold text-gray-800">{a.namaAcara}</td>
+                            <td className="px-3 py-2.5 font-semibold text-gray-800">
+                              {a.namaAcara}
+                              {a.isTerbuka && <span className="ml-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Terbuka</span>}
+                            </td>
 
                             {/* Jantina */}
                             <td className="px-3 py-2.5 text-center">

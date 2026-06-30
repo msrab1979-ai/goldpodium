@@ -139,7 +139,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           kodSekolah:  p.kodSekolah  || '',
           namaSekolah: getNamaSekolah(p),
           jantina:     acaraDoc.jantina    || '',
-          kategoriKod: acaraDoc.kategoriKod || '',
+          kategoriKod: acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''),
           kejohananId: kejId,
         }, { merge: true })
 
@@ -181,7 +181,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         const prevContr = tData[contribKey]
 
         // Relay guna 'RELAY' sebagai katKey supaya breakdown tally papar row berasingan
-        const katKey       = isRelay ? 'RELAY' : (acaraDoc.kategoriKod || '')
+        const katKey       = isRelay ? 'RELAY' : (acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''))
         const katPingat    = `kat_${katKey}_${acaraDoc.jantina}_${pingat}`
         const tPatch = { [contribKey]: { pingat, noKP: p.noKP || null, rank, kategoriKod: katKey, jantina: acaraDoc.jantina, isRelay: !!isRelay } }
         if (prevContr) {

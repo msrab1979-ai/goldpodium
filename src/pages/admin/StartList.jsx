@@ -532,6 +532,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
                             <th className="px-2 py-1 text-left font-bold text-gray-400">BIB</th>
                             <th className="px-2 py-1 text-left font-bold text-gray-400">Nama</th>
                             <th className="px-2 py-1 text-left font-bold text-gray-400">Sekolah</th>
+                            {selectedAcara?.isTerbuka && <th className="px-2 py-1 text-center font-bold text-orange-500">Kat</th>}
                           </>
                         )}
                       </tr>
@@ -550,6 +551,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
                             <td className="px-2 py-1 font-mono text-gray-700">{p.noBib}</td>
                             <td className="px-2 py-1 font-semibold text-gray-800">{p.namaAtlet}</td>
                             <td className="px-2 py-1 text-gray-500">{sekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah}</td>
+                            {selectedAcara?.isTerbuka && <td className="px-2 py-1 text-center font-bold text-orange-600">{p.kategoriKod || '—'}</td>}
                           </tr>
                         )
                       ))}
