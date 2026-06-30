@@ -425,13 +425,16 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
         </td>
         {/* Peringkat */}
         <td className="px-1.5 py-1.5">
-          <select value={form.peringkatMode} onChange={e => { set('peringkatMode', e.target.value); set('parentAcaraId', '') }} className={ic}>
-            <option value="akhir">Terus Final</option>
-            <option value="saringan">Saringan</option>
-            <option value="suku_akhir">Suku Akhir (QF)</option>
-            <option value="separuh_akhir">Separuh Akhir (SF)</option>
-            <option value="final_p">Final ←</option>
-          </select>
+          {peringkatMode0 === 'saringan' ? (
+            <span className="text-[10px] text-gray-400 px-1">Saringan</span>
+          ) : (
+            <select value={form.peringkatMode} onChange={e => { set('peringkatMode', e.target.value); set('parentAcaraId', '') }} className={ic}>
+              <option value="akhir">Terus Final</option>
+              <option value="suku_akhir">Suku Akhir (QF)</option>
+              <option value="separuh_akhir">Separuh Akhir (SF)</option>
+              <option value="final_p">Final ←</option>
+            </select>
+          )}
           {/* Pilih acara sebelum — untuk QF, SF, dan Final */}
           {['suku_akhir', 'separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
             <select value={form.parentAcaraId} onChange={e => set('parentAcaraId', e.target.value)}
@@ -836,7 +839,6 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
         <td className="px-1.5 py-1.5">
           <select value={form.peringkatMode} onChange={e => { set('peringkatMode', e.target.value); set('parentAcaraId', '') }} className={ic}>
             <option value="akhir">Terus Final</option>
-            <option value="saringan">Saringan</option>
             <option value="suku_akhir">Suku Akhir (QF)</option>
             <option value="separuh_akhir">Separuh Akhir (SF)</option>
             <option value="final_p">Final ←</option>
