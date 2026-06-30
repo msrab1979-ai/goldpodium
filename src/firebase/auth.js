@@ -221,6 +221,8 @@ export async function loginWithEmail(email, password) {
 
 export async function logoutAll() {
   sessionStorage.removeItem(SESSION_KEY)
+  sessionStorage.removeItem('gp_kej_aktif')
+  sessionStorage.removeItem('gp_view_school')
   try { await firebaseSignOut(auth) } catch { /* abaikan */ }
 }
 
