@@ -79,24 +79,27 @@ function ShareLinkCard({ schoolId, userRole, userData }) {
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 
-const StatCard = ({ label, value, sub, color, icon }) => (
-  <div className="bg-white border border-gray-200 rounded shadow-sm p-4 flex items-start gap-4">
-    <div className={`w-10 h-10 rounded flex items-center justify-center shrink-0 ${color}`}>
-      {icon}
+function StatCard({ label, value, sub, color, icon }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded shadow-sm p-4 flex items-start gap-4">
+      <div className={`w-10 h-10 rounded flex items-center justify-center shrink-0 ${color}`}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-2xl font-bold text-gray-800 leading-none">
+          {value === null ? (
+            <span className="inline-block w-10 h-6 bg-gray-100 rounded animate-pulse" />
+          ) : value}
+        </p>
+        <p className="text-xs font-semibold text-gray-600 mt-1">{label}</p>
+        {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
+      </div>
     </div>
-    <div className="min-w-0">
-      <p className="text-2xl font-bold text-gray-800 leading-none">
-        {value === null ? (
-          <span className="inline-block w-10 h-6 bg-gray-100 rounded animate-pulse" />
-        ) : value}
-      </p>
-      <p className="text-xs font-semibold text-gray-600 mt-1">{label}</p>
-      {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
-    </div>
-  </div>
-)
+  )
+}
 
-const QuickLink = ({ label, path, desc }) => (
+function QuickLink({ label, path, desc }) {
+  return (
   <a
     href={path}
     className="block bg-white border border-gray-200 rounded shadow-sm p-4 hover:border-[#003399] hover:shadow-md transition-all group"
@@ -104,7 +107,8 @@ const QuickLink = ({ label, path, desc }) => (
     <p className="text-sm font-semibold text-[#003399] group-hover:underline">{label}</p>
     <p className="text-xs text-gray-500 mt-1">{desc}</p>
   </a>
-)
+  )
+}
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 

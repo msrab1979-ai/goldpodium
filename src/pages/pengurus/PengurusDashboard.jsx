@@ -185,15 +185,17 @@ function downloadTemplateDaftar(bibPrefix = '', bibFormat = 3, acaraList = []) {
 
 // ─── Sub-Components ───────────────────────────────────────────────────────────
 
-const FormField = ({ label, hint, required, children }) => (
-  <div>
-    <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-      {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-    </label>
-    {children}
-    {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
-  </div>
-)
+function FormField({ label, hint, required, children }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
+        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      {children}
+      {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
+    </div>
+  )
+}
 
 function JantinaBadge({ j }) {
   return (

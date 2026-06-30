@@ -441,28 +441,32 @@ const KATEG_CLS = {
   SM:   'bg-green-100 text-green-700',
   PPKI: 'bg-purple-100 text-purple-700',
 }
-const KategBadge = ({ k }) => {
+function KategBadge({ k }) {
   const cls = KATEG_CLS[k] || 'bg-gray-100 text-gray-600'
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{k}</span>
 }
 
-const StatusBadge = ({ aktif }) => (
-  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-    aktif ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-  }`}>{aktif ? 'Aktif' : 'Nyahaktif'}</span>
-)
+function StatusBadge({ aktif }) {
+  return (
+    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+      aktif ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+    }`}>{aktif ? 'Aktif' : 'Nyahaktif'}</span>
+  )
+}
 
 // ─── FormField ────────────────────────────────────────────────────────────────
 
-const FormField = ({ label, required, hint, children }) => (
-  <div>
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    {children}
-    {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
-  </div>
-)
+function FormField({ label, required, hint, children }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      {children}
+      {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
+    </div>
+  )
+}
 
 // ─── Modal Tambah / Edit ──────────────────────────────────────────────────────
 

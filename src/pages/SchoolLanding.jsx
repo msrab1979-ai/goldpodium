@@ -6,6 +6,8 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
+import { hashPin } from '../utils/hashPin'
+import { usePWATitle } from '../hooks/usePWATitle'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,9 +65,6 @@ function tahunRekod(tarikhRekod) {
 }
 
 // ─── LupaPinModal ─────────────────────────────────────────────────────────────
-
-import { hashPin } from '../utils/hashPin'
-import { usePWATitle } from '../hooks/usePWATitle'
 
 function genPin6() { return String(Math.floor(100000 + Math.random() * 900000)) }
 
@@ -809,11 +808,7 @@ export default function SchoolLanding() {
   const [kej,      setKej]      = useState(null)
   const [schoolId, setSchoolId] = useState(null)
 
-  usePWATitle(sekolah?.namaSekolah || cfg?.namaSistem)
-  const [status,   setStatus]   = useState('muatTurun')
-  const [stats,    setStats]    = useState({ acara: 0, sekolah: 0, hari: 0 })
-
-  // Tetapan + logo
+  // Tetapan + logo — mesti sebelum usePWATitle
   const [cfg, setCfg] = useState({
     logoKiriBase64: '', logoKananBase64: '', logoKejohananBase64: '',
     logoPenganjurBase64: '', namaOrganisasi: '', namaAgensi: '',
@@ -821,6 +816,10 @@ export default function SchoolLanding() {
     bukuKejohananLink: { aktif: false, url: '' },
     bukuProgram: { aktif: false, url: '' },
   })
+
+  usePWATitle(sekolah?.namaSekolah || cfg?.namaSistem)
+  const [status,   setStatus]   = useState('muatTurun')
+  const [stats,    setStats]    = useState({ acara: 0, sekolah: 0, hari: 0 })
 
   // Jadual & keputusan
   const [activeTab,      setActiveTab]      = useState('jadual')

@@ -1292,15 +1292,17 @@ function JantinaBadge({ jantina }) {
   )
 }
 
-const FormField = ({ label, hint, required, children }) => (
-  <div>
-    <div className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-      {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+function FormField({ label, hint, required, children }) {
+  return (
+    <div>
+      <div className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
+        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      </div>
+      {children}
+      {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
     </div>
-    {children}
-    {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
-  </div>
-)
+  )
+}
 
 
 // ─── WA Config Panel ──────────────────────────────────────────────────────────

@@ -66,45 +66,49 @@ function tahunLahirLabel(umurHad, umurMin, tahun) {
   return `${terawal} – ${terkini}`
 }
 
-const FormField = ({ label, hint, children, required }) => (
-  <div>
-    <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    {children}
-    {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
-  </div>
-)
+function FormField({ label, hint, children, required }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
+        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      {children}
+      {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
+    </div>
+  )
+}
 
-const DualField = ({ labelL, labelP, valL, valP, onL, onP, suffix = '', hint }) => (
-  <div>
-    {hint && <p className="text-[10px] text-gray-400 mb-1">{hint}</p>}
-    <div className="flex gap-2">
-      <div className="flex-1">
-        <div className="flex items-center gap-1.5 mb-1">
-          <span className="w-4 h-4 rounded-full bg-blue-100 text-[8px] font-black text-blue-700 flex items-center justify-center">L</span>
-          <span className="text-[10px] text-gray-500">{labelL}</span>
+function DualField({ labelL, labelP, valL, valP, onL, onP, suffix = '', hint }) {
+  return (
+    <div>
+      {hint && <p className="text-[10px] text-gray-400 mb-1">{hint}</p>}
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="w-4 h-4 rounded-full bg-blue-100 text-[8px] font-black text-blue-700 flex items-center justify-center">L</span>
+            <span className="text-[10px] text-gray-500">{labelL}</span>
+          </div>
+          <div className="relative">
+            <input type="number" min={0} value={valL} onChange={e => onL(e.target.value)}
+              className={inputCls + ' pr-10'} />
+            {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{suffix}</span>}
+          </div>
         </div>
-        <div className="relative">
-          <input type="number" min={0} value={valL} onChange={e => onL(e.target.value)}
-            className={inputCls + ' pr-10'} />
-          {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{suffix}</span>}
-        </div>
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-1.5 mb-1">
-          <span className="w-4 h-4 rounded-full bg-pink-100 text-[8px] font-black text-pink-700 flex items-center justify-center">P</span>
-          <span className="text-[10px] text-gray-500">{labelP}</span>
-        </div>
-        <div className="relative">
-          <input type="number" min={0} value={valP} onChange={e => onP(e.target.value)}
-            className={inputCls + ' pr-10'} />
-          {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{suffix}</span>}
+        <div className="flex-1">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="w-4 h-4 rounded-full bg-pink-100 text-[8px] font-black text-pink-700 flex items-center justify-center">P</span>
+            <span className="text-[10px] text-gray-500">{labelP}</span>
+          </div>
+          <div className="relative">
+            <input type="number" min={0} value={valP} onChange={e => onP(e.target.value)}
+              className={inputCls + ' pr-10'} />
+            {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{suffix}</span>}
+          </div>
         </div>
       </div>
     </div>
-  </div>
-)
+  )
+}
 
 // ─── KategoriTable ────────────────────────────────────────────────────────────
 

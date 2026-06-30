@@ -35,6 +35,7 @@ export default defineConfig({
     }),
   ],
   build: {
+    minify: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -53,7 +54,6 @@ export default defineConfig({
         },
       },
     },
-    // Tingkatkan had warning (PDF libs memang besar)
     chunkSizeWarningLimit: 600,
   },
 })
