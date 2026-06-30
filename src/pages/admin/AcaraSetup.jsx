@@ -291,7 +291,26 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
   const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
   const peringkat   = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
   const parentId    = ['final_p', 'separuh_akhir'].includes(form.peringkatMode) ? form.parentAcaraId.trim() : ''
-  const saringanList = acaraList.filter(a => ['saringan','suku_akhir','separuh_akhir'].includes(a.peringkat) && String(a.noAcara) !== String(acara.noAcara))
+
+  // Parent yang layak — filter ikut peringkat + kategori + jantina
+  // SF mesti pilih QF (suku_akhir) | Final mesti pilih SF (separuh_akhir) atau Saringan
+  const PARENT_PERINGKAT = {
+    separuh_akhir: ['suku_akhir', 'saringan'],
+    final_p:       ['separuh_akhir', 'saringan'],
+  }
+  const saringanList = acaraList.filter(a => {
+    if (String(a.noAcara) === String(acara.noAcara)) return false
+    const allowed = PARENT_PERINGKAT[form.peringkatMode] || []
+    if (!allowed.includes(a.peringkat)) return false
+    // filter kategori + jantina — sama dahulukan, tapi jangan buang jika tiada
+    if (form.kategoriKod && a.kategoriKod && a.kategoriKod !== 'TERBUKA') {
+      if (a.kategoriKod !== form.kategoriKod) return false
+    }
+    if (form.jantina && a.jantina && a.jantina !== 'C') {
+      if (a.jantina !== form.jantina) return false
+    }
+    return true
+  })
 
   // Semak sama ada final sudah wujud untuk saringan ini
   const thisNo = String(acara.noAcara || acara.aceraId || acara.id)
@@ -448,13 +467,19 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
           )}
           {/* Pilih acara sebelum — untuk SF dan Final sahaja (QF = acara pertama, tiada parent) */}
           {['separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
-            <select value={form.parentAcaraId} onChange={e => set('parentAcaraId', e.target.value)}
-              className={ic + ' mt-1 text-[10px]'}>
-              <option value="">— Pilih acara sebelum —</option>
-              {saringanList.map(a => (
-                <option key={a.noAcara} value={String(a.noAcara)}>#{a.noAcara} {a.namaAcara}</option>
-              ))}
-            </select>
+            saringanList.length === 0
+              ? <p className="text-[10px] text-red-500 mt-1 bg-red-50 border border-red-200 rounded px-2 py-1">
+                  {form.peringkatMode === 'separuh_akhir'
+                    ? '⚠ Tiada QF/Saringan untuk kategori ini. Bina dahulu.'
+                    : '⚠ Tiada SF/Saringan untuk kategori ini. Bina dahulu.'}
+                </p>
+              : <select value={form.parentAcaraId} onChange={e => set('parentAcaraId', e.target.value)}
+                  className={ic + ' mt-1 text-[10px]'}>
+                  <option value="">— Pilih acara sebelum —</option>
+                  {saringanList.map(a => (
+                    <option key={a.noAcara} value={String(a.noAcara)}>#{a.noAcara} {a.namaAcara}</option>
+                  ))}
+                </select>
           )}
         </td>
         {/* Jenis Had */}
@@ -649,8 +674,23 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
   const peringkat    = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
   const parentId     = ['final_p', 'separuh_akhir'].includes(form.peringkatMode) ? form.parentAcaraId.trim() : ''
 
-  // Cadangan no acara sebelum — untuk QF, SF, Final
-  const saringanList = acaraList.filter(a => ['saringan','suku_akhir','separuh_akhir'].includes(a.peringkat))
+  // Parent yang layak — filter ikut peringkat + kategori + jantina
+  // SF mesti pilih QF (suku_akhir) | Final mesti pilih SF (separuh_akhir) atau Saringan
+  const PARENT_PERINGKAT = {
+    separuh_akhir: ['suku_akhir', 'saringan'],
+    final_p:       ['separuh_akhir', 'saringan'],
+  }
+  const saringanList = acaraList.filter(a => {
+    const allowed = PARENT_PERINGKAT[form.peringkatMode] || []
+    if (!allowed.includes(a.peringkat)) return false
+    if (form.kategoriKod && a.kategoriKod && a.kategoriKod !== 'TERBUKA') {
+      if (a.kategoriKod !== form.kategoriKod) return false
+    }
+    if (form.jantina && a.jantina && a.jantina !== 'C') {
+      if (a.jantina !== form.jantina) return false
+    }
+    return true
+  })
 
   // next acara dalam chain
   const NEXT_PERINGKAT = { saringan: 'akhir', suku_akhir: 'separuh_akhir', separuh_akhir: 'akhir' }
@@ -925,16 +965,22 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
           </select>
           {/* Pilih acara sebelum — untuk SF dan Final sahaja (QF = acara pertama, tiada parent) */}
           {['separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
-            <select value={form.parentAcaraId}
-              onChange={e => set('parentAcaraId', e.target.value)}
-              className={ic + ' mt-1 text-[10px]'}>
-              <option value="">— Pilih acara sebelum —</option>
-              {saringanList.map(a => (
-                <option key={a.noAcara} value={String(a.noAcara)}>
-                  #{a.noAcara} {a.namaAcara}
-                </option>
-              ))}
-            </select>
+            saringanList.length === 0
+              ? <p className="text-[10px] text-red-500 mt-1 bg-red-50 border border-red-200 rounded px-2 py-1">
+                  {form.peringkatMode === 'separuh_akhir'
+                    ? '⚠ Tiada QF/Saringan untuk kategori ini. Bina dahulu.'
+                    : '⚠ Tiada SF/Saringan untuk kategori ini. Bina dahulu.'}
+                </p>
+              : <select value={form.parentAcaraId}
+                  onChange={e => set('parentAcaraId', e.target.value)}
+                  className={ic + ' mt-1 text-[10px]'}>
+                  <option value="">— Pilih acara sebelum —</option>
+                  {saringanList.map(a => (
+                    <option key={a.noAcara} value={String(a.noAcara)}>
+                      #{a.noAcara} {a.namaAcara}
+                    </option>
+                  ))}
+                </select>
           )}
         </td>
         {/* Jenis Had */}

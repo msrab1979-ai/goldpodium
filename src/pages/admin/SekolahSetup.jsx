@@ -1213,6 +1213,36 @@ export default function SekolahSetup() {
     }
   }
 
+  // ── Padam Semua Sekolah ──
+  async function doPadamSemua() {
+    setDeleting(true)
+    try {
+      const snap = await getDocs(collection(db, 'tenants', schoolId, 'sekolah'))
+      if (snap.empty) { setModal(null); return }
+      // Firestore batch max 500 ops
+      const chunks = []
+      let batch = writeBatch(db)
+      let count = 0
+      snap.docs.forEach(d => {
+        batch.delete(d.ref)
+        count++
+        if (count === 500) {
+          chunks.push(batch)
+          batch = writeBatch(db)
+          count = 0
+        }
+      })
+      if (count > 0) chunks.push(batch)
+      await Promise.all(chunks.map(b => b.commit()))
+      setModal(null)
+      fetchList()
+    } catch (e) {
+      alert('Gagal padam semua: ' + e.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   // ── Export PDF ──
   function exportPDF() {
     const pdf  = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
@@ -1387,6 +1417,18 @@ export default function SekolahSetup() {
             </svg>
             Import
           </button>
+
+          {/* Padam Semua */}
+          {list.length > 0 && (
+            <button onClick={() => setModal('padamSemua')}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 hover:border-red-400 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold rounded-lg transition-colors"
+              title="Padam semua sekolah">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Padam Semua
+            </button>
+          )}
         </div>
       </div>
 
@@ -1543,6 +1585,34 @@ export default function SekolahSetup() {
           onYes={doToggleAktif}
           onNo={() => { setModal(null); setSelected(null) }}
         />
+      )}
+      {modal === 'padamSemua' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <h3 className="text-sm font-bold text-gray-800 mb-1">Padam Semua Sekolah?</h3>
+              <p className="text-xs font-bold text-red-600">{list.length} sekolah akan dipadam secara kekal.</p>
+              <p className="text-[10px] text-red-600 mt-2 bg-red-50 border border-red-200 rounded px-2 py-1">
+                Tindakan ini tidak boleh dibatalkan. Data atlet tidak turut dipadam.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setModal(null)}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-50">
+                Batal
+              </button>
+              <button onClick={doPadamSemua} disabled={deleting}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors">
+                {deleting ? 'Memadam…' : `Padam ${list.length} Sekolah`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {modal === 'padam' && selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
