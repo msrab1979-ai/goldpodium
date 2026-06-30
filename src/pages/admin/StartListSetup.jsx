@@ -910,6 +910,7 @@ export default function StartListSetup() {
   const isSuperadmin  = userData?.role === 'superadmin'
   const isPencatat    = userData?.role === 'pencatat'
   const pencatatSlug  = userData?.schoolSlug || ''
+  const canEdit       = ['admin','superadmin','pencatat'].includes(userData?.role)
 
   const ctx      = getKejContext()
   const schoolId = ctx.schoolId || ''
@@ -1144,9 +1145,10 @@ export default function StartListSetup() {
                           const heatCnt = heatCountMap[aid] || 0
                           const pCnt    = pesertaCountMap[aid] || 0
                           const isSelected = selectedAcara?.id === a.id
-                          const isFinal = !!a.parentAcaraId
                           const isQF    = a.peringkat === 'suku_akhir'
                           const isSF    = a.peringkat === 'separuh_akhir'
+                          const isFinal = a.peringkat === 'akhir' || a.peringkat === 'final'
+                          const isChild = !!a.parentAcaraId
 
                           const peringkatBadge = isFinal
                             ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">FINAL</span>
@@ -1158,16 +1160,16 @@ export default function StartListSetup() {
 
                           return (
                             <tr key={aid}
-                              className={`border-t border-gray-50 transition-colors ${isSelected ? 'bg-blue-50/40' : 'hover:bg-gray-50/60'} ${isFinal ? 'bg-purple-50/10' : ''}`}>
-                              <td className={`py-2.5 text-[10px] font-mono text-gray-400 ${isFinal ? 'pl-6' : 'pl-3'}`}>
-                                {isFinal ? '└' : ''}{a.noAcara || '—'}
+                              className={`border-t border-gray-50 transition-colors ${isSelected ? 'bg-blue-50/40' : 'hover:bg-gray-50/60'} ${isChild ? 'bg-purple-50/10' : ''}`}>
+                              <td className={`py-2.5 text-[10px] font-mono text-gray-400 ${isChild ? 'pl-6' : 'pl-3'}`}>
+                                {isChild ? '└' : ''}{a.noAcara || '—'}
                               </td>
                               <td className="px-3 py-2.5">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {peringkatBadge}
                                   <span className="font-semibold text-gray-800">{a.namaAcara}</span>
                                 </div>
-                                {isFinal && a.parentAcaraId && (
+                                {isChild && a.parentAcaraId && (
                                   <p className="text-[8px] text-purple-400 mt-0.5">← #{a.parentAcaraId}</p>
                                 )}
                               </td>
@@ -1192,14 +1194,9 @@ export default function StartListSetup() {
                                       {isSelected ? '✕ Tutup' : 'Lihat →'}
                                     </button>
                                   )}
-                                  {pCnt > 0 && (
+                                  {canEdit && (
                                     <button
-                                      onClick={() => {
-                                        setSelectedAcara(a)
-                                        // trigger modal jana dari AcaraHeatPanel via ref tidak diperlukan
-                                        // — user klik Lihat → then Jana Heat dalam panel
-                                        if (heatCnt === 0) setSelectedAcara(a)
-                                      }}
+                                      onClick={() => setSelectedAcara(a)}
                                       className={`text-[9px] font-bold px-2.5 py-1 rounded-lg transition-colors shadow-sm ${
                                         heatCnt > 0
                                           ? 'border border-amber-300 text-amber-700 hover:bg-amber-50'
