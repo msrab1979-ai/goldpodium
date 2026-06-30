@@ -524,6 +524,7 @@ export async function validasiPendaftaran({
   }
 
   result = await gate1_hadAcaraAtlet(schoolId, noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan)
+  console.log('[GATE1]', { noKP, acaraBaruIsIndividu, result })
   if (!result.valid) return result
 
   // GATE 2 — Had atlet per sekolah per acara
