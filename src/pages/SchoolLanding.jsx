@@ -472,7 +472,7 @@ function sortAndRankRows(rows) {
   })
 }
 
-function TabMedalTally({ schoolId, kejId, bilKed = 3 }) {
+function TabMedalTally({ schoolId, kejId, bilKed = 3, onRowsReady }) {
   const [allRows,   setAllRows]   = useState([])
   const [loading,   setLoading]   = useState(true)
   const [openGrps,  setOpenGrps]  = useState(new Set())
@@ -515,6 +515,7 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3 }) {
       }))
       setAllRows(rows)
       setLoading(false)
+      if (onRowsReady) onRowsReady(rows)
     }
 
     unsubRef.current = onSnapshot(
@@ -735,6 +736,8 @@ export default function SchoolLanding() {
   const [staffModal,    setStaffModal]    = useState(false)
   const [lupaPinModal,  setLupaPinModal]  = useState(false)
   const [printingPdf,   setPrintingPdf]   = useState(false)
+  const [printingMedal, setPrintingMedal] = useState(false)
+  const [medalRows,     setMedalRows]     = useState([])
 
   // Pencatat login
   const { loginPencatat } = useAuth()
@@ -904,14 +907,38 @@ export default function SchoolLanding() {
         import('jspdf'), import('jspdf-autotable'),
       ])
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-      const namaKej = kej?.namaKejohanan || sekolah?.namaSekolah || 'Kejohanan Olahraga'
-      pdf.setFontSize(15); pdf.setFont(undefined, 'bold'); pdf.setTextColor(0, 51, 153)
-      pdf.text('JADUAL ACARA', 148, 14, { align: 'center' })
-      pdf.setFontSize(10); pdf.setTextColor(30, 30, 30)
-      pdf.text(namaKej.toUpperCase(), 148, 21, { align: 'center' })
-      pdf.setFontSize(7); pdf.setTextColor(180)
-      pdf.text(`Dicetak: ${new Date().toLocaleString('ms-MY')}`, 14, 202)
-      pdf.setTextColor(0)
+      const namaKej   = kej?.namaKejohanan || sekolah?.namaSekolah || 'Kejohanan Olahraga'
+      const logoKiri  = cfg.logoKiriBase64  || ''
+      const logoKanan = cfg.logoKananBase64 || ''
+      const logoSize  = 16
+      const pageW     = 297
+
+      // ── Header halaman pertama ──
+      function drawHeader(y = 10) {
+        if (logoKiri)  pdf.addImage(logoKiri,  'PNG', 14,           y, logoSize, logoSize)
+        if (logoKanan) pdf.addImage(logoKanan, 'PNG', pageW - 14 - logoSize, y, logoSize, logoSize)
+        pdf.setFontSize(13); pdf.setFont(undefined, 'bold'); pdf.setTextColor(0, 51, 153)
+        pdf.text('JADUAL ACARA', pageW / 2, y + 5, { align: 'center' })
+        pdf.setFontSize(9); pdf.setFont(undefined, 'normal'); pdf.setTextColor(30, 30, 30)
+        pdf.text(namaKej.toUpperCase(), pageW / 2, y + 11, { align: 'center' })
+        const tarikhMula  = kej?.tarikhMula  ? new Date(kej.tarikhMula).toLocaleDateString('ms-MY',  { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+        const tarikhTamat = kej?.tarikhTamat ? new Date(kej.tarikhTamat).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+        const tarikhStr   = tarikhMula && tarikhTamat && tarikhMula !== tarikhTamat
+          ? `${tarikhMula} – ${tarikhTamat}` : tarikhMula
+        const lokasiStr   = kej?.lokasi || ''
+        const subtitleParts = [tarikhStr, lokasiStr].filter(Boolean)
+        if (subtitleParts.length) {
+          pdf.setFontSize(7.5); pdf.setTextColor(100)
+          pdf.text(subtitleParts.join('  ·  '), pageW / 2, y + 16.5, { align: 'center' })
+        }
+        pdf.setDrawColor(0, 51, 153); pdf.setLineWidth(0.4)
+        pdf.line(14, y + logoSize + 2, pageW - 14, y + logoSize + 2)
+        pdf.setTextColor(0)
+        return y + logoSize + 5
+      }
+
+      let startY = drawHeader(8)
+
       const hariMap = {}
       acara.forEach(a => {
         const t = a.tarikhAcara || 'tba'
@@ -919,42 +946,182 @@ export default function SchoolLanding() {
         hariMap[t].push(a)
       })
       const hariKeys = Object.keys(hariMap).sort()
-      let startY = 32, isFirst = true
+      let isFirst = true
+
       for (const date of hariKeys) {
         const items = hariMap[date] || []
-        if (!isFirst) { pdf.addPage(); startY = 14 }
+        if (!isFirst) { pdf.addPage(); startY = drawHeader(8) }
         isFirst = false
+
         autoTable(pdf, {
           startY,
-          head: [[{ content: formatDayLabel(date).toUpperCase() + `  (${items.length} acara)`, colSpan: 6,
-            styles: { halign: 'left', fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 10 } }]],
+          head: [[{ content: formatDayLabel(date).toUpperCase() + `  (${items.length} acara)`, colSpan: 7,
+            styles: { halign: 'left', fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 9.5 } }]],
           body: [], margin: { left: 14, right: 14 },
-          styles: { cellPadding: { top: 4, bottom: 4, left: 5, right: 5 } }, theme: 'plain',
+          styles: { cellPadding: { top: 3, bottom: 3, left: 5, right: 5 } }, theme: 'plain',
         })
+
         const tableBody = items
           .sort((a, b) => (a.masa || '99:99').localeCompare(b.masa || '99:99') || (Number(a.noAcara) || 999) - (Number(b.noAcara) || 999))
           .map(a => {
-            const umurHad = kategoriMap[a.kategoriKod]?.umurHad
-            const kelas = umurHad ? `${a.jantina || ''}${umurHad}` : `${a.jantina || ''}${a.kategoriKod || ''}` || '—'
-            return [a.noAcara || '—', a.masa || '—', a.namaAcara || '—', kelas,
-              a.peringkat === 'saringan' ? 'Saringan' : a.parentAcaraId ? 'Final' : '—', a.lokasi || '—']
+            const peringkatLabel = a.peringkat === 'saringan' ? 'Saringan'
+              : a.peringkat === 'suku_akhir'    ? 'Suku Akhir'
+              : a.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
+              : a.peringkat === 'final'         ? 'Final'
+              : a.parentAcaraId ? 'Final' : 'Terus Final'
+            return [
+              a.noAcara    || '—',
+              a.masa       || '—',
+              a.namaAcara  || '—',
+              a.kategoriKod || '—',
+              a.jantina === 'L' ? 'L' : a.jantina === 'P' ? 'P' : (a.jantina || '—'),
+              a.lokasi     || '—',
+              peringkatLabel,
+            ]
           })
+
         autoTable(pdf, {
           startY: pdf.lastAutoTable.finalY,
-          head: [['No', 'Masa', 'Nama Acara', 'Kelas', 'Peringkat', 'Lokasi']],
-          body: tableBody, margin: { left: 14, right: 14 },
-          headStyles: { fillColor: [230, 236, 255], textColor: [0, 51, 153], fontStyle: 'bold', fontSize: 8.5 },
-          styles: { fontSize: 9, cellPadding: 2.5 },
+          head: [['No', 'Masa', 'Nama Acara', 'Kat', 'J', 'Lokasi', 'Peringkat']],
+          body: tableBody,
+          margin: { left: 14, right: 14 },
+          headStyles: { fillColor: [230, 236, 255], textColor: [0, 51, 153], fontStyle: 'bold', fontSize: 8 },
+          styles: { fontSize: 8.5, cellPadding: 2.5 },
           alternateRowStyles: { fillColor: [248, 250, 255] },
-          columnStyles: { 0: { cellWidth: 12, halign: 'center' }, 1: { cellWidth: 18, halign: 'center' },
-            2: { cellWidth: 'auto' }, 3: { cellWidth: 16, halign: 'center' },
-            4: { cellWidth: 27, halign: 'center' }, 5: { cellWidth: 42 } },
+          columnStyles: {
+            0: { cellWidth: 12, halign: 'center' },
+            1: { cellWidth: 18, halign: 'center' },
+            2: { cellWidth: 'auto' },
+            3: { cellWidth: 18, halign: 'center' },
+            4: { cellWidth: 8,  halign: 'center' },
+            5: { cellWidth: 35 },
+            6: { cellWidth: 28, halign: 'center' },
+          },
         })
+        startY = pdf.lastAutoTable.finalY + 4
       }
+
+      // Footer — nombor halaman + tarikh cetak
+      const pageCount = pdf.internal.getNumberOfPages()
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i)
+        pdf.setFontSize(6.5); pdf.setTextColor(180)
+        pdf.text(`Dicetak: ${new Date().toLocaleString('ms-MY')}`, 14, 205)
+        pdf.text(`Muka ${i} / ${pageCount}`, pageW - 14, 205, { align: 'right' })
+      }
+
       const safeName = namaKej.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 30)
       pdf.save(`jadual-${safeName}.pdf`)
     } catch (e) { alert('Ralat menjana PDF: ' + e.message) }
     finally { setPrintingPdf(false) }
+  }
+
+  // ── PDF Medal Tally ──
+  async function cetakMedalPDF() {
+    if (!medalRows.length) return
+    setPrintingMedal(true)
+    try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'), import('jspdf-autotable'),
+      ])
+      const pdf       = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const namaKej   = kej?.namaKejohanan || sekolah?.namaSekolah || 'Kejohanan Olahraga'
+      const logoKiri  = cfg.logoKiriBase64  || ''
+      const logoKanan = cfg.logoKananBase64 || ''
+      const logoSize  = 16
+      const pageW     = 210
+
+      // Header
+      if (logoKiri)  pdf.addImage(logoKiri,  'PNG', 14,                   8, logoSize, logoSize)
+      if (logoKanan) pdf.addImage(logoKanan, 'PNG', pageW - 14 - logoSize, 8, logoSize, logoSize)
+      pdf.setFontSize(13); pdf.setFont(undefined, 'bold'); pdf.setTextColor(0, 51, 153)
+      pdf.text('KEDUDUKAN PINGAT', pageW / 2, 14, { align: 'center' })
+      pdf.setFontSize(9); pdf.setFont(undefined, 'normal'); pdf.setTextColor(30, 30, 30)
+      pdf.text(namaKej.toUpperCase(), pageW / 2, 20, { align: 'center' })
+      const tarikhMula  = kej?.tarikhMula  ? new Date(kej.tarikhMula).toLocaleDateString('ms-MY',  { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+      const tarikhTamat = kej?.tarikhTamat ? new Date(kej.tarikhTamat).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+      const tarikhStr   = tarikhMula && tarikhTamat && tarikhMula !== tarikhTamat
+        ? `${tarikhMula} – ${tarikhTamat}` : tarikhMula
+      const subtitleParts = [tarikhStr, kej?.lokasi].filter(Boolean)
+      if (subtitleParts.length) {
+        pdf.setFontSize(7.5); pdf.setTextColor(100)
+        pdf.text(subtitleParts.join('  ·  '), pageW / 2, 25.5, { align: 'center' })
+      }
+      pdf.setDrawColor(0, 51, 153); pdf.setLineWidth(0.4)
+      pdf.line(14, 27, pageW - 14, 27)
+      pdf.setTextColor(0)
+
+      const ranked = sortAndRankRows([...medalRows])
+      const bilKed = kej?.bilanganKedudukan ?? 3
+
+      const head = [['No.', 'Nama Sekolah', '🥇 Emas', '🥈 Perak', '🥉 Gangsa',
+        ...(bilKed >= 4 ? ['T4'] : []), ...(bilKed >= 5 ? ['T5'] : []), 'Jumlah']]
+
+      const body = ranked.map(t => {
+        const jumlah = (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0)
+        return [
+          t.rank,
+          t.namaSekolah || t.kodSekolah || '—',
+          t.emas   || 0,
+          t.perak  || 0,
+          t.gangsa || 0,
+          ...(bilKed >= 4 ? [t.tempat4 || 0] : []),
+          ...(bilKed >= 5 ? [t.tempat5 || 0] : []),
+          jumlah,
+        ]
+      })
+
+      // Row jumlah bawah
+      const totalJumlah = ranked.reduce((s, t) => s + (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0), 0)
+      body.push([
+        '', 'JUMLAH',
+        ranked.reduce((s,t)=>s+(t.emas||0),0),
+        ranked.reduce((s,t)=>s+(t.perak||0),0),
+        ranked.reduce((s,t)=>s+(t.gangsa||0),0),
+        ...(bilKed >= 4 ? [ranked.reduce((s,t)=>s+(t.tempat4||0),0)] : []),
+        ...(bilKed >= 5 ? [ranked.reduce((s,t)=>s+(t.tempat5||0),0)] : []),
+        totalJumlah,
+      ])
+
+      autoTable(pdf, {
+        startY: 30,
+        head,
+        body,
+        margin: { left: 14, right: 14 },
+        headStyles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 8.5, halign: 'center' },
+        styles: { fontSize: 9, cellPadding: 3, halign: 'center' },
+        columnStyles: { 1: { halign: 'left' } },
+        alternateRowStyles: { fillColor: [248, 250, 255] },
+        didParseCell: (data) => {
+          const isLast = data.row.index === body.length - 1
+          if (isLast) {
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.fillColor = [230, 236, 255]
+            data.cell.styles.textColor = [0, 51, 153]
+          }
+          // Warna emas/perak/gangsa row
+          const rank = ranked[data.row.index]?.rank
+          if (!isLast && data.column.index === 0) {
+            if (rank === 1) data.cell.styles.textColor = [180, 120, 0]
+            if (rank === 2) data.cell.styles.textColor = [100, 100, 100]
+            if (rank === 3) data.cell.styles.textColor = [160, 80, 20]
+          }
+        },
+      })
+
+      // Footer
+      const pageCount = pdf.internal.getNumberOfPages()
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i)
+        pdf.setFontSize(6.5); pdf.setTextColor(180)
+        pdf.text(`Dicetak: ${new Date().toLocaleString('ms-MY')}`, 14, 290)
+        pdf.text(`Muka ${i} / ${pageCount}`, pageW - 14, 290, { align: 'right' })
+      }
+
+      const safeName = namaKej.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 30)
+      pdf.save(`medal-tally-${safeName}.pdf`)
+    } catch (e) { alert('Ralat menjana PDF: ' + e.message) }
+    finally { setPrintingMedal(false) }
   }
 
   // ── Computed ──
@@ -1086,23 +1253,32 @@ export default function SchoolLanding() {
           </div>
         )}
 
-        {/* Stats */}
+        {/* Tarikh + Lokasi */}
         {kej && (
-          <div className="flex items-center justify-center gap-6 mb-5 text-white/80">
-            <div className="text-center">
-              <p className="text-xl font-black">{stats.acara || '—'}</p>
-              <p className="text-[10px] text-white/40 uppercase tracking-wide">Acara</p>
-            </div>
-            <div className="w-px h-8 bg-white/15" />
-            <div className="text-center">
-              <p className="text-xl font-black">{stats.sekolah || Object.keys(sekolahMap).length || '—'}</p>
-              <p className="text-[10px] text-white/40 uppercase tracking-wide">Sekolah</p>
-            </div>
-            <div className="w-px h-8 bg-white/15" />
-            <div className="text-center">
-              <p className="text-xl font-black">{stats.hari || '—'}</p>
-              <p className="text-[10px] text-white/40 uppercase tracking-wide">Hari</p>
-            </div>
+          <div className="flex items-center justify-center gap-3 mb-5 text-white/70 text-xs flex-wrap">
+            {(kej.tarikhMula || kej.tarikhTamat) && (
+              <span className="flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {kej.tarikhMula ? new Date(kej.tarikhMula).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                {kej.tarikhTamat && kej.tarikhTamat !== kej.tarikhMula
+                  ? ` – ${new Date(kej.tarikhTamat).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                  : ''}
+              </span>
+            )}
+            {kej.lokasi && (
+              <>
+                <span className="opacity-30">·</span>
+                <span className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {kej.lokasi}
+                </span>
+              </>
+            )}
           </div>
         )}
 
@@ -1493,10 +1669,22 @@ export default function SchoolLanding() {
       {kej && (
         <section className="py-6 px-3 bg-gray-50 border-t border-gray-100">
           <div className="max-w-4xl mx-auto">
-            <div className="border-l-4 border-[#003399] pl-3 mb-4">
-              <h2 className="text-base font-black text-gray-800 leading-tight">Kedudukan Pingat</h2>
+            <div className="flex items-center justify-between mb-4">
+              <div className="border-l-4 border-[#003399] pl-3">
+                <h2 className="text-base font-black text-gray-800 leading-tight">Kedudukan Pingat</h2>
+              </div>
+              {medalRows.length > 0 && (
+                <button onClick={cetakMedalPDF} disabled={printingMedal}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-[#003399] bg-white border border-[#003399]/25 rounded-xl hover:bg-blue-50 transition-all disabled:opacity-50 shadow-sm">
+                  {printingMedal
+                    ? <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>}
+                  {printingMedal ? 'Menjana…' : 'Cetak PDF'}
+                </button>
+              )}
             </div>
-            <TabMedalTally schoolId={schoolId} kejId={kej.id} bilKed={kej.bilanganKedudukan ?? 3} />
+            <TabMedalTally schoolId={schoolId} kejId={kej.id} bilKed={kej.bilanganKedudukan ?? 3}
+              onRowsReady={rows => setMedalRows(rows)} />
           </div>
         </section>
       )}
