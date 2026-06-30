@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp, query, where, orderBy } from 'firebase/firestore'
-import { db } from '../../firebase/config'
+import { collection, getDocs, doc, setDoc, updateDoc, getDoc, serverTimestamp, query, where, orderBy } from 'firebase/firestore'
+import { db, APP_URL } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -190,6 +190,66 @@ function KadKejohanan({ kej, onPilih, onTukarStatus }) {
   )
 }
 
+// ── Share Link Card ───────────────────────────────────────────────────────────
+
+function ShareLinkCard({ schoolId }) {
+  const [slug, setSlug] = useState('')
+
+  useEffect(() => {
+    if (!schoolId) return
+    getDoc(doc(db, 'tenants', schoolId))
+      .then(s => { if (s.exists()) setSlug(s.data().slug || '') })
+      .catch(() => {})
+  }, [schoolId])
+
+  if (!slug) return null
+
+  const links = [
+    { label: 'Laman Awam Kejohanan', url: `${APP_URL}/${slug}` },
+    { label: 'Login Pengurus Pasukan', url: `${APP_URL}/${slug}/pengurus` },
+    { label: 'Login Pencatat', url: `${APP_URL}/${slug}/pencatat` },
+  ]
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Pautan Kongsi</p>
+      <div className="space-y-2">
+        {links.map((l, i) => (
+          <LinkRow key={i} label={l.label} url={l.url} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LinkRow({ label, url }) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <div className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+        <p className="text-xs text-gray-700 font-mono truncate">{url}</p>
+      </div>
+      <button
+        onClick={handleCopy}
+        className="shrink-0 px-3 py-1.5 text-[11px] font-semibold rounded border transition-all"
+        style={copied
+          ? { borderColor: '#16a34a', color: '#16a34a', background: '#f0fdf4' }
+          : { borderColor: '#003399', color: '#003399', background: 'white' }
+        }
+      >
+        {copied ? '✓ Disalin' : 'Salin'}
+      </button>
+    </div>
+  )
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
@@ -282,6 +342,9 @@ export default function AdminDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Share Link Card */}
+        <ShareLinkCard schoolId={schoolId} />
 
         {/* Quick Links — Pengurusan */}
         <div>

@@ -2,6 +2,80 @@ import React, { useEffect, useState } from 'react'
 import { collection, getCountFromServer, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
+import { APP_URL } from '../firebase/config'
+
+// ─── ShareLinkCard ────────────────────────────────────────────────────────────
+
+function CopyButton({ url }) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      className="shrink-0 px-3 py-1.5 text-[11px] font-semibold rounded border transition-all"
+      style={copied
+        ? { borderColor: '#16a34a', color: '#16a34a', background: '#f0fdf4' }
+        : { borderColor: '#003399', color: '#003399', background: 'white' }
+      }
+    >
+      {copied ? '✓ Disalin' : 'Salin'}
+    </button>
+  )
+}
+
+function LinkRow({ label, url }) {
+  return (
+    <div className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+        <p className="text-xs text-gray-700 font-mono truncate">{url}</p>
+      </div>
+      <CopyButton url={url} />
+    </div>
+  )
+}
+
+function ShareLinkCard({ schoolId, userRole, userData }) {
+  const [slug, setSlug] = useState(userData?.schoolSlug || '')
+
+  useEffect(() => {
+    if (slug) return
+    if (!schoolId) return
+    getDoc(doc(db, 'tenants', schoolId))
+      .then(s => { if (s.exists()) setSlug(s.data().slug || '') })
+      .catch(() => {})
+  }, [schoolId, slug])
+
+  if (!slug) return null
+
+  const base = APP_URL
+  const links = []
+
+  if (userRole === 'superadmin' || userRole === 'admin') {
+    links.push({ label: 'Login Pengurus Pasukan', url: `${base}/${slug}/pengurus` })
+    links.push({ label: 'Laman Awam Kejohanan', url: `${base}/${slug}` })
+    links.push({ label: 'Login Pencatat', url: `${base}/${slug}/pencatat` })
+  } else if (userRole === 'pencatat') {
+    links.push({ label: 'Pautan Log Masuk Pencatat', url: `${base}/${slug}/pencatat` })
+  } else if (userRole === 'pengurus_pasukan') {
+    links.push({ label: 'Pautan Log Masuk Pengurus', url: `${base}/${slug}/pengurus` })
+    links.push({ label: 'Laman Awam Kejohanan', url: `${base}/${slug}` })
+  }
+
+  if (!links.length) return null
+
+  return (
+    <div className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Pautan Kongsi</p>
+      {links.map((l, i) => <LinkRow key={i} label={l.label} url={l.url} />)}
+    </div>
+  )
+}
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +169,9 @@ const isSuperAdmin = userRole === 'superadmin'
           Sistem Statistik Pengurusan Kejohanan Olahraga Antara Murid (KOAM)
         </p>
       </div>
+
+      {/* Share Link Card */}
+      <ShareLinkCard schoolId={schoolId} userRole={userRole} userData={userData} />
 
       {/* Dokumen Muat Turun + Pautan Kumpulan — Pengurus Pasukan */}
       {(dokumen.length > 0 || (userRole === 'pengurus_pasukan' && (linkWasap || linkTelegram))) && (
