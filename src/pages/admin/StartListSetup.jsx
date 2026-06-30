@@ -34,6 +34,7 @@ import {
   assignLorongHeat,
   detectJenisLorong,
 } from '../../utils/startListPdfUtils'
+import { selectFinalists, getFinalistSetup, serpentineSeed } from '../../utils/finalistUtils'
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -450,29 +451,264 @@ function EditLorongModal({ heat, acara, schoolId, kejId, onClose, onSaved }) {
   )
 }
 
+// ─── Modal Jana Finalis (QF→SF atau SF/QF→Final) ─────────────────────────────
+
+function JanaFinalisModal({ acara, heatList, finalSetup, fasa, schoolId, kejId, kategoriList, onClose, onDone }) {
+  // fasa: 'sukuKeSeparuh' (QF→SF) atau 'toFinal' (→Final)
+  const isPadang  = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
+  const isMass    = acara.jenisAcara === 'mass_start'
+  const isLorong  = !isPadang && !isMass
+  const aceraKey  = acara.aceraId || acara.id
+
+  const fasaLabel   = fasa === 'sukuKeSeparuh' ? 'Separuh Akhir (SF)' : 'Akhir / Final'
+  const targetFasa  = fasa === 'sukuKeSeparuh' ? 'separuh_akhir' : 'final'
+
+  const [bilanganHeat, setBH]   = useState(fasa === 'sukuKeSeparuh' ? 2 : 1)
+  const [preview,      setPreview] = useState(null)
+  const [saving,       setSaving]  = useState(false)
+  const [err,          setErr]     = useState('')
+
+  const setup = finalSetup ? getFinalistSetup(acara, finalSetup, fasa) : null
+
+  // Heat yang ada keputusan rasmi
+  const heatBerkeputusan = heatList.filter(h =>
+    ['rasmi','tidak_rasmi','diterima'].includes(h.statusKeputusan)
+  )
+
+  function buatPreview() {
+    setErr('')
+    if (heatBerkeputusan.length === 0) {
+      return setErr('Tiada heat dengan keputusan rasmi lagi. Masukkan keputusan dahulu.')
+    }
+    if (!setup) {
+      return setErr('Tetapan Final (BH/BT) belum ditetapkan. Pergi ke Tetapan Final → Kategori dahulu.')
+    }
+
+    const finalis = selectFinalists(heatBerkeputusan, acara, finalSetup, fasa)
+    if (finalis.length === 0) {
+      return setErr('Tiada finalis dapat dipilih. Semak keputusan heat dan tetapan BH/BT.')
+    }
+
+    const jenis = detectJenisLorong(acara)
+    let heats
+
+    if (fasa === 'sukuKeSeparuh' && Number(bilanganHeat) > 1) {
+      // Serpentine seeding untuk SF
+      const ranked = [...finalis].sort((a, b) => isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan)
+      const groups = serpentineSeed(ranked, Number(bilanganHeat))
+      heats = groups.map((g, i) => ({
+        fasa: 'separuh_akhir', noHeat: i + 1,
+        peserta: assignLorongHeat(g, jenis, Number(bilanganHeat === 1 ? 8 : 8), LORONG_HEAT_REMOVE),
+      }))
+    } else {
+      // Final — 1 heat, assign lorong
+      const ranked = [...finalis].sort((a, b) => isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan)
+      const assigned = isPadang || isMass
+        ? ranked.map((f, i) => ({ ...f, giliran: i + 1 }))
+        : assignLorongFinal(ranked, jenis, LORONG_KUMPULAN)
+      heats = [{ fasa: targetFasa, noHeat: 1, peserta: assigned }]
+    }
+
+    setPreview({ heats, finalis })
+  }
+
+  async function handleSimpan() {
+    if (!preview) return
+    setSaving(true)
+    try {
+      // Padam heat lama untuk fasa ini (SF atau Final)
+      const existSnap = await getDocs(
+        query(collection(db, heatColPath(schoolId, kejId)),
+          where('aceraId', '==', aceraKey),
+          where('fasa', '==', targetFasa))
+      )
+      if (!existSnap.empty) {
+        const del = writeBatch(db)
+        existSnap.docs.forEach(d => del.delete(d.ref))
+        await del.commit()
+      }
+
+      // Tulis heat baru
+      const batch = writeBatch(db)
+      for (const h of preview.heats) {
+        const heatId = buatHeatId(aceraKey, h.fasa, h.noHeat)
+        const ref    = doc(db, heatColPath(schoolId, kejId), heatId)
+        batch.set(ref, {
+          heatId, aceraId: aceraKey,
+          schoolId, kejId,
+          fasa: h.fasa, noHeat: h.noHeat,
+          status: 'belum_mula',
+          peserta: h.peserta.map(p => ({
+            noBib:       p.noBib       || '',
+            noKP:        p.noKP        || '',
+            namaAtlet:   p.namaAtlet   || '',
+            kategoriKod: p.kategoriKod || acara.kategoriKod || '',
+            kodSekolah:  p.kodSekolah  || '',
+            lorong:      p.lorong      ?? null,
+            giliran:     p.giliran     ?? null,
+            qualifyType: p.qualifyType || 'Q',
+            keputusan:   null,
+            status:      'belum',
+          })),
+          finalisDipilih: [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: false })
+      }
+      await batch.commit()
+      onDone()
+      onClose()
+    } catch (e) {
+      setErr('Ralat: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between shrink-0">
+          <div>
+            <h2 className="text-sm font-black text-gray-900">Jana Finalis → {fasaLabel}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{acara.namaAcara}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+          {/* Status heat */}
+          <div className={`rounded-xl px-4 py-3 text-xs ${heatBerkeputusan.length > 0 ? 'bg-green-50 border border-green-100' : 'bg-amber-50 border border-amber-200'}`}>
+            <p className={`font-bold ${heatBerkeputusan.length > 0 ? 'text-green-700' : 'text-amber-700'}`}>
+              {heatBerkeputusan.length > 0
+                ? `✓ ${heatBerkeputusan.length} heat ada keputusan rasmi`
+                : '⚠ Tiada heat dengan keputusan rasmi'}
+            </p>
+            {heatBerkeputusan.length === 0 && (
+              <p className="text-amber-600 mt-1">Masukkan keputusan heat dahulu sebelum jana finalis.</p>
+            )}
+          </div>
+
+          {/* Status tetapan BH/BT */}
+          {setup ? (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs">
+              <p className="font-bold text-blue-700">✓ Tetapan Final — BH: {setup.bestHeat} · BT: {setup.bestTime}</p>
+              <p className="text-blue-500 mt-0.5">
+                {heatBerkeputusan.length > 0
+                  ? `Jangkaan: ${heatBerkeputusan.length}×${setup.bestHeat} + ${setup.bestTime} = ${heatBerkeputusan.length * setup.bestHeat + setup.bestTime} finalis`
+                  : 'Masukkan keputusan heat dahulu'}
+              </p>
+            </div>
+          ) : (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs">
+              <p className="font-bold text-red-700">⚠ Tetapan Final belum ditetapkan</p>
+              <p className="text-red-500 mt-0.5">Pergi ke tab Tetapan Final dalam Acara &amp; Jadual untuk tetapkan BH/BT dahulu.</p>
+            </div>
+          )}
+
+          {/* Bilangan heat SF (hanya untuk QF→SF) */}
+          {fasa === 'sukuKeSeparuh' && (
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1.5">Bilangan Heat SF</label>
+              <input type="number" min={1} max={4} value={bilanganHeat}
+                onChange={e => { setBH(e.target.value); setPreview(null); setErr('') }}
+                className={inputCls + ' max-w-[100px]'} />
+              <p className="text-[10px] text-gray-400 mt-1">Finalis diagihkan ikut serpentine seeding WA</p>
+            </div>
+          )}
+
+          {/* Error */}
+          {err && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700 font-semibold">{err}</div>
+          )}
+
+          {/* Preview */}
+          {preview && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                {preview.finalis.length} finalis → {preview.heats.length} heat {fasaLabel}
+              </p>
+              {preview.heats.map(h => (
+                <div key={h.noHeat} className="border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="px-3 py-2 bg-[#003399] flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-white">{FASA_LABEL[h.fasa]||h.fasa} {h.noHeat} — {h.peserta.length} peserta</span>
+                    <span className="text-[9px] text-blue-200">{buatHeatId(aceraKey, h.fasa, h.noHeat)}</span>
+                  </div>
+                  <table className="w-full text-[10px]">
+                    <tbody>
+                      {[...h.peserta].sort((a,b) => isPadang||isMass ? (a.giliran??99)-(b.giliran??99) : (a.lorong??99)-(b.lorong??99))
+                        .map((p, idx) => (
+                          <tr key={p.noBib||p.noKP||idx} className="border-t border-gray-50">
+                            <td className="px-3 py-1 text-center font-black text-[#003399] w-8">{isPadang||isMass?p.giliran:p.lorong}</td>
+                            <td className="px-2 py-1 font-mono text-gray-400">{p.noBib}</td>
+                            <td className="px-2 py-1 font-semibold text-gray-800">{p.namaAtlet}</td>
+                            <td className="px-2 py-1 text-[9px]">
+                              <span className={`px-1 py-0.5 rounded font-bold ${p.qualifyType==='Q'?'bg-green-100 text-green-700':'bg-blue-100 text-blue-600'}`}>
+                                {p.qualifyType}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-between items-center gap-2 shrink-0">
+          <button onClick={buatPreview} disabled={heatBerkeputusan.length === 0 || !setup}
+            className="px-4 py-2 text-xs font-bold border border-[#003399] text-[#003399] rounded-lg hover:bg-blue-50 disabled:opacity-40 transition-colors">
+            {preview ? 'Jana Semula' : 'Preview Finalis'}
+          </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-xs text-gray-600 hover:bg-gray-100 rounded-lg">Batal</button>
+            <button onClick={handleSimpan} disabled={!preview || saving}
+              className="px-5 py-2 text-xs font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-50">
+              {saving ? 'Menyimpan…' : 'Simpan Finalis'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Panel Acara: heat list + cetak ──────────────────────────────────────────
 
 function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMap, onRefresh }) {
-  const [heatList,  setHeatList]  = useState([])
-  const [peserta,   setPeserta]   = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [modal,     setModal]     = useState(null) // 'jana' | { type:'edit', heat }
-  const [printing,  setPrinting]  = useState(null) // heatId
+  const [heatList,    setHeatList]    = useState([])
+  const [peserta,     setPeserta]     = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [modal,       setModal]       = useState(null) // 'jana' | 'janaFinalisQF' | 'janaFinalisFinal' | { type:'edit', heat }
+  const [printing,    setPrinting]    = useState(null) // heatId
+  const [finalSetup,  setFinalSetup]  = useState(null)
 
   const { userRole } = useAuth()
   const canEdit = ['admin','superadmin'].includes(userRole)
   const aceraKey = acara.aceraId || acara.id
 
+  // Peringkat acara — tentukan butang jana finalis yang perlu dipapar
+  const isQF = acara.peringkat === 'suku_akhir'
+  const isSF = acara.peringkat === 'separuh_akhir'
+  const showJanaQFtoSF    = isQF  // QF → SF
+  const showJanaSFtoFinal = isSF  // SF → Final
+  const showJanaToFinal   = !isQF && !isSF && acara.peringkat !== 'akhir' && acara.peringkat !== 'final'
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [heatSnap, pendSnap] = await Promise.all([
+      const [heatSnap, pendSnap, setupSnap] = await Promise.all([
         getDocs(query(collection(db, heatColPath(schoolId, kejId)), where('aceraId', '==', aceraKey), orderBy('noHeat'))),
         getDocs(collection(db, pendColPath(schoolId, kejId))),
+        getDoc(doc(db, `tenants/${schoolId}/kejohanan/${kejId}/tetapan`, 'finalSetup')),
       ])
       setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       const allPend = pendSnap.docs.map(d => d.data())
       setPeserta(allPend.filter(p => (p.acaraIds || []).includes(aceraKey)))
+      setFinalSetup(setupSnap.exists() ? setupSnap.data() : null)
     } catch (ex) { console.error(ex) }
     finally { setLoading(false) }
   }, [schoolId, kejId, aceraKey])
@@ -536,6 +772,28 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
               className="flex items-center gap-1.5 text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">
               {Ikon.padam} Reset Heat
             </button>
+          </>
+        )}
+        {canEdit && (showJanaQFtoSF || showJanaSFtoFinal || showJanaToFinal) && heatList.length > 0 && (
+          <>
+            {showJanaQFtoSF && (
+              <button onClick={() => setModal('janaFinalisQF')}
+                className="flex items-center gap-1.5 text-xs bg-teal-600 text-white px-3 py-1.5 rounded-lg hover:bg-teal-700">
+                Jana Finalis QF→SF
+              </button>
+            )}
+            {showJanaSFtoFinal && (
+              <button onClick={() => setModal('janaFinalisSF')}
+                className="flex items-center gap-1.5 text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700">
+                Jana Finalis SF→Final
+              </button>
+            )}
+            {showJanaToFinal && (
+              <button onClick={() => setModal('janaFinalisFinal')}
+                className="flex items-center gap-1.5 text-xs bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700">
+                Jana Finalis →Final
+              </button>
+            )}
           </>
         )}
         {canEdit && (
@@ -625,6 +883,19 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
           kejId={kejId}
           onClose={() => setModal(null)}
           onSaved={fetchData}
+        />
+      )}
+      {(modal === 'janaFinalisQF' || modal === 'janaFinalisSF' || modal === 'janaFinalisFinal') && (
+        <JanaFinalisModal
+          acara={acara}
+          heatList={heatList}
+          finalSetup={finalSetup}
+          fasa={modal === 'janaFinalisQF' ? 'sukuKeSeparuh' : 'toFinal'}
+          schoolId={schoolId}
+          kejId={kejId}
+          kategoriList={kategoriList}
+          onClose={() => setModal(null)}
+          onDone={() => { fetchData(); onRefresh() }}
         />
       )}
     </div>
@@ -824,7 +1095,7 @@ export default function StartListSetup() {
           ))}
         </div>
 
-        {/* Senarai acara */}
+        {/* Senarai acara — table by kategori (KOAM pattern) */}
         {loading ? (
           <div className="flex justify-center py-12">
             <svg className="w-5 h-5 animate-spin text-[#003399]" fill="none" viewBox="0 0 24 24">
@@ -832,64 +1103,149 @@ export default function StartListSetup() {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {filtered.length === 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
-                <p className="text-sm text-gray-400">Tiada acara dijumpai.</p>
-              </div>
-            )}
-            {filtered.map(a => {
-              const aid      = a.aceraId || a.id
-              const heatCnt  = heatCountMap[aid] || 0
-              const pCnt     = pesertaCountMap[aid] || 0
-              const isExpand = selectedAcara?.id === a.id
-              const kat      = kategoriList.find(k => k.kod === a.kategoriKod)
-              const katLbl   = kat?.label || kat?.nama || a.kategoriKod || ''
-              const lbl      = (katLbl).toUpperCase()
-              const jantinaColor = lbl.startsWith('L') ? 'bg-blue-100 text-blue-700' : lbl.startsWith('P') ? 'bg-pink-100 text-pink-700' : 'bg-gray-100 text-gray-600'
+        ) : (() => {
+          // Kumpul by kategori ikut urutan
+          const katUnik = [...new Set(filtered.map(a => a.kategoriKod).filter(Boolean))]
+            .map(kod => ({ kod, kat: kategoriList.find(k => k.kod === kod) }))
+            .sort((a, b) => (a.kat?.urutan || 99) - (b.kat?.urutan || 99))
 
-              return (
-                <div key={a.id} className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-                  {/* Acara row */}
-                  <button
-                    onClick={() => setSelectedAcara(isExpand ? null : a)}
-                    className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors">
-                    {a.noAcara && (
-                      <span className="text-[10px] font-black text-[#003399] w-8 shrink-0">#{a.noAcara}</span>
-                    )}
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${jantinaColor}`}>{katLbl}</span>
-                    <span className="flex-1 text-xs font-semibold text-gray-800 truncate">{a.namaAcara}</span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${pCnt>0?'bg-green-100 text-green-700':'bg-gray-100 text-gray-400'}`}>
-                        {pCnt} peserta
-                      </span>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${heatCnt>0?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-400'}`}>
-                        {heatCnt} heat
-                      </span>
-                      <span className={`text-gray-400 text-xs transition-transform ${isExpand?'rotate-180':''}`}>▼</span>
-                    </div>
-                  </button>
+          if (filtered.length === 0) return (
+            <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+              <p className="text-sm text-gray-400">Tiada acara dijumpai.</p>
+            </div>
+          )
 
-                  {/* Expand: heat panel */}
-                  {isExpand && (
-                    <div className="border-t border-gray-100 px-4 py-4 bg-gray-50/50">
-                      <AcaraHeatPanel
-                        acara={a}
-                        schoolId={schoolId}
-                        kejId={kejId}
-                        namaKej={namaKej}
-                        kategoriList={kategoriList}
-                        atletMap={atletMap}
-                        onRefresh={() => setTick(t => t + 1)}
-                      />
+          return (
+            <div className="space-y-4">
+              {katUnik.map(({ kod, kat }) => {
+                const acaraKat = filtered.filter(a => a.kategoriKod === kod)
+                return (
+                  <div key={kod} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    {/* Header kategori */}
+                    <div className="px-4 py-2.5 flex items-center gap-2"
+                      style={{ backgroundColor: kat?.warna || '#003399' }}>
+                      <span className="text-xs font-black text-white">{kat?.label || kod}</span>
+                      <span className="text-[10px] text-white/60">{acaraKat.length} acara</span>
                     </div>
-                  )}
+
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-50 bg-gray-50">
+                          <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 w-10">No</th>
+                          <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400">Acara</th>
+                          <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-400 w-16">Peserta</th>
+                          <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-400 w-14">Heat</th>
+                          <th className="px-3 py-2 w-48"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {acaraKat.map((a, i) => {
+                          const aid     = a.aceraId || a.id
+                          const heatCnt = heatCountMap[aid] || 0
+                          const pCnt    = pesertaCountMap[aid] || 0
+                          const isSelected = selectedAcara?.id === a.id
+                          const isFinal = !!a.parentAcaraId
+                          const isQF    = a.peringkat === 'suku_akhir'
+                          const isSF    = a.peringkat === 'separuh_akhir'
+
+                          const peringkatBadge = isFinal
+                            ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">FINAL</span>
+                            : isQF
+                            ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700">QF</span>
+                            : isSF
+                            ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">SF</span>
+                            : null
+
+                          return (
+                            <tr key={aid}
+                              className={`border-t border-gray-50 transition-colors ${isSelected ? 'bg-blue-50/40' : 'hover:bg-gray-50/60'} ${isFinal ? 'bg-purple-50/10' : ''}`}>
+                              <td className={`py-2.5 text-[10px] font-mono text-gray-400 ${isFinal ? 'pl-6' : 'pl-3'}`}>
+                                {isFinal ? '└' : ''}{a.noAcara || '—'}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {peringkatBadge}
+                                  <span className="font-semibold text-gray-800">{a.namaAcara}</span>
+                                </div>
+                                {isFinal && a.parentAcaraId && (
+                                  <p className="text-[8px] text-purple-400 mt-0.5">← #{a.parentAcaraId}</p>
+                                )}
+                              </td>
+                              <td className="px-3 py-2.5 text-center font-bold text-gray-700">
+                                {pCnt > 0 ? pCnt : <span className="text-gray-300">—</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-center font-bold text-[#003399]">
+                                {heatCnt > 0
+                                  ? <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[9px] font-bold">{heatCnt}</span>
+                                  : <span className="text-gray-300">—</span>}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {heatCnt > 0 && (
+                                    <button
+                                      onClick={() => setSelectedAcara(isSelected ? null : a)}
+                                      className={`text-[9px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${
+                                        isSelected
+                                          ? 'bg-[#003399] text-white border-[#003399]'
+                                          : 'border-[#003399] text-[#003399] hover:bg-blue-50'
+                                      }`}>
+                                      {isSelected ? '✕ Tutup' : 'Lihat →'}
+                                    </button>
+                                  )}
+                                  {pCnt > 0 && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedAcara(a)
+                                        // trigger modal jana dari AcaraHeatPanel via ref tidak diperlukan
+                                        // — user klik Lihat → then Jana Heat dalam panel
+                                        if (heatCnt === 0) setSelectedAcara(a)
+                                      }}
+                                      className={`text-[9px] font-bold px-2.5 py-1 rounded-lg transition-colors shadow-sm ${
+                                        heatCnt > 0
+                                          ? 'border border-amber-300 text-amber-700 hover:bg-amber-50'
+                                          : 'bg-[#003399] text-white hover:bg-[#002288]'
+                                      }`}>
+                                      {heatCnt > 0 ? 'Jana Semula' : 'Jana Heat'}
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })}
+
+              {/* Panel heat — tunjuk di bawah table bila acara dipilih */}
+              {selectedAcara && (
+                <div className="bg-white rounded-2xl border-2 border-[#003399]/20 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 bg-[#003399]/5 border-b border-[#003399]/10 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-black text-[#003399]">{selectedAcara.namaAcara}</p>
+                      <p className="text-[9px] text-gray-400 mt-0.5">Start List — Heat & Lorong</p>
+                    </div>
+                    <button onClick={() => setSelectedAcara(null)}
+                      className="text-gray-400 hover:text-gray-600 text-xl leading-none font-bold">×</button>
+                  </div>
+                  <div className="px-4 py-4">
+                    <AcaraHeatPanel
+                      acara={selectedAcara}
+                      schoolId={schoolId}
+                      kejId={kejId}
+                      namaKej={namaKej}
+                      kategoriList={kategoriList}
+                      atletMap={atletMap}
+                      onRefresh={() => setTick(t => t + 1)}
+                    />
+                  </div>
                 </div>
-              )
-            })}
-          </div>
-        )}
+              )}
+            </div>
+          )
+        })()}
 
       </div>
     </div>

@@ -18,6 +18,7 @@ const NAV = [
       { label: 'Daftar Sekolah', icon: '🏫', path: '/admin/sekolah' },
       { label: 'Setup Kategori', icon: '🏷️', path: '/admin/kategori' },
       { label: 'Acara & Jadual',  icon: '📅', path: '/admin/jadual' },
+      { label: 'Start List',    icon: '📋', path: '/admin/startlist' },
       { label: 'Pengguna',     icon: '👤', path: '/admin/pengguna' },
       { label: 'Pendaftaran',  icon: '📝', path: '/admin/analisis-pendaftaran' },
       { label: 'Rekod',        icon: '🎖️', path: '/admin/rekod' },
@@ -61,6 +62,7 @@ export default function AdminLayout({ children }) {
     if (path === '/admin') return location.pathname === '/admin'
     if (path === '/admin/jadual') return location.pathname.includes('/acara') || location.pathname === '/admin/jadual'
     if (path === '/admin/kategori') return location.pathname.includes('/kategori')
+    if (path === '/admin/startlist') return location.pathname.includes('/startlist')
     return location.pathname.startsWith(path)
   }
 
@@ -89,8 +91,9 @@ export default function AdminLayout({ children }) {
   }
 
   function handleNav(path) {
-    if (path === '/admin/jadual')    { navKejohanan('acara');    return }
-    if (path === '/admin/kategori')  { navKejohanan('kategori'); return }
+    if (path === '/admin/jadual')     { navKejohanan('acara');     return }
+    if (path === '/admin/kategori')   { navKejohanan('kategori');  return }
+    if (path === '/admin/startlist')  { navKejohanan('startlist'); return }
     navigate(path)
   }
 

@@ -580,8 +580,9 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
   const [acaraList,    setAcaraList]    = useState([])
   const [heatCountMap, setHeatCountMap] = useState({})
   const [pesertaMap,   setPesertaMap]   = useState({})
-  const [overrides,    setOverrides]    = useState({})
-  const [sukuOv,       setSukuOv]       = useState({})
+  const [overrides,    setOverrides]    = useState({})   // SF/biasa → Final
+  const [sukuOv,       setSukuOv]       = useState({})   // QF → SF
+  const [separuhOv,    setSeparuhOv]    = useState({})   // SF → Final (untuk acara QF)
   const [filterKat,    setFilterKat]    = useState('semua')
   const [expandedKat,  setExpandedKat]  = useState({})
 
@@ -595,26 +596,29 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
         if (snap.exists()) {
           setOverrides(snap.data().overrideByAcara || {})
           setSukuOv(snap.data().sukuKeSeparuhByAcara || {})
+          setSeparuhOv(snap.data().separuhKeAkhirByAcara || {})
         }
 
         const acaraPath = `tenants/${schoolId}/kejohanan/${kejId}/acara`
         const acaraSnap = await getDocs(collection(db, acaraPath))
-        const saringan = acaraSnap.docs
+        // Tapis: exclude acara final child (ada parentAcaraId) — acara biasa (peringkat=akhir, tiada parent) kekal
+        const senarai = acaraSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(a => !a.parentAcaraId &&
             a.jenisAcara !== 'mass_start' &&
             a.jenisAcara !== 'padang_lompat' &&
             a.jenisAcara !== 'padang_balin')
           .sort((a, b) => (a.noAcara || 0) - (b.noAcara || 0))
-        setAcaraList(saringan)
+        setAcaraList(senarai)
 
-        const heatRes = await Promise.all(
-          saringan.map(a =>
-            getDocs(collection(db, acaraPath, a.id, 'heat'))
-              .then(s => [a.id, s.size])
-          )
-        )
-        setHeatCountMap(Object.fromEntries(heatRes))
+        // Heat count dari flat heat collection
+        const heatSnap = await getDocs(collection(db, `tenants/${schoolId}/kejohanan/${kejId}/heat`)).catch(() => ({ docs: [] }))
+        const hm = {}
+        heatSnap.docs.forEach(d => {
+          const aid = d.data().aceraId
+          if (aid) hm[aid] = (hm[aid] || 0) + 1
+        })
+        setHeatCountMap(hm)
 
         const pendPath = `tenants/${schoolId}/kejohanan/${kejId}/pendaftaran`
         const pendSnap = await getDocs(collection(db, pendPath))
@@ -645,6 +649,14 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
     setDirty(true); setSaved(false)
   }
 
+  function setSeparuhOvField(aceraId, field, val) {
+    setSeparuhOv(prev => ({
+      ...prev,
+      [aceraId]: { ...(prev[aceraId] || { bestHeat: 1, bestTime: 3 }), [field]: val === '' ? '' : Number(val) }
+    }))
+    setDirty(true); setSaved(false)
+  }
+
   async function handleSave() {
     setSaving(true)
     try {
@@ -657,10 +669,16 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
         if (Number(v.bestHeat) > 0 || Number(v.bestTime) > 0)
           cleanSuku[id] = { bestHeat: Number(v.bestHeat) || 0, bestTime: Number(v.bestTime) || 0 }
       })
+      const cleanSeparuh = {}
+      Object.entries(separuhOv).forEach(([id, v]) => {
+        if (Number(v.bestHeat) > 0 || Number(v.bestTime) > 0)
+          cleanSeparuh[id] = { bestHeat: Number(v.bestHeat) || 0, bestTime: Number(v.bestTime) || 0 }
+      })
       const tetapanPath = `tenants/${schoolId}/kejohanan/${kejId}/tetapan`
       await setDoc(doc(db, tetapanPath, 'finalSetup'), {
         overrideByAcara: clean,
         sukuKeSeparuhByAcara: cleanSuku,
+        separuhKeAkhirByAcara: cleanSeparuh,
         updatedAt: serverTimestamp(),
       }, { merge: true })
       setDirty(false); setSaved(true)
@@ -753,14 +771,9 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
       )}
 
       {perKat.map(({ kat, acara }) => {
-        const isOpen   = expandedKat[kat.kod] !== false
-        const ovCount  = acara.filter(a => overrides[a.id]).length
-        const warnCount = acara.filter(a => {
-          const n = heatCountMap[a.id] || 0
-          const bh = Number(overrides[a.id]?.bestHeat ?? 1)
-          const bt = Number(overrides[a.id]?.bestTime ?? 3)
-          return n > 0 && bh > 0 && (n * bh + bt) !== 8
-        }).length
+        const isOpen    = expandedKat[kat.kod] !== false
+        const ovCount   = acara.filter(a => overrides[a.id] || sukuOv[a.id] || separuhOv[a.id]).length
+        const warnCount = acara.filter(a => heatCountMap[a.aceraId || a.id] === 0 || !heatCountMap[a.aceraId || a.id]).length
 
         return (
           <div key={kat.kod} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -770,7 +783,7 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
               <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[9px] font-black shrink-0"
                 style={{ backgroundColor: kat.warna || '#6366f1' }}>{kat.kod}</span>
               <span className="text-xs font-bold text-gray-700 flex-1">{kat.label} — {kat.nama}</span>
-              {warnCount > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">{warnCount} ⚠</span>}
+              {warnCount > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">{warnCount} belum heat</span>}
               {ovCount > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600">{ovCount} set</span>}
               <span className="text-[10px] text-gray-300">{acara.length} acara</span>
               <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -782,83 +795,132 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
             {isOpen && (
               <div className="border-t border-gray-100 divide-y divide-gray-50">
                 {acara.map((a, i) => {
-                  const n       = heatCountMap[a.id] || 0
-                  const peserta = pesertaMap[a.id] || 0
-                  const ov      = overrides[a.id] || {}
+                  const aceraKey  = a.aceraId || a.id
+                  const n         = heatCountMap[aceraKey] || 0
+                  const peserta   = pesertaMap[aceraKey] || 0
+                  const isQF      = a.peringkat === 'suku_akhir'
+                  const isSF      = a.peringkat === 'separuh_akhir'
+                  const belumHeat = n === 0
+
+                  // QF→SF (hanya untuk acara QF)
+                  const sukuRow = sukuOv[aceraKey] || {}
+                  const sukuBH  = sukuRow.bestHeat !== undefined ? Number(sukuRow.bestHeat) : 1
+                  const sukuBT  = sukuRow.bestTime !== undefined ? Number(sukuRow.bestTime) : 3
+                  const sukuTotal = n > 0 ? n * sukuBH + sukuBT : null
+                  const sukuOk    = sukuTotal === 8
+
+                  // SF→Final (untuk acara QF — set selepas jana SF heat)
+                  const sepRow = separuhOv[aceraKey] || {}
+                  const sepBH  = sepRow.bestHeat !== undefined ? Number(sepRow.bestHeat) : 1
+                  const sepBT  = sepRow.bestTime !== undefined ? Number(sepRow.bestTime) : 3
+
+                  // SF/biasa → Final
+                  const ov      = overrides[aceraKey] || {}
                   const bh      = ov.bestHeat !== undefined ? Number(ov.bestHeat) : 1
                   const bt      = ov.bestTime !== undefined ? Number(ov.bestTime) : 3
-                  const isSet   = !!overrides[a.id]
-                  const isBT    = bh === 0
-                  const total   = n > 0 ? (isBT ? bt : n * bh + bt) : null
+                  const total   = n > 0 ? n * bh + bt : null
                   const ok      = total === 8
                   const stdRow  = SIFIR_STANDARD.find(r => r.heat === n)
 
-                  const sukuOvRow   = sukuOv[a.id] || {}
-                  const sukuBH      = sukuOvRow.bestHeat !== undefined ? Number(sukuOvRow.bestHeat) : ''
-                  const sukuBT      = sukuOvRow.bestTime !== undefined ? Number(sukuOvRow.bestTime) : ''
-                  const isSukuSet   = !!(sukuOv[a.id])
-                  const isSukuAcara = a.peringkat === 'suku_akhir'
+                  // Label peringkat badge
+                  const peringkatBadge = isQF
+                    ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700">QF</span>
+                    : isSF
+                    ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">SF</span>
+                    : null
 
                   return (
                     <div key={a.id} className={`px-4 py-3 ${i%2===0?'':'bg-gray-50/40'}`}>
 
+                      {/* Header acara */}
                       <div className="flex items-center gap-2 mb-2.5">
                         <p className="text-xs font-bold text-gray-800 flex-1">{a.namaAcara}</p>
-                        {n > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">{n} heat</span>}
-                        {peserta > 0 && <span className="text-[10px] text-gray-400">{peserta} atlet</span>}
+                        {peringkatBadge}
                         {a.jenisAcara === 'relay' && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600">RELAY</span>}
-                        {isSukuAcara && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700">SUKU AKHIR</span>}
+                        {belumHeat
+                          ? <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">⚠ Belum jana heat</span>
+                          : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">{n} heat</span>}
+                        {peserta > 0 && <span className="text-[10px] text-gray-400">{peserta} atlet</span>}
                       </div>
 
-                      <div className="bg-purple-50/60 rounded-lg px-3 py-2 mb-1.5">
-                        <p className="text-[9px] font-bold text-purple-500 uppercase tracking-wide mb-1.5">
-                          {isSukuAcara ? 'Separuh Akhir → Akhir' : 'Saringan / SF → Akhir'}
-                        </p>
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-gray-500 w-16">BH / heat</span>
-                            <input type="number" min={0} max={99} value={bh}
-                              onChange={e => setOv(a.id, 'bestHeat', e.target.value)}
-                              className={numCls + (isSet ? ' border-purple-300' : '')} />
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-gray-500 w-6">BT</span>
-                            <input type="number" min={0} max={99} value={bt}
-                              onChange={e => setOv(a.id, 'bestTime', e.target.value)}
-                              className={numCls + (isSet ? ' border-purple-300' : '')} />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-gray-400">=</span>
-                            {total !== null
-                              ? <span className={`font-black text-sm ${ok ? 'text-green-600' : 'text-amber-500'}`}>{total}</span>
-                              : <span className="text-[10px] text-gray-300">—</span>}
-                            {total !== null && !ok && stdRow &&
-                              <span className="text-[9px] text-gray-400 ml-1">(std: BH={stdRow.bh}/BT={stdRow.bt})</span>}
-                          </div>
-                        </div>
-                      </div>
+                      {belumHeat && (
+                        <p className="text-[10px] text-amber-500 mb-2">Jana heat dalam Start List dahulu sebelum tetapkan BH/BT.</p>
+                      )}
 
-                      {isSukuAcara && (
-                        <div className="bg-teal-50/60 rounded-lg px-3 py-2">
-                          <p className="text-[9px] font-bold text-teal-600 uppercase tracking-wide mb-1.5">Suku Akhir → Separuh Akhir</p>
+                      {/* Baris 1: QF→SF (hanya acara QF) */}
+                      {isQF && (
+                        <div className="bg-teal-50/60 rounded-lg px-3 py-2 mb-1.5">
+                          <p className="text-[9px] font-bold text-teal-600 uppercase tracking-wide mb-1.5">QF → Separuh Akhir (SF)</p>
                           <div className="flex items-center gap-3 flex-wrap">
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] text-gray-500 w-16">BH / heat</span>
-                              <input type="number" min={0} max={99}
-                                value={sukuBH} placeholder="0"
-                                onChange={e => setSukuOvField(a.id, 'bestHeat', e.target.value)}
-                                className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
+                              <input type="number" min={0} max={99} value={sukuBH}
+                                onChange={e => setSukuOvField(aceraKey, 'bestHeat', e.target.value)}
+                                className={numCls + (sukuOv[aceraKey] ? ' border-teal-300' : '')} />
                             </div>
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] text-gray-500 w-6">BT</span>
-                              <input type="number" min={0} max={99}
-                                value={sukuBT} placeholder="0"
-                                onChange={e => setSukuOvField(a.id, 'bestTime', e.target.value)}
-                                className={numCls + (isSukuSet ? ' border-teal-300' : '')} />
+                              <input type="number" min={0} max={99} value={sukuBT}
+                                onChange={e => setSukuOvField(aceraKey, 'bestTime', e.target.value)}
+                                className={numCls + (sukuOv[aceraKey] ? ' border-teal-300' : '')} />
                             </div>
+                            {sukuTotal !== null && (
+                              <span className={`font-black text-sm ${sukuOk ? 'text-green-600' : 'text-amber-500'}`}>{sukuTotal}</span>
+                            )}
+                            {sukuTotal !== null && !sukuOk && stdRow &&
+                              <span className="text-[9px] text-gray-400">(std: BH={stdRow.bh}/BT={stdRow.bt})</span>}
                           </div>
                         </div>
                       )}
+
+                      {/* Baris 2: SF→Final (acara QF pakai separuhOv, acara SF/biasa pakai overrides) */}
+                      <div className="bg-indigo-50/60 rounded-lg px-3 py-2">
+                        <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-wide mb-1.5">
+                          {isQF ? 'SF → Akhir / Final' : isSF ? 'SF → Akhir / Final' : '→ Akhir / Final'}
+                        </p>
+                        {isQF ? (
+                          // Acara QF: SF→Final guna separuhOv (heat SF belum tentu sama dgn heat QF)
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-gray-500 w-16">BH / heat</span>
+                              <input type="number" min={0} max={99} value={sepBH}
+                                onChange={e => setSeparuhOvField(aceraKey, 'bestHeat', e.target.value)}
+                                className={numCls + (separuhOv[aceraKey] ? ' border-indigo-300' : '')} />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-gray-500 w-6">BT</span>
+                              <input type="number" min={0} max={99} value={sepBT}
+                                onChange={e => setSeparuhOvField(aceraKey, 'bestTime', e.target.value)}
+                                className={numCls + (separuhOv[aceraKey] ? ' border-indigo-300' : '')} />
+                            </div>
+                            <span className="text-[9px] text-gray-400">set selepas jana heat SF</span>
+                          </div>
+                        ) : (
+                          // Acara SF / biasa: guna overrides
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-gray-500 w-16">BH / heat</span>
+                              <input type="number" min={0} max={99} value={bh}
+                                onChange={e => setOv(aceraKey, 'bestHeat', e.target.value)}
+                                className={numCls + (overrides[aceraKey] ? ' border-indigo-300' : '')} />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-gray-500 w-6">BT</span>
+                              <input type="number" min={0} max={99} value={bt}
+                                onChange={e => setOv(aceraKey, 'bestTime', e.target.value)}
+                                className={numCls + (overrides[aceraKey] ? ' border-indigo-300' : '')} />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-gray-400">=</span>
+                              {total !== null
+                                ? <span className={`font-black text-sm ${ok ? 'text-green-600' : 'text-amber-500'}`}>{total}</span>
+                                : <span className="text-[10px] text-gray-300">—</span>}
+                              {total !== null && !ok && stdRow &&
+                                <span className="text-[9px] text-gray-400 ml-1">(std: BH={stdRow.bh}/BT={stdRow.bt})</span>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
