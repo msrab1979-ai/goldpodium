@@ -2905,7 +2905,7 @@ export default function StartList() {
 
   // ── Derived: Jana Final dari final acara view ──────────────────────────────
   const isFinalAcara        = !!(selectedAcara?.parentAcaraId)
-  const sarPhaseHeats       = saringanHeats.filter(h => h.fasa === 'heat' || h.fasa === 'saringan')
+  const sarPhaseHeats       = saringanHeats.filter(h => h.fasa === 'heat' || h.fasa === 'saringan' || h.fasa === 'suku_akhir')
   const sarAllRasmi         = sarPhaseHeats.length > 0 &&
     sarPhaseHeats.every(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
   const canJanaFinalFromFinal = canEdit && isFinalAcara && heatList.length === 0 && sarAllRasmi

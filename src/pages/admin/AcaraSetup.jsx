@@ -285,7 +285,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
   const isPadang    = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
   const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
   const peringkat   = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
-  const parentId    = form.peringkatMode === 'final_p' ? form.parentAcaraId.trim() : ''
+  const parentId    = ['final_p', 'separuh_akhir'].includes(form.peringkatMode) ? form.parentAcaraId.trim() : ''
   const saringanList = acaraList.filter(a => ['saringan','suku_akhir','separuh_akhir'].includes(a.peringkat) && String(a.noAcara) !== String(acara.noAcara))
 
   // Semak sama ada final sudah wujud untuk saringan ini
@@ -333,8 +333,8 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     setErr('')
     if (!form.namaAcaraPendek.trim()) return setErr('Nama wajib')
     if (!form.kategoriKod) return setErr('Kategori wajib')
-    if (['suku_akhir', 'separuh_akhir'].includes(form.peringkatMode) && !form.parentAcaraId)
-      return setErr('Pilih acara sebelum (saringan/QF)')
+    if (form.peringkatMode === 'separuh_akhir' && !form.parentAcaraId)
+      return setErr('Pilih acara sebelum (QF)')
     setSaving(true)
     try {
       const aPath = acaraColPath(schoolId, kejId)
@@ -435,8 +435,8 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
               <option value="final_p">Final ←</option>
             </select>
           )}
-          {/* Pilih acara sebelum — untuk QF, SF, dan Final */}
-          {['suku_akhir', 'separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
+          {/* Pilih acara sebelum — untuk SF dan Final sahaja (QF = acara pertama, tiada parent) */}
+          {['separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
             <select value={form.parentAcaraId} onChange={e => set('parentAcaraId', e.target.value)}
               className={ic + ' mt-1 text-[10px]'}>
               <option value="">— Pilih acara sebelum —</option>
@@ -598,7 +598,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
   const isPadang     = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
   const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
   const peringkat    = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
-  const parentId     = ['final_p','suku_akhir','separuh_akhir'].includes(form.peringkatMode) ? form.parentAcaraId.trim() : ''
+  const parentId     = ['final_p', 'separuh_akhir'].includes(form.peringkatMode) ? form.parentAcaraId.trim() : ''
 
   // Cadangan no acara sebelum — untuk QF, SF, Final
   const saringanList = acaraList.filter(a => ['saringan','suku_akhir','separuh_akhir'].includes(a.peringkat))
@@ -610,32 +610,37 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
   const nextAdaHeat    = form.peringkatMode === 'suku_akhir'
 
   // ── Tambah Acara Seterusnya Serentak ─────────────────────────────────────────
-  const [withFinal,   setWithFinal]   = useState(false)
-  const [finalNo,     setFinalNo]     = useState('')
-  const [finalMasa,   setFinalMasa]   = useState('')
-  const [finalTarikh, setFinalTarikh] = useState(tarikhAcara)
+  const [withFinal,    setWithFinal]    = useState(false)
+  const [finalNo,      setFinalNo]      = useState('')
+  const [finalMasa,    setFinalMasa]    = useState('')
+  const [finalTarikh,  setFinalTarikh]  = useState(tarikhAcara)
+  // Untuk QF: toggle Final selepas SF
+  const [withFinal2,   setWithFinal2]   = useState(false)
+  const [finalNo2,     setFinalNo2]     = useState('')
+  const [finalMasa2,   setFinalMasa2]   = useState('')
+  const [finalTarikh2, setFinalTarikh2] = useState(tarikhAcara)
 
   function suggestFinalNo() {
     const allNos = acaraList.map(a => Number(a.noAcara)).filter(n => !isNaN(n) && n > 0)
     return allNos.length ? String(Math.max(...allNos) + 1) : ''
   }
+  function suggestFinalNo2(sfNo) {
+    const base = Number(sfNo) || 0
+    const allNos = acaraList.map(a => Number(a.noAcara)).filter(n => !isNaN(n) && n > 0)
+    const maxNo = allNos.length ? Math.max(...allNos) : 0
+    return String(Math.max(base + 1, maxNo + 1))
+  }
 
-  async function createNextAcara(thisId) {
-    if (!withFinal || !finalNo.trim() || !adaNextPanel) return
-    const fId       = finalNo.trim()
-    const fNamaFull = `${form.namaAcaraPendek.trim()} ${kelas}`.trim()
-    const fTarikh   = finalTarikh || tarikhAcara
-    const nextPeringkat = NEXT_PERINGKAT[form.peringkatMode]
-    const aPath     = acaraColPath(schoolId, kejId)
-    await setDoc(doc(db, aPath, fId), {
-      noAcara: fId, aceraId: fId,
-      namaAcara: fNamaFull, namaAcaraPendek: form.namaAcaraPendek.trim(),
+  function buildAcaraDoc(noAcara, peringkatVal, parentAcaraIdVal, adaHeatVal, tarikh, masa) {
+    return {
+      noAcara, aceraId: noAcara,
+      namaAcara: `${form.namaAcaraPendek.trim()} ${kelas}`.trim(),
+      namaAcaraPendek: form.namaAcaraPendek.trim(),
       kelas, jantina: form.jantina, kategoriKod: form.kategoriKod,
-      jenisAcara: form.jenisAcara,
-      isIndividu: form.isIndividu,
-      tarikhAcara: fTarikh, masa: finalMasa || '', lokasi: form.lokasi, sesi: 'Petang',
-      peringkat: nextPeringkat, parentAcaraId: thisId,
-      adaHeat: nextAdaHeat,
+      jenisAcara: form.jenisAcara, isIndividu: form.isIndividu,
+      tarikhAcara: tarikh || tarikhAcara, masa: masa || '', lokasi: form.lokasi, sesi: 'Petang',
+      peringkat: peringkatVal, parentAcaraId: parentAcaraIdVal,
+      adaHeat: adaHeatVal,
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
       unitUkuran: isPadang ? 'm' : 's',
       bilanganLorong: isPadang ? null : 8,
@@ -643,7 +648,27 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
       statusAcara: 'akan_datang', isAktif: true,
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-    })
+    }
+  }
+
+  async function createNextAcara(thisId) {
+    if (!withFinal || !finalNo.trim() || !adaNextPanel) return
+    const aPath = acaraColPath(schoolId, kejId)
+    const sfId  = finalNo.trim()
+    const nextPeringkat = NEXT_PERINGKAT[form.peringkatMode]  // SF atau Final
+
+    // Bina acara seterusnya (SF atau Final)
+    await setDoc(doc(db, aPath, sfId),
+      buildAcaraDoc(sfId, nextPeringkat, thisId, nextAdaHeat, finalTarikh, finalMasa)
+    )
+
+    // Jika QF → SF, dan toggle Final juga ON — bina Final dengan parentAcaraId = SF
+    if (form.peringkatMode === 'suku_akhir' && withFinal2 && finalNo2.trim()) {
+      const finalId = finalNo2.trim()
+      await setDoc(doc(db, aPath, finalId),
+        buildAcaraDoc(finalId, 'akhir', sfId, false, finalTarikh2, finalMasa2)
+      )
+    }
   }
 
   // Acara yang akan dinomborkan semula jika sisip di form.noAcara
@@ -678,8 +703,8 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     if (!docId)                       return setErr('No Acara wajib')
     if (!form.namaAcaraPendek.trim()) return setErr('Nama acara wajib')
     if (!form.kategoriKod)            return setErr('Kategori wajib')
-    if (['suku_akhir', 'separuh_akhir'].includes(form.peringkatMode) && !form.parentAcaraId)
-      return setErr('Pilih acara sebelum (saringan/QF)')
+    if (form.peringkatMode === 'separuh_akhir' && !form.parentAcaraId)
+      return setErr('Pilih acara sebelum (QF)')
     setSaving(true)
     try {
       const aPath  = acaraColPath(schoolId, kejId)
@@ -843,8 +868,8 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
             <option value="separuh_akhir">Separuh Akhir (SF)</option>
             <option value="final_p">Final ←</option>
           </select>
-          {/* Pilih acara sebelum — untuk QF, SF, dan Final */}
-          {['suku_akhir', 'separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
+          {/* Pilih acara sebelum — untuk SF dan Final sahaja (QF = acara pertama, tiada parent) */}
+          {['separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
             <select value={form.parentAcaraId}
               onChange={e => set('parentAcaraId', e.target.value)}
               className={ic + ' mt-1 text-[10px]'}>
@@ -890,7 +915,8 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       {/* Panel auto-create acara seterusnya — untuk Saringan, QF, SF */}
       {adaNextPanel && (
         <tr className="bg-purple-50/60 border-b border-purple-100">
-          <td colSpan={10} className="px-3 py-2">
+          <td colSpan={10} className="px-3 py-2 space-y-2">
+            {/* Toggle SF (untuk QF) atau Final (untuk Saringan/SF) */}
             <div className="flex items-center gap-3 flex-wrap">
               <label className="flex items-center gap-1.5 cursor-pointer select-none">
                 <button type="button" onClick={() => {
@@ -898,6 +924,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
                   setWithFinal(next)
                   if (next && !finalNo) setFinalNo(suggestFinalNo())
                   if (next && !finalTarikh) setFinalTarikh(tarikhAcara)
+                  if (!next) { setWithFinal2(false); setFinalNo2(''); setFinalMasa2(''); setFinalTarikh2(tarikhAcara) }
                 }} className={`relative inline-flex h-4 w-8 shrink-0 rounded-full transition-colors ${withFinal ? 'bg-purple-600' : 'bg-gray-300'}`}>
                   <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform mt-[1px] ${withFinal ? 'translate-x-[18px]' : 'translate-x-[1px]'}`} />
                 </button>
@@ -926,6 +953,44 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
                 </>
               )}
             </div>
+            {/* Toggle Final (hanya untuk QF, selepas SF toggle ON) */}
+            {form.peringkatMode === 'suku_akhir' && withFinal && (
+              <div className="flex items-center gap-3 flex-wrap pl-2 border-l-2 border-purple-300">
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <button type="button" onClick={() => {
+                    const next = !withFinal2
+                    setWithFinal2(next)
+                    if (next && !finalNo2) setFinalNo2(suggestFinalNo2(finalNo))
+                    if (next && !finalTarikh2) setFinalTarikh2(tarikhAcara)
+                  }} className={`relative inline-flex h-4 w-8 shrink-0 rounded-full transition-colors ${withFinal2 ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform mt-[1px] ${withFinal2 ? 'translate-x-[18px]' : 'translate-x-[1px]'}`} />
+                  </button>
+                  <span className="text-[10px] font-bold text-indigo-700">Tambah Final Serentak</span>
+                </label>
+                {withFinal2 && (
+                  <>
+                    <label className="flex items-center gap-1 text-[10px] text-gray-500">
+                      No Acara:
+                      <input value={finalNo2}
+                        onChange={e => setFinalNo2(e.target.value.replace(/\D/g, ''))}
+                        className="ml-1 w-14 bg-white border border-indigo-200 rounded px-1.5 py-0.5 text-[10px] text-center font-black text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                    </label>
+                    <label className="flex items-center gap-1 text-[10px] text-gray-500">
+                      Masa:
+                      <input type="time" value={finalMasa2}
+                        onChange={e => setFinalMasa2(e.target.value)}
+                        className="ml-1 bg-white border border-indigo-200 rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                    </label>
+                    <label className="flex items-center gap-1 text-[10px] text-gray-500">
+                      Tarikh:
+                      <input type="date" value={finalTarikh2}
+                        onChange={e => setFinalTarikh2(e.target.value)}
+                        className="ml-1 bg-white border border-indigo-200 rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
           </td>
         </tr>
       )}
@@ -3130,6 +3195,8 @@ export default function AcaraSetup() {
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm py-12 text-center text-sm text-gray-400">Memuatkan…</div>
           )}
           {viewMode === 'hari' && !loading && (() => {
+            const P_BADGE = { saringan:'bg-blue-100 text-blue-700', final:'bg-amber-100 text-amber-700', akhir:'bg-green-100 text-green-700', suku_akhir:'bg-teal-100 text-teal-700', separuh_akhir:'bg-indigo-100 text-indigo-700' }
+            const P_LABEL = { saringan:'Saringan', final:'Final', akhir:'Akhir', suku_akhir:'Suku Akhir', separuh_akhir:'Separuh Akhir' }
             // Map parentAcaraId → noAcara (untuk badge → Final: #xxx pada baris saringan)
             const finalMap = {}
             acaraList.forEach(a => {
@@ -3274,12 +3341,8 @@ export default function AcaraSetup() {
                                     <HadCell acara={a} schoolId={schoolId} kejId={kejId} onUpdated={handleHadUpdated} />
                                   </td>
                                   <td className="px-3 py-2 text-center">
-                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                                      a.peringkat === 'saringan' ? 'bg-amber-100 text-amber-700'
-                                      : a.parentAcaraId ? 'bg-purple-100 text-purple-700'
-                                      : 'bg-green-100 text-green-700'
-                                    }`}>
-                                      {a.peringkat === 'saringan' ? 'Saringan' : a.parentAcaraId ? 'Final' : 'Terus Final'}
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${P_BADGE[a.peringkat] || 'bg-green-100 text-green-700'}`}>
+                                      {P_LABEL[a.peringkat] || 'Terus Final'}
                                     </span>
                                   </td>
                                   {/* Had — Individu/Berpasukan (klik untuk toggle) */}

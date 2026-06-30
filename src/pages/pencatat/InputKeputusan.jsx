@@ -1581,46 +1581,53 @@ export default function PencatatInputKeputusan() {
     ? ['saringan', 'suku_akhir', 'separuh_akhir'].includes(selectedAcara.peringkat)
     : false
 
+  const fasaJana = selectedAcara?.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
+
   const allHeatsDone = heats.length > 0 && heats.every(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
 
   const finalists = useMemo(() => {
     if (!isSaringanAcara || !allHeatsDone || !selectedAcara) return []
-    return selectFinalists(heats, selectedAcara, finalSetup)
-  }, [isSaringanAcara, allHeatsDone, heats, selectedAcara, finalSetup])
+    return selectFinalists(heats, selectedAcara, finalSetup, fasaJana)
+  }, [isSaringanAcara, allHeatsDone, heats, selectedAcara, finalSetup, fasaJana])
 
   async function handleJanaFinal(finalistList) {
     if (!schoolId || !kejId || !selectedAcara || !finalistList.length) return
     setJanaFinalLoading(true)
     try {
-      const finalAcaraId = selectedAcara.finalAcaraId
-      if (!finalAcaraId) { alert('Tiada acara final dikaitkan. Setup dalam AcaraSetup.'); return }
+      const thisNo = String(selectedAcara.noAcara || selectedAcara.aceraId || selectedAcara.id)
+      const nextAcara = acaraList.find(a =>
+        String(a.parentAcaraId) === thisNo ||
+        String(a.parentAcaraId) === String(selectedAcara.aceraId || selectedAcara.id)
+      )
+      if (!nextAcara) { alert('Tiada acara seterusnya dikaitkan. Setup parentAcaraId dalam AcaraSetup.'); return }
 
-      const finalAcaraSnap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', finalAcaraId))
-      const finalAcara = finalAcaraSnap.exists() ? finalAcaraSnap.data() : {}
+      const nextAcaraId = nextAcara.aceraId || nextAcara.id
 
       const oldHeats = await getDocs(query(
         collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'),
-        where('aceraId', '==', finalAcaraId)
+        where('aceraId', '==', nextAcaraId)
       ))
       await Promise.all(oldHeats.docs.map(d => d.ref.delete()))
 
-      const withLorong = assignLorong(finalistList, finalAcara)
-      const heatId = `heat_final_${Date.now()}`
+      const withLorong = assignLorong(finalistList, nextAcara)
+      const fasaHeat = nextAcara.peringkat === 'akhir' ? 'final' : nextAcara.peringkat
+      const heatId = `heat_${fasaHeat}_${Date.now()}`
       await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
-        heatId, aceraId: finalAcaraId, noHeat: 1, fasa: 'final', peringkat: 'final',
+        heatId, aceraId: nextAcaraId, noHeat: 1, fasa: fasaHeat, peringkat: fasaHeat,
         statusKeputusan: 'belum', peserta: withLorong, createdAt: serverTimestamp(),
       })
 
       await Promise.all(heats.map(h =>
         updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', h.heatId), {
-          finalDijanaKe: finalAcara.noAcara || finalAcaraId,
+          finalDijanaKe: nextAcara.noAcara || nextAcaraId,
         }).catch(() => {})
       ))
 
-      setHeats(prev => prev.map(h => ({ ...h, finalDijanaKe: finalAcara.noAcara || finalAcaraId })))
-      alert(`Final berjaya dijana! (${withLorong.length} finalis)`)
+      setHeats(prev => prev.map(h => ({ ...h, finalDijanaKe: nextAcara.noAcara || nextAcaraId })))
+      const label = fasaHeat === 'final' ? 'Final' : fasaHeat === 'separuh_akhir' ? 'Separuh Akhir' : 'Acara seterusnya'
+      alert(`${label} berjaya dijana! (${withLorong.length} finalis)`)
     } catch (e) {
-      alert('Ralat jana final: ' + e.message)
+      alert('Ralat jana: ' + e.message)
     } finally {
       setJanaFinalLoading(false)
     }
