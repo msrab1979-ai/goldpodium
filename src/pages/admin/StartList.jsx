@@ -201,7 +201,7 @@ function exportStartListPDF(acara, heatList, namaKejohanan, namaSekolahMap = {},
     pdf.setFontSize(9)
     pdf.setFont('helvetica', 'normal')
     pdf.text(
-      `${acara.namaAcara} — Kategori ${katLabel(acara.kategoriKod, kategoriList)} ${acara.jantina === 'L' ? 'Lelaki' : 'Perempuan'}`,
+      `${acara.namaAcara} — Kategori ${katLabel(acara.kategoriKod, kategoriList)} ${acara.jantina === 'L' ? 'Lelaki' : acara.jantina === 'P' ? 'Perempuan' : 'Campuran'}`,
       pageW / 2, 30, { align: 'center' }
     )
     pdf.text(
