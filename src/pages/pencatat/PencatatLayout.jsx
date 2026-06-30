@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { usePWATitle } from '../../hooks/usePWATitle'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ export default function PencatatLayout({ children }) {
   }
 
   const nama = userData?.name || userData?.nama || userData?.kodAkses || 'Pencatat'
+  usePWATitle(slug ? slug.toUpperCase() : null)
 
   const sidebarProps = {
     userData,

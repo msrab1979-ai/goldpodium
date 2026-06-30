@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AdminLayout from './components/AdminLayout'
+import PWAInstallPrompt from './components/PWAInstallPrompt'
 
 // ── Lazy imports — setiap modul load bila diperlukan sahaja ──────────────────
 const Landing            = lazy(() => import('./pages/Landing'))
@@ -312,6 +313,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
+        <PWAInstallPrompt />
       </AuthProvider>
     </BrowserRouter>
   )
