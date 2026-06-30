@@ -270,6 +270,9 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
   const [err, setErr]                   = useState('')
   const [isTerbuka, setIsTerbuka]       = useState(acara.isTerbuka || false)
   const [katTerbuka, setKatTerbuka]     = useState(acara.kategoriTerbuka || [])
+  const toggleKatTerbuka = React.useCallback((kod) => {
+    setKatTerbuka(prev => prev.includes(kod) ? prev.filter(x => x !== kod) : [...prev, kod])
+  }, [])
 
   // ── Tambah Final Serentak (untuk saringan yg dah ada) ────────────────────────
   const [withFinal,   setWithFinal]   = useState(false)
@@ -315,7 +318,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     await setDoc(doc(db, aPath, fId), {
       noAcara: fId, aceraId: fId,
       namaAcara: fNamaFull, namaAcaraPendek: form.namaAcaraPendek.trim(),
-      kelas, jantina: form.jantina, kategoriKod: form.kategoriKod,
+      kelas, jantina: form.jantina, kategoriKod: isTerbuka ? 'TERBUKA' : form.kategoriKod,
       jenisAcara: form.jenisAcara,
       isIndividu: form.isIndividu,
       tarikhAcara: fTarikh, masa: finalMasa || '', lokasi: form.lokasi, sesi: 'Petang',
@@ -346,7 +349,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
         namaAcaraPendek:   form.namaAcaraPendek.trim(),
         kelas,
         jantina:           form.jantina,
-        kategoriKod:       form.kategoriKod,
+        kategoriKod:       isTerbuka ? 'TERBUKA' : form.kategoriKod,
         jenisAcara:        form.jenisAcara,
         masa:              form.masa,
         lokasi:            form.lokasi,
@@ -396,10 +399,14 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
         </td>
         {/* Kategori */}
         <td className="px-1.5 py-1.5">
-          <select value={form.kategoriKod} onChange={e => set('kategoriKod', e.target.value)} className={ic}>
-            <option value="">— Kat —</option>
-            {kategoriList.map(k => <option key={k.kod} value={k.kod}>{k.label || k.kod}</option>)}
-          </select>
+          {isTerbuka ? (
+            <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-700">Terbuka</span>
+          ) : (
+            <select value={form.kategoriKod} onChange={e => set('kategoriKod', e.target.value)} className={ic}>
+              <option value="">— Kat —</option>
+              {kategoriList.map(k => <option key={k.kod} value={k.kod}>{k.label || k.kod}</option>)}
+            </select>
+          )}
         </td>
         {/* Jantina */}
         <td className="px-1.5 py-1.5">
@@ -495,7 +502,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
               <div className="flex flex-wrap gap-1">
                 {kategoriList.map(k => (
                   <button key={k.kod} type="button"
-                    onClick={() => setKatTerbuka(prev => prev.includes(k.kod) ? prev.filter(x => x !== k.kod) : [...prev, k.kod])}
+                    onClick={() => toggleKatTerbuka(k.kod)}
                     className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${katTerbuka.includes(k.kod) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
                     {k.kod}
                   </button>
@@ -605,6 +612,10 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
   const [katTerbuka, setKatTerbuka] = useState([])
   const [sisipMode, setSisipMode]   = useState(false)
   const [sisipLog, setSisipLog]     = useState('')
+
+  const toggleKatTerbuka = React.useCallback((kod) => {
+    setKatTerbuka(prev => prev.includes(kod) ? prev.filter(x => x !== kod) : [...prev, kod])
+  }, [])
   const nameRef                   = React.useRef()
 
   useEffect(() => { nameRef.current?.focus() }, [])
@@ -668,7 +679,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       noAcara, aceraId: noAcara,
       namaAcara: `${form.namaAcaraPendek.trim()} ${kelas}`.trim(),
       namaAcaraPendek: form.namaAcaraPendek.trim(),
-      kelas, jantina: form.jantina, kategoriKod: form.kategoriKod,
+      kelas, jantina: form.jantina, kategoriKod: isTerbuka ? 'TERBUKA' : form.kategoriKod,
       jenisAcara: form.jenisAcara, isIndividu: form.isIndividu,
       tarikhAcara: tarikh || tarikhAcara, masa: masa || '', lokasi: form.lokasi, sesi: 'Petang',
       peringkat: peringkatVal, parentAcaraId: parentAcaraIdVal,
@@ -713,7 +724,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     return {
       noAcara: docId, aceraId: docId,
       namaAcara: namaFull, namaAcaraPendek: form.namaAcaraPendek.trim(),
-      kelas, jantina: form.jantina, kategoriKod: form.kategoriKod,
+      kelas, jantina: form.jantina, kategoriKod: isTerbuka ? 'TERBUKA' : form.kategoriKod,
       jenisAcara: form.jenisAcara,
       isIndividu: form.isIndividu,
       tarikhAcara, masa: form.masa, lokasi: form.lokasi, sesi: 'Pagi',
@@ -863,10 +874,14 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
         </td>
         {/* Kategori */}
         <td className="px-1.5 py-1.5">
-          <select value={form.kategoriKod} onChange={e => set('kategoriKod', e.target.value)} className={ic}>
-            <option value="">— Kat —</option>
-            {kategoriList.map(k => <option key={k.kod} value={k.kod}>{k.label || k.kod}</option>)}
-          </select>
+          {isTerbuka ? (
+            <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-700">Terbuka</span>
+          ) : (
+            <select value={form.kategoriKod} onChange={e => set('kategoriKod', e.target.value)} className={ic}>
+              <option value="">— Kat —</option>
+              {kategoriList.map(k => <option key={k.kod} value={k.kod}>{k.label || k.kod}</option>)}
+            </select>
+          )}
         </td>
         {/* Jantina */}
         <td className="px-1.5 py-1.5">
@@ -961,7 +976,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
               <div className="flex flex-wrap gap-1">
                 {kategoriList.map(k => (
                   <button key={k.kod} type="button"
-                    onClick={() => setKatTerbuka(prev => prev.includes(k.kod) ? prev.filter(x => x !== k.kod) : [...prev, k.kod])}
+                    onClick={() => toggleKatTerbuka(k.kod)}
                     className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${katTerbuka.includes(k.kod) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
                     {k.kod}
                   </button>
