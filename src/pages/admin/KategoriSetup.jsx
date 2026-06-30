@@ -28,7 +28,6 @@ const JENIS_DEFAULTS = ['SR', 'SM', 'PPKI']
 const EMPTY_FORM = {
   kod: '', label: '', nama: '', jenisSekolah: 'SR',
   umurHad: '', umurMin: '',
-  isTerbuka: false,
   hadAtletL: 15, hadAtletP: 15,
   hadAcaraIndividu: 3, hadAcaraBeregu: 2,
   hadPasukanL: 1, hadPasukanP: 1, saizPasukan: 4,
@@ -162,16 +161,8 @@ function KategoriTable({ items, tahun, onEdit, onDelete, onToggle }) {
                 </td>
 
                 <td className="px-3 py-3 min-w-[120px]">
-                  {k.isTerbuka ? (
-                    <div>
-                      <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">Terbuka</span>
-                      <p className="text-[10px] text-gray-500 mt-1">{tLabel}</p>
-                    </div>
-                  ) : k.umurHad ? (
-                    <div>
-                      <p className="text-[10px] font-semibold text-orange-600">Bawah {k.umurHad} Thn</p>
-                      <p className="text-[10px] text-gray-400">{tLabel}</p>
-                    </div>
+                  {k.umurHad ? (
+                    <p className="text-[10px] font-semibold text-indigo-700">{tLabel}</p>
                   ) : (
                     <span className="text-[10px] text-gray-400">—</span>
                   )}
@@ -260,6 +251,8 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
     if (!kodBersih) return setErr('Kod kategori wajib diisi.')
     if (!form.nama.trim()) return setErr('Nama kategori wajib diisi.')
     if (!isEdit && allKod.includes(kodBersih)) return setErr(`Kod "${kodBersih}" sudah wujud.`)
+    if (form.umurMin && form.umurHad && Number(form.umurMin) >= Number(form.umurHad))
+      return setErr('Umur Min mesti lebih kecil dari Umur Had. Cth: Min=9, Had=12.')
 
     setSaving(true)
     try {
@@ -268,7 +261,6 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
         jenisSekolah: form.jenisSekolah,
         umurHad:  form.umurHad  === '' ? null : Number(form.umurHad),
         umurMin:  form.umurMin  === '' ? null : Number(form.umurMin),
-        isTerbuka: form.isTerbuka === true,
         hadAtletL: Number(form.hadAtletL) || 0,
         hadAtletP: Number(form.hadAtletP) || 0,
         hadAcaraIndividu: Number(form.hadAcaraIndividu) || 3,
@@ -398,55 +390,22 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
               2 — Had Umur & Kelayakan
             </p>
 
-            <label className="flex items-start gap-3 px-3 py-3 mb-3 rounded-lg border cursor-pointer transition-colors select-none
-              bg-amber-50 border-amber-200 hover:border-amber-400">
-              <input type="checkbox" checked={!!form.isTerbuka}
-                onChange={e => set('isTerbuka', e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-amber-500 shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-amber-800">Kategori Terbuka</p>
-                <p className="text-[10px] text-amber-600 mt-0.5">
-                  Atlet dari <strong>pelbagai umur</strong> dalam julat yang ditetapkan boleh menyertai acara ini.
-                  Contoh: semua atlet umur 8–12 thn boleh sertai "100m Terbuka L-SR".
-                </p>
-              </div>
-            </label>
-
             <div className="grid grid-cols-2 gap-3">
-              <FormField
-                label={form.isTerbuka ? 'Umur Minimum (Terbuka)' : 'Umur Min'}
-                hint={form.isTerbuka ? 'Umur paling muda boleh sertai. Cth: 8' : 'Tahun. Kosong = tiada had bawah'}>
+              <FormField label="Umur Min" hint="Tahun. Kosong = tiada had bawah">
                 <input type="number" min={1} max={25} value={form.umurMin}
-                  onChange={e => set('umurMin', e.target.value)} placeholder={form.isTerbuka ? '8' : '9'} className={inputCls} />
+                  onChange={e => set('umurMin', e.target.value)} placeholder="9" className={inputCls} />
               </FormField>
-              <FormField
-                label={form.isTerbuka ? 'Umur Maksimum (Terbuka)' : 'Umur Had ("Bawah X Thn")'}
-                required={!form.isTerbuka}
-                hint={form.isTerbuka ? 'Umur paling tua boleh sertai. Cth: 12' : undefined}>
+              <FormField label="Umur Had" required hint="Tahun. Cth: 12">
                 <input type="number" min={1} max={25} value={form.umurHad}
-                  onChange={e => set('umurHad', e.target.value)} placeholder={form.isTerbuka ? '12' : '10'} className={inputCls} />
+                  onChange={e => set('umurHad', e.target.value)} placeholder="12" className={inputCls} />
               </FormField>
             </div>
             {form.umurHad && (
-              <div className={`mt-2 rounded-lg px-3 py-2 flex items-center gap-2 border ${
-                form.isTerbuka
-                  ? 'bg-amber-50 border-amber-100'
-                  : 'bg-indigo-50 border-indigo-100'
-              }`}>
-                <svg className={`w-4 h-4 shrink-0 ${form.isTerbuka ? 'text-amber-400' : 'text-indigo-400'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <div className="mt-2 rounded-lg px-3 py-2 flex items-center gap-2 border bg-indigo-50 border-indigo-100">
+                <svg className="w-4 h-4 shrink-0 text-indigo-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <div>
-                  <p className={`text-[9px] font-bold ${form.isTerbuka ? 'text-amber-400' : 'text-indigo-400'}`}>
-                    {form.isTerbuka ? 'JULAT TERBUKA — TARIKH (cut-off 2 Jan)' : 'KELAYAKAN TARIKH (cut-off 2 Jan)'} {tahun}
-                  </p>
-                  <p className={`text-xs font-bold ${form.isTerbuka ? 'text-amber-700' : 'text-indigo-700'}`}>
-                    {form.isTerbuka
-                      ? `Umur ${form.umurMin || '?'} – ${form.umurHad} tahun · ${tahunLahirLabel(form.umurHad, form.umurMin, tahun)}`
-                      : previewTahun
-                    }
-                  </p>
-                </div>
+                <p className="text-xs font-bold text-indigo-700">{previewTahun}</p>
               </div>
             )}
           </div>
