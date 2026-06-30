@@ -472,11 +472,12 @@ function sortAndRankRows(rows) {
   })
 }
 
-function TabMedalTally({ schoolId, kejId, bilKed = 3, onRowsReady }) {
-  const [allRows,   setAllRows]   = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [openGrps,  setOpenGrps]  = useState(new Set())
-  const [jenisList, setJenisList] = useState([])
+function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarikhTamat, lokasi, logoKiri, logoKanan }) {
+  const [allRows,    setAllRows]    = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [openGrps,   setOpenGrps]   = useState(new Set())
+  const [jenisList,  setJenisList]  = useState([])
+  const [printingKat, setPrintingKat] = useState(null)
   const unsubRef  = useRef(null)
   const unsubRef2 = useRef(null)
 
@@ -515,7 +516,6 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, onRowsReady }) {
       }))
       setAllRows(rows)
       setLoading(false)
-      if (onRowsReady) onRowsReady(rows)
     }
 
     unsubRef.current = onSnapshot(
@@ -562,6 +562,100 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, onRowsReady }) {
       else next.add(kat)
       return next
     })
+  }
+
+  async function cetakKatPDF(kat, rows) {
+    if (!rows.length) return
+    setPrintingKat(kat)
+    try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'), import('jspdf-autotable'),
+      ])
+      const pdf      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const judulKej = namaKej || 'Kejohanan Olahraga'
+      const logoSize = 16
+      const pageW    = 210
+
+      if (logoKiri)  pdf.addImage(logoKiri,  'PNG', 14,                   8, logoSize, logoSize)
+      if (logoKanan) pdf.addImage(logoKanan, 'PNG', pageW - 14 - logoSize, 8, logoSize, logoSize)
+
+      pdf.setFontSize(13); pdf.setFont(undefined, 'bold'); pdf.setTextColor(0, 51, 153)
+      pdf.text('KEDUDUKAN PINGAT', pageW / 2, 14, { align: 'center' })
+      pdf.setFontSize(9); pdf.setFont(undefined, 'normal'); pdf.setTextColor(30, 30, 30)
+      pdf.text(`${judulKej.toUpperCase()} — ${kat}`, pageW / 2, 20, { align: 'center' })
+
+      const tMula  = tarikhMula  ? new Date(tarikhMula).toLocaleDateString('ms-MY',  { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+      const tTamat = tarikhTamat ? new Date(tarikhTamat).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+      const tarikhStr = tMula && tTamat && tMula !== tTamat ? `${tMula} – ${tTamat}` : tMula
+      const subtitleParts = [tarikhStr, lokasi].filter(Boolean)
+      if (subtitleParts.length) {
+        pdf.setFontSize(7.5); pdf.setTextColor(100)
+        pdf.text(subtitleParts.join('  ·  '), pageW / 2, 25.5, { align: 'center' })
+      }
+      pdf.setDrawColor(0, 51, 153); pdf.setLineWidth(0.4)
+      pdf.line(14, 27, pageW - 14, 27)
+      pdf.setTextColor(0)
+
+      const ranked = sortAndRankRows([...rows])
+      const head = [['No.', 'Nama Sekolah', 'Emas', 'Perak', 'Gangsa',
+        ...(bilKed >= 4 ? ['T4'] : []), ...(bilKed >= 5 ? ['T5'] : []), 'Jumlah']]
+
+      const body = ranked.map(t => {
+        const jumlah = (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0)
+        return [
+          t.rank, t.namaSekolah || t.kodSekolah || '—',
+          t.emas||0, t.perak||0, t.gangsa||0,
+          ...(bilKed >= 4 ? [t.tempat4||0] : []),
+          ...(bilKed >= 5 ? [t.tempat5||0] : []),
+          jumlah,
+        ]
+      })
+      const totalJumlah = ranked.reduce((s,t)=>s+(t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0),0)
+      body.push([
+        '', 'JUMLAH',
+        ranked.reduce((s,t)=>s+(t.emas||0),0),
+        ranked.reduce((s,t)=>s+(t.perak||0),0),
+        ranked.reduce((s,t)=>s+(t.gangsa||0),0),
+        ...(bilKed >= 4 ? [ranked.reduce((s,t)=>s+(t.tempat4||0),0)] : []),
+        ...(bilKed >= 5 ? [ranked.reduce((s,t)=>s+(t.tempat5||0),0)] : []),
+        totalJumlah,
+      ])
+
+      autoTable(pdf, {
+        startY: 30, head, body,
+        margin: { left: 14, right: 14 },
+        headStyles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 8.5, halign: 'center' },
+        styles: { fontSize: 9, cellPadding: 3, halign: 'center' },
+        columnStyles: { 1: { halign: 'left' } },
+        alternateRowStyles: { fillColor: [248, 250, 255] },
+        didParseCell: (data) => {
+          const isLast = data.row.index === body.length - 1
+          if (isLast) {
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.fillColor = [230, 236, 255]
+            data.cell.styles.textColor = [0, 51, 153]
+          }
+          const rank = ranked[data.row.index]?.rank
+          if (!isLast && data.column.index === 0) {
+            if (rank === 1) data.cell.styles.textColor = [180, 120, 0]
+            if (rank === 2) data.cell.styles.textColor = [100, 100, 100]
+            if (rank === 3) data.cell.styles.textColor = [160, 80, 20]
+          }
+        },
+      })
+
+      const pageCount = pdf.internal.getNumberOfPages()
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i)
+        pdf.setFontSize(6.5); pdf.setTextColor(180)
+        pdf.text(`Dicetak: ${new Date().toLocaleString('ms-MY')}`, 14, 290)
+        pdf.text(`Muka ${i} / ${pageCount}`, pageW - 14, 290, { align: 'right' })
+      }
+
+      const safeName = `${judulKej}-${kat}`.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 40)
+      pdf.save(`medal-tally-${safeName}.pdf`)
+    } catch (e) { alert('Ralat menjana PDF: ' + e.message) }
+    finally { setPrintingKat(null) }
   }
 
   function renderTable(rows, bilKed) {
@@ -678,6 +772,18 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, onRowsReady }) {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {isOpen && <span className="text-[10px] font-semibold text-white/70">{rows.length} sekolah</span>}
+                {isOpen && (
+                  <button
+                    onClick={e => { e.stopPropagation(); cetakKatPDF(kat, rows) }}
+                    disabled={printingKat === kat}
+                    className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-white bg-white/20 border border-white/30 rounded-lg hover:bg-white/30 transition-all disabled:opacity-50"
+                  >
+                    {printingKat === kat
+                      ? <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      : <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>}
+                    {printingKat === kat ? 'Menjana…' : 'PDF'}
+                  </button>
+                )}
                 <svg className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180 text-white' : 'text-gray-400'}`}
                   fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -736,8 +842,6 @@ export default function SchoolLanding() {
   const [staffModal,    setStaffModal]    = useState(false)
   const [lupaPinModal,  setLupaPinModal]  = useState(false)
   const [printingPdf,   setPrintingPdf]   = useState(false)
-  const [printingMedal, setPrintingMedal] = useState(false)
-  const [medalRows,     setMedalRows]     = useState([])
 
   // Pencatat login
   const { loginPencatat } = useAuth()
@@ -1014,114 +1118,6 @@ export default function SchoolLanding() {
       pdf.save(`jadual-${safeName}.pdf`)
     } catch (e) { alert('Ralat menjana PDF: ' + e.message) }
     finally { setPrintingPdf(false) }
-  }
-
-  // ── PDF Medal Tally ──
-  async function cetakMedalPDF() {
-    if (!medalRows.length) return
-    setPrintingMedal(true)
-    try {
-      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-        import('jspdf'), import('jspdf-autotable'),
-      ])
-      const pdf       = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const namaKej   = kej?.namaKejohanan || sekolah?.namaSekolah || 'Kejohanan Olahraga'
-      const logoKiri  = cfg.logoKiriBase64  || ''
-      const logoKanan = cfg.logoKananBase64 || ''
-      const logoSize  = 16
-      const pageW     = 210
-
-      // Header
-      if (logoKiri)  pdf.addImage(logoKiri,  'PNG', 14,                   8, logoSize, logoSize)
-      if (logoKanan) pdf.addImage(logoKanan, 'PNG', pageW - 14 - logoSize, 8, logoSize, logoSize)
-      pdf.setFontSize(13); pdf.setFont(undefined, 'bold'); pdf.setTextColor(0, 51, 153)
-      pdf.text('KEDUDUKAN PINGAT', pageW / 2, 14, { align: 'center' })
-      pdf.setFontSize(9); pdf.setFont(undefined, 'normal'); pdf.setTextColor(30, 30, 30)
-      pdf.text(namaKej.toUpperCase(), pageW / 2, 20, { align: 'center' })
-      const tarikhMula  = kej?.tarikhMula  ? new Date(kej.tarikhMula).toLocaleDateString('ms-MY',  { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-      const tarikhTamat = kej?.tarikhTamat ? new Date(kej.tarikhTamat).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
-      const tarikhStr   = tarikhMula && tarikhTamat && tarikhMula !== tarikhTamat
-        ? `${tarikhMula} – ${tarikhTamat}` : tarikhMula
-      const subtitleParts = [tarikhStr, kej?.lokasi].filter(Boolean)
-      if (subtitleParts.length) {
-        pdf.setFontSize(7.5); pdf.setTextColor(100)
-        pdf.text(subtitleParts.join('  ·  '), pageW / 2, 25.5, { align: 'center' })
-      }
-      pdf.setDrawColor(0, 51, 153); pdf.setLineWidth(0.4)
-      pdf.line(14, 27, pageW - 14, 27)
-      pdf.setTextColor(0)
-
-      const ranked = sortAndRankRows([...medalRows])
-      const bilKed = kej?.bilanganKedudukan ?? 3
-
-      const head = [['No.', 'Nama Sekolah', '🥇 Emas', '🥈 Perak', '🥉 Gangsa',
-        ...(bilKed >= 4 ? ['T4'] : []), ...(bilKed >= 5 ? ['T5'] : []), 'Jumlah']]
-
-      const body = ranked.map(t => {
-        const jumlah = (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0)
-        return [
-          t.rank,
-          t.namaSekolah || t.kodSekolah || '—',
-          t.emas   || 0,
-          t.perak  || 0,
-          t.gangsa || 0,
-          ...(bilKed >= 4 ? [t.tempat4 || 0] : []),
-          ...(bilKed >= 5 ? [t.tempat5 || 0] : []),
-          jumlah,
-        ]
-      })
-
-      // Row jumlah bawah
-      const totalJumlah = ranked.reduce((s, t) => s + (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0), 0)
-      body.push([
-        '', 'JUMLAH',
-        ranked.reduce((s,t)=>s+(t.emas||0),0),
-        ranked.reduce((s,t)=>s+(t.perak||0),0),
-        ranked.reduce((s,t)=>s+(t.gangsa||0),0),
-        ...(bilKed >= 4 ? [ranked.reduce((s,t)=>s+(t.tempat4||0),0)] : []),
-        ...(bilKed >= 5 ? [ranked.reduce((s,t)=>s+(t.tempat5||0),0)] : []),
-        totalJumlah,
-      ])
-
-      autoTable(pdf, {
-        startY: 30,
-        head,
-        body,
-        margin: { left: 14, right: 14 },
-        headStyles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 8.5, halign: 'center' },
-        styles: { fontSize: 9, cellPadding: 3, halign: 'center' },
-        columnStyles: { 1: { halign: 'left' } },
-        alternateRowStyles: { fillColor: [248, 250, 255] },
-        didParseCell: (data) => {
-          const isLast = data.row.index === body.length - 1
-          if (isLast) {
-            data.cell.styles.fontStyle = 'bold'
-            data.cell.styles.fillColor = [230, 236, 255]
-            data.cell.styles.textColor = [0, 51, 153]
-          }
-          // Warna emas/perak/gangsa row
-          const rank = ranked[data.row.index]?.rank
-          if (!isLast && data.column.index === 0) {
-            if (rank === 1) data.cell.styles.textColor = [180, 120, 0]
-            if (rank === 2) data.cell.styles.textColor = [100, 100, 100]
-            if (rank === 3) data.cell.styles.textColor = [160, 80, 20]
-          }
-        },
-      })
-
-      // Footer
-      const pageCount = pdf.internal.getNumberOfPages()
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i)
-        pdf.setFontSize(6.5); pdf.setTextColor(180)
-        pdf.text(`Dicetak: ${new Date().toLocaleString('ms-MY')}`, 14, 290)
-        pdf.text(`Muka ${i} / ${pageCount}`, pageW - 14, 290, { align: 'right' })
-      }
-
-      const safeName = namaKej.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 30)
-      pdf.save(`medal-tally-${safeName}.pdf`)
-    } catch (e) { alert('Ralat menjana PDF: ' + e.message) }
-    finally { setPrintingMedal(false) }
   }
 
   // ── Computed ──
@@ -1669,22 +1665,18 @@ export default function SchoolLanding() {
       {kej && (
         <section className="py-6 px-3 bg-gray-50 border-t border-gray-100">
           <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <div className="border-l-4 border-[#003399] pl-3">
                 <h2 className="text-base font-black text-gray-800 leading-tight">Kedudukan Pingat</h2>
+                <p className="text-[10px] text-gray-400 mt-0.5">Buka kategori untuk cetak PDF</p>
               </div>
-              {medalRows.length > 0 && (
-                <button onClick={cetakMedalPDF} disabled={printingMedal}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-[#003399] bg-white border border-[#003399]/25 rounded-xl hover:bg-blue-50 transition-all disabled:opacity-50 shadow-sm">
-                  {printingMedal
-                    ? <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                    : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>}
-                  {printingMedal ? 'Menjana…' : 'Cetak PDF'}
-                </button>
-              )}
             </div>
-            <TabMedalTally schoolId={schoolId} kejId={kej.id} bilKed={kej.bilanganKedudukan ?? 3}
-              onRowsReady={rows => setMedalRows(rows)} />
+            <TabMedalTally
+              schoolId={schoolId} kejId={kej.id} bilKed={kej.bilanganKedudukan ?? 3}
+              namaKej={kej.namaKejohanan || sekolah?.namaSekolah || 'Kejohanan Olahraga'}
+              tarikhMula={kej.tarikhMula} tarikhTamat={kej.tarikhTamat} lokasi={kej.lokasi}
+              logoKiri={cfg.logoKiriBase64 || ''} logoKanan={cfg.logoKananBase64 || ''}
+            />
           </div>
         </section>
       )}
