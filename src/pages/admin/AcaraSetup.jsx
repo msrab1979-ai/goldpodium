@@ -499,15 +499,21 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
               <span className="text-[10px] font-bold text-orange-700">Acara Terbuka</span>
             </label>
             {isTerbuka && (
-              <div className="flex flex-wrap gap-1">
-                {kategoriList.map(k => (
-                  <button key={k.kod} type="button"
-                    onClick={() => toggleKatTerbuka(k.kod)}
-                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${katTerbuka.includes(k.kod) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
-                    {k.kod}
-                  </button>
-                ))}
-                {katTerbuka.length === 0 && <span className="text-[9px] text-red-500">Pilih sekurang-kurangnya 1 kategori</span>}
+              <div className="mt-1">
+                <p className="text-[9px] text-gray-400 mb-1">Kategori layak (klik untuk pilih/buang):</p>
+                <div className="flex flex-wrap gap-1">
+                  {kategoriList.map(k => {
+                    const dipilih = katTerbuka.includes(k.kod)
+                    return (
+                      <button key={k.kod} type="button"
+                        onClick={() => toggleKatTerbuka(k.kod)}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${dipilih ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
+                        {dipilih ? '✓ ' : ''}{k.kod}
+                      </button>
+                    )
+                  })}
+                </div>
+                {katTerbuka.length === 0 && <p className="text-[9px] text-red-500 mt-1">Pilih sekurang-kurangnya 1 kategori</p>}
               </div>
             )}
           </div>
@@ -973,15 +979,21 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
               <span className="text-[10px] font-bold text-orange-700">Acara Terbuka</span>
             </label>
             {isTerbuka && (
-              <div className="flex flex-wrap gap-1">
-                {kategoriList.map(k => (
-                  <button key={k.kod} type="button"
-                    onClick={() => toggleKatTerbuka(k.kod)}
-                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${katTerbuka.includes(k.kod) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
-                    {k.kod}
-                  </button>
-                ))}
-                {katTerbuka.length === 0 && <span className="text-[9px] text-red-500">Pilih sekurang-kurangnya 1 kategori</span>}
+              <div className="mt-1">
+                <p className="text-[9px] text-gray-400 mb-1">Kategori layak (klik untuk pilih/buang):</p>
+                <div className="flex flex-wrap gap-1">
+                  {kategoriList.map(k => {
+                    const dipilih = katTerbuka.includes(k.kod)
+                    return (
+                      <button key={k.kod} type="button"
+                        onClick={() => toggleKatTerbuka(k.kod)}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${dipilih ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-300'}`}>
+                        {dipilih ? '✓ ' : ''}{k.kod}
+                      </button>
+                    )
+                  })}
+                </div>
+                {katTerbuka.length === 0 && <p className="text-[9px] text-red-500 mt-1">Pilih sekurang-kurangnya 1 kategori</p>}
               </div>
             )}
           </div>

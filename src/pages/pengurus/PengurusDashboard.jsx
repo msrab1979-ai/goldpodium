@@ -833,17 +833,17 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
 
   const _katObj = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
 
+  const isAcaraTerbuka = acara.isTerbuka || acara.kategoriKod === 'TERBUKA'
   const atletLayak = atletSekolah.filter(a => {
     if (a.isAktif === false) return false
-    if (a.jantina !== acara.jantina) return false
     if (sudahDaftar.includes(a.noKP)) return false
-    if (_katObj?.isTerbuka) {
-      const tLahir = a.tarikhLahir ? parseInt(a.tarikhLahir.substring(0,4)) : 0
-      if (!tLahir) return false
-      const umur = tahunKej - tLahir
-      return umur >= (_katObj.umurMin ? Number(_katObj.umurMin) : 0) &&
-             umur <= (_katObj.umurHad ? Number(_katObj.umurHad) : 99)
+    if (isAcaraTerbuka) {
+      const katTerbuka = acara.kategoriTerbuka || []
+      if (katTerbuka.length === 0) return false
+      const katAtlet = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+      return katAtlet && katTerbuka.includes(katAtlet)
     }
+    if (a.jantina !== acara.jantina) return false
     const katKira = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
     const kat = katKira || a.kategoriKod
     return kat === acara.kategoriKod
@@ -1585,17 +1585,17 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                 {isSelected && (() => {
                   const _katObj2  = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
                   const sudahDaftar = pesertaSek.map(p => p.noKP)
+                  const isAcaraTerbuka2 = acara.isTerbuka || acara.kategoriKod === 'TERBUKA'
                   const atletLayak  = atletSekolah.filter(a => {
                     if (a.isAktif === false) return false
-                    if (a.jantina !== acara.jantina) return false
                     if (sudahDaftar.includes(a.noKP)) return false
-                    if (_katObj2?.isTerbuka) {
-                      const tLahir = a.tarikhLahir ? parseInt(a.tarikhLahir.substring(0,4)) : 0
-                      if (!tLahir) return false
-                      const umur = tahunKej - tLahir
-                      return umur >= (_katObj2.umurMin ? Number(_katObj2.umurMin) : 0) &&
-                             umur <= (_katObj2.umurHad ? Number(_katObj2.umurHad) : 99)
+                    if (isAcaraTerbuka2) {
+                      const katTerbuka = acara.kategoriTerbuka || []
+                      if (katTerbuka.length === 0) return false
+                      const katAtlet = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                      return katAtlet && katTerbuka.includes(katAtlet)
                     }
+                    if (a.jantina !== acara.jantina) return false
                     const kat = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                     return kat === acara.kategoriKod
                   })
@@ -1723,8 +1723,9 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                                     <JantinaBadge j={p.jantina} />
                                     {!pendaftaranTutup && (
                                       <button onClick={() => setModal({ type:'buang', atlet:p, acara })}
-                                        className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                        className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-red-500 bg-red-50 border border-red-200 hover:bg-red-100 rounded transition-colors">
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                        Buang
                                       </button>
                                     )}
                                   </div>
