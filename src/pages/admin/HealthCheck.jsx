@@ -1024,7 +1024,7 @@ export default function HealthCheck() {
         },
       ]
 
-      const totalError = [mismatch, dupBib, tidakLengkap, heatNoBibKosong, heatNoKPKosong, heatLorongDup]
+      const totalError = [mismatch, dupBib, tidakLengkap, heatNoBibKosong, heatLorongDup]
         .reduce((sum, arr) => sum + arr.length, 0)
       const totalWarn = [noBibKosong, acaraSatuPeserta, statusLama]
         .reduce((sum, arr) => sum + arr.length, 0)
