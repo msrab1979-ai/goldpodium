@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { collection, getCountFromServer, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
@@ -100,13 +101,13 @@ function StatCard({ label, value, sub, color, icon }) {
 
 function QuickLink({ label, path, desc }) {
   return (
-  <a
-    href={path}
-    className="block bg-white border border-gray-200 rounded shadow-sm p-4 hover:border-[#003399] hover:shadow-md transition-all group"
-  >
-    <p className="text-sm font-semibold text-[#003399] group-hover:underline">{label}</p>
-    <p className="text-xs text-gray-500 mt-1">{desc}</p>
-  </a>
+    <Link
+      to={path}
+      className="block bg-white border border-gray-200 rounded shadow-sm p-4 hover:border-[#003399] hover:shadow-md transition-all group"
+    >
+      <p className="text-sm font-semibold text-[#003399] group-hover:underline">{label}</p>
+      <p className="text-xs text-gray-500 mt-1">{desc}</p>
+    </Link>
   )
 }
 
@@ -167,10 +168,10 @@ const isSuperAdmin = userRole === 'superadmin'
       {/* Page title */}
       <div className="mb-6">
         <h1 className="text-lg font-bold text-gray-800">
-          Selamat Datang, {userData?.nama || 'Pengguna'}
+          Selamat Datang, {userData?.nama || userData?.name || 'Pengguna'}
         </h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Sistem Statistik Pengurusan Kejohanan Olahraga Antara Murid (KOAM)
+          Sistem Pengurusan Kejohanan Olahraga — Gold Podium
         </p>
       </div>
 

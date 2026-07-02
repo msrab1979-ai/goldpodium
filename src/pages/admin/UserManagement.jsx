@@ -216,7 +216,7 @@ async function exportPDF(users) {
 
   const doc = new jsPDF({ orientation: 'landscape' })
   doc.setFontSize(13)
-  doc.text('Senarai Pengguna Sistem KOAM', 14, 14)
+  doc.text('Senarai Pengguna Sistem Gold Podium', 14, 14)
   doc.setFontSize(9)
   doc.text(`Dijana: ${new Date().toLocaleDateString('ms-MY')}`, 14, 21)
 
@@ -274,7 +274,7 @@ export default function UserManagement() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [schoolId])
 
   useEffect(() => { fetchUsers() }, [fetchUsers, schoolId])
 
@@ -317,14 +317,18 @@ export default function UserManagement() {
 
   async function confirmResetPin() {
     if (!resetPin) return
-    const ph = await hashPin(resetPin.newPin)
-    await updateDoc(doc(db, 'tenants', schoolId, 'users', resetPin.uid), {
-      pinHash:   ph,
-      pin:       deleteField(),   // buang plain text jika ada
-      updatedAt: serverTimestamp(),
-    })
-    setUsers(prev => prev.map(x => x.uid === resetPin.uid ? { ...x, pinHash: ph, pin: undefined } : x))
-    setResetPin(null)
+    try {
+      const ph = await hashPin(resetPin.newPin)
+      await updateDoc(doc(db, 'tenants', schoolId, 'users', resetPin.uid), {
+        pinHash:   ph,
+        pin:       deleteField(),
+        updatedAt: serverTimestamp(),
+      })
+      setUsers(prev => prev.map(x => x.uid === resetPin.uid ? { ...x, pinHash: ph, pin: undefined } : x))
+      setResetPin(null)
+    } catch (err) {
+      alert('Ralat reset PIN: ' + (err.message || 'Cuba lagi.'))
+    }
   }
 
   function openEdit(u) {

@@ -16,10 +16,14 @@ import { doc, getDoc } from 'firebase/firestore'
  * Normalize: uppercase + replace non-alphanumeric → '_'
  */
 export function rekodKey(namaAcara, jantina, kategoriKod, peringkat) {
-  return [namaAcara, jantina, kategoriKod, peringkat]
-    .join('_')
+  const normalized = String(namaAcara || '')
     .toUpperCase()
+    .replace(/(\d)\s*METER\b/g, '$1M')
+    .replace(/(\d)\s+M\b/g, '$1M')
+    .replace(/\s+/g, '_')
     .replace(/[^A-Z0-9_]/g, '_')
+  return [normalized, jantina, kategoriKod, peringkat]
+    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_')
 }
 
 /**

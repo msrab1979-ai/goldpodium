@@ -175,8 +175,14 @@ function LupaPinModal({ schoolId, onClose }) {
 const PERINGKAT_LABEL_M = { D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
 
 function rekodKeyHome(namaAcara, jantina, kategoriKod, peringkat) {
-  return [namaAcara, jantina, kategoriKod, peringkat]
-    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+  const normalized = String(namaAcara || '')
+    .toUpperCase()
+    .replace(/(\d)\s*METER\b/g, '$1M')
+    .replace(/(\d)\s+M\b/g, '$1M')
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Z0-9_]/g, '_')
+  return [normalized, jantina, kategoriKod, peringkat]
+    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_')
 }
 
 function fmtP(val, isPadangM) {
@@ -327,7 +333,8 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
   const showCatatanCol = (isSaringanAcara || (isRelay && saringanHeats.length > 0)) && !showingFinal
 
   // Finalist Q/q
-  const _finalistRaw = showCatatanCol ? selectFinalists(heats, acara, finalSetup) : []
+  const _fasaJana = (acara.peringkat || '') === 'saringan_qf' ? 'sukuKeSeparuh' : 'toFinal'
+  const _finalistRaw = showCatatanCol ? selectFinalists(heats, acara, finalSetup, _fasaJana) : []
   const finalistBibs = new Set(_finalistRaw.map(f => isRelay ? f.kodSekolah : f.noBib))
   const finalistQMap = new Map(_finalistRaw.map(f => [isRelay ? f.kodSekolah : f.noBib, f.qualifyType || 'q']))
 
@@ -1185,10 +1192,10 @@ export default function SchoolLanding() {
     if (rekodAllLoaded || !schoolId || !kej?.id) return
     setRekodAllLoading(true)
     try {
-      const snap = await getDocs(collection(db, 'tenants', schoolId, 'rekod_sejarah'))
+      const snap = await getDocs(collection(db, 'tenants', schoolId, 'rekod'))
       const list = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(r => r.statusRekod === 'aktif')
+        .filter(r => !r.id.endsWith('_tuntutan') && r.statusRekod === 'aktif')
         .sort((a, b) => (a.namaAcara || '').localeCompare(b.namaAcara || ''))
       setRekodAll(list)
       setRekodAllLoaded(true)

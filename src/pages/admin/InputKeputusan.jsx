@@ -160,13 +160,14 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
         dikemaskinPada:  serverTimestamp(),
       })
       // runPostRasmi — kira medal_tally, rekod, mata olahragawan
+      const isSaringan = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
       const heatDoc  = { id: heat.id, peserta: withRank, windSpeed: windGlobal || '' }
       const acaraDoc = { ...acara, id: acara.id }
       await runPostRasmi(db, heatDoc, acaraDoc, kejId, {
         schoolId,
         mataPingat:        kejDoc?.mataPingat        || { 1: 5, 2: 3, 3: 2, 4: 1 },
         peringkatKej:      kejDoc?.peringkatKej      || 'D',
-        grantMedal:        heat.fasa === 'final' || heat.fasa === 'terus_final',
+        grantMedal:        !isSaringan && (heat.fasa === 'final' || heat.fasa === 'terus_final'),
         isRelay,
       }).catch(e => console.warn('postRasmi:', e.message))
       setSimpan({ loading: false, ok: true, err: '' })
@@ -345,13 +346,14 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
         dikemaskinPada:  serverTimestamp(),
       })
       // runPostRasmi — kira medal_tally, rekod, mata olahragawan
+      const isSaringanPadang = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
       const heatDoc  = { id: heat.id, peserta: withRank }
       const acaraDoc = { ...acara, id: acara.id }
       await runPostRasmi(db, heatDoc, acaraDoc, kejId, {
         schoolId,
         mataPingat:   kejDoc?.mataPingat   || { 1: 5, 2: 3, 3: 2, 4: 1 },
         peringkatKej: kejDoc?.peringkatKej || 'D',
-        grantMedal:   heat.fasa === 'final' || heat.fasa === 'terus_final',
+        grantMedal:   !isSaringanPadang && (heat.fasa === 'final' || heat.fasa === 'terus_final'),
         isRelay:      false,
       }).catch(e => console.warn('postRasmi:', e.message))
       setSimpan({ loading: false, ok: true, err: '' })

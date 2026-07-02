@@ -564,7 +564,7 @@ export default function HealthCheck() {
       const acaraId  = brkSenarai?.acara?.id
       const mataKejId = brkPilihan.kejohananId || (await getKejId())
       if (acaraId && noKPLama && noKPBaru !== noKPLama) {
-        const mataRefLama = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', noKPLama)
+        const mataRefLama = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${noKPLama}_${mataKejId}`)
         const mataSnapLama = await getDoc(mataRefLama)
         if (mataSnapLama.exists()) {
           const fieldKey = `rekod_${acaraId}`
@@ -572,7 +572,7 @@ export default function HealthCheck() {
           setBrkLog(l => [...l, `✓ Rekod dibuang dari mata_olahragawan ${noKPLama}`])
         }
         if (noKPBaru) {
-          const mataRefBaru = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', noKPBaru)
+          const mataRefBaru = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${noKPBaru}_${mataKejId}`)
           await setDoc(mataRefBaru, {
             [`rekod_${acaraId}`]: {
               acaraId,
@@ -588,7 +588,7 @@ export default function HealthCheck() {
         }
       } else if (acaraId && noKPBaru) {
         // Kemaskini nilai dalam mata_olahragawan (noKP sama, prestasi mungkin berubah)
-        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', noKPBaru)
+        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${noKPBaru}_${mataKejId}`)
         const mataSnap = await getDoc(mataRef)
         if (mataSnap.exists() && mataSnap.data()[`rekod_${acaraId}`]) {
           await updateDoc(mataRef, {
@@ -638,7 +638,7 @@ export default function HealthCheck() {
       const acaraId = brkSenarai?.acara?.id
       const padamKejId = brkPilihan.kejohananId || (await getKejId())
       if (noKP && acaraId) {
-        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', padamKejId, 'mata_olahragawan', noKP)
+        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', padamKejId, 'mata_olahragawan', `${noKP}_${padamKejId}`)
         const mataSnap = await getDoc(mataRef)
         if (mataSnap.exists()) {
           await updateDoc(mataRef, { [`rekod_${acaraId}`]: deleteField() })
@@ -1510,7 +1510,7 @@ export default function HealthCheck() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <span className="text-[10px] font-bold text-teal-700 uppercase mr-2">{rekod.peringkat === 'D' ? 'Daerah' : rekod.peringkat === 'N' ? 'Negeri' : 'Kebangsaan'}</span>
+                      <span className="text-[10px] font-bold text-teal-700 uppercase mr-2">{rekod.peringkat === 'S' ? 'Sekolah' : rekod.peringkat === 'D' ? 'Daerah' : rekod.peringkat === 'N' ? 'Negeri' : 'Kebangsaan'}</span>
                       <span className="text-[11px] font-mono font-semibold text-gray-800">{formatPrestasiHC(rekod.prestasi, rekod.unit)}</span>
                     </div>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${rekod.statusRekod === 'aktif' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -1528,7 +1528,7 @@ export default function HealthCheck() {
           {brkPilihan && brkForm && !brkPreview && (
             <div className="space-y-3 border border-teal-200 rounded-lg p-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-bold text-teal-700">Edit Rekod — {brkPilihan.peringkat === 'D' ? 'Daerah' : brkPilihan.peringkat === 'N' ? 'Negeri' : 'Kebangsaan'}</p>
+                <p className="text-[11px] font-bold text-teal-700">Edit Rekod — {brkPilihan.peringkat === 'S' ? 'Sekolah' : brkPilihan.peringkat === 'D' ? 'Daerah' : brkPilihan.peringkat === 'N' ? 'Negeri' : 'Kebangsaan'}</p>
                 <button onClick={() => { setBrkPilihan(null); setBrkForm(null) }} className="text-[10px] text-gray-400 hover:text-gray-600">✕ Batal</button>
               </div>
               <div className="grid grid-cols-2 gap-2">

@@ -140,12 +140,10 @@ function downloadTemplateSekolah() {
     const cell = `${pinCol}${row}`
     if (ws1[cell]) ws1[cell].t = 's'  // force string type
   }
-  // Set format untuk seluruh kolum pin supaya input user pun jadi text
-  if (!ws1['!cols']) ws1['!cols'] = []
-  ws1['!cols'][9] = { wch: 8, z: '@' }  // @ = text format dalam Excel
+  // Set lebar kolum + format text pada PIN (kolum index 9)
   ws1['!cols'] = [
     {wch:16},{wch:28},{wch:8},{wch:14},{wch:12},
-    {wch:24},{wch:10},{wch:10},{wch:10},{wch:8},
+    {wch:24},{wch:10},{wch:10},{wch:10},{wch:8, z:'@'},
   ]
   XLSX.utils.book_append_sheet(wb, ws1, 'SEKOLAH')
 
@@ -1117,20 +1115,24 @@ export default function SekolahSetup() {
 
   // ── Bypass Deadline (global) ──
   async function doToggleBypass(s) {
-    await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', s.kodSekolah), {
-      bypassDeadline: !s.bypassDeadline,
-      updatedAt: serverTimestamp(),
-    })
-    fetchList()
+    try {
+      await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', s.kodSekolah), {
+        bypassDeadline: !s.bypassDeadline,
+        updatedAt: serverTimestamp(),
+      })
+      fetchList()
+    } catch (e) { alert('Ralat: ' + e.message) }
   }
 
   // ── Bypass Pengesahan ──
   async function doToggleBypassPengesahan(s) {
-    await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', s.kodSekolah), {
-      bypassPengesahan: !s.bypassPengesahan,
-      updatedAt: serverTimestamp(),
-    })
-    fetchList()
+    try {
+      await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', s.kodSekolah), {
+        bypassPengesahan: !s.bypassPengesahan,
+        updatedAt: serverTimestamp(),
+      })
+      fetchList()
+    } catch (e) { alert('Ralat: ' + e.message) }
   }
 
   // ── Bypass Per Acara ──
@@ -1190,11 +1192,13 @@ export default function SekolahSetup() {
   // ── Toggle Aktif ──
   async function doToggleAktif() {
     if (!selected) return
-    await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', selected.kodSekolah), {
-      isAktif: !selected.isAktif, updatedAt: serverTimestamp(),
-    })
-    setModal(null)
-    fetchList()
+    try {
+      await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', selected.kodSekolah), {
+        isAktif: !selected.isAktif, updatedAt: serverTimestamp(),
+      })
+      setModal(null)
+      fetchList()
+    } catch (e) { alert('Ralat: ' + e.message) }
   }
 
   // ── Padam Sekolah ──
@@ -1252,7 +1256,7 @@ export default function SekolahSetup() {
     ])
 
     pdf.setFontSize(14)
-    pdf.text('Senarai Sekolah — KOAM Daerah Kemaman', 14, 15)
+    pdf.text('Senarai Sekolah — Gold Podium', 14, 15)
     pdf.setFontSize(8)
     pdf.text(`Dicetak: ${new Date().toLocaleString('ms-MY')}`, 14, 22)
 

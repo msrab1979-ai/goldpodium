@@ -2,155 +2,242 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ──────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────
     function isAuth() {
       return request.auth != null;
     }
 
-    function getRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-    }
-
     function isSuperAdmin() {
-      return isAuth() && getRole() == 'superadmin';
+      return isAuth() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
     }
 
-    function isAdmin() {
-      return isAuth() && getRole() == 'admin';
+    // Baca role dari tenants subcollection — return '' kalau doc tak wujud
+    function tenantRole(schoolId) {
+      let ud = get(/databases/$(database)/documents/tenants/$(schoolId)/users/$(request.auth.uid));
+      return ud == null ? '' : ud.data.get('role', '');
     }
 
-    function isPencatat() {
-      return isAuth() && getRole() == 'pencatat';
+    // Admin sekolah — mesti ada doc dalam tenants/users dengan role admin
+    function isAdmin(schoolId) {
+      return isAuth() && tenantRole(schoolId) in ['admin'];
     }
 
-    function isPengurusTeknik() {
-      return isAuth() && getRole() == 'pengurus_teknik';
+    // Admin atau superadmin
+    function isAdminOrSuperadmin(schoolId) {
+      return isSuperAdmin() || isAdmin(schoolId);
     }
 
-    function isAdminOrAbove() {
-      return isAuth() && getRole() in ['superadmin', 'admin'];
+    // Pencatat & above (tidak termasuk pengurus PP)
+    function isPencatat(schoolId) {
+      return isAuth() && (
+        isSuperAdmin() ||
+        tenantRole(schoolId) in ['admin', 'pencatat', 'urusetia', 'pengurus_teknik']
+      );
     }
 
-    function isStaff() {
-      return isAuth() && getRole() in ['superadmin', 'admin', 'pencatat', 'pengurus_teknik'];
+    // Staff (semua yang boleh log masuk termasuk pengurus PP)
+    function isStaff(schoolId) {
+      return isAuth() && (
+        isSuperAdmin() ||
+        tenantRole(schoolId) in ['admin', 'pencatat', 'urusetia', 'pengurus_teknik', 'pengurus']
+      );
     }
 
-    // ── users ─────────────────────────────────────────────────────
-    // User boleh baca profil sendiri; superadmin boleh baca/tulis semua
+    // ── Global: users (admin Firebase Auth) ──────────────────────
     match /users/{uid} {
       allow read: if isAuth() && (request.auth.uid == uid || isSuperAdmin());
       allow write: if isSuperAdmin();
     }
 
-    // ── sekolah ───────────────────────────────────────────────────
-    match /sekolah/{kodSekolah} {
-      allow read: if true;  // awam boleh lihat senarai sekolah
-      allow write: if isSuperAdmin();
-    }
-
-    // ── atlet ─────────────────────────────────────────────────────
-    // Admin hanya boleh tulis atlet sekolah sendiri
-    match /atlet/{noKP} {
-      allow read: if isStaff();
-      allow create: if isAdminOrAbove();
-      allow update: if isSuperAdmin() ||
-        (isAdmin() && resource.data.kodSekolah ==
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
-      allow delete: if isSuperAdmin();
-    }
-
-    // ── kejohanan ─────────────────────────────────────────────────
-    match /kejohanan/{kejohananId} {
+    // ── Global: slugIndex (awam boleh baca — untuk resolve slug) ─
+    match /slugIndex/{slug} {
       allow read: if true;
       allow write: if isSuperAdmin();
+    }
 
-      // acara (sub-collection)
-      match /acara/{aceraId} {
+    // ── Global: login_attempts (awam tulis — rate limiting) ──────
+    match /login_attempts/{key} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── Global: security logs (tulis sahaja dari auth.js) ────────
+    match /security/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if isAuth();
+    }
+
+    // ── Global: audit_log (Cloud Functions sahaja) ───────────────
+    match /audit_log/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    // ── Tenants ──────────────────────────────────────────────────
+    // Root tenant doc — superadmin tulis, admin+superadmin baca
+    match /tenants/{schoolId} {
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        tenantRole(schoolId) in ['admin', 'pencatat', 'urusetia', 'pengurus_teknik', 'pengurus']
+      );
+      allow write: if isSuperAdmin();
+
+      // ── Private (emel admin dll) ────────────────────────────────
+      match /_private/{docId} {
+        allow read, write: if isSuperAdmin();
+      }
+
+      // ── Tenant users ────────────────────────────────────────────
+      match /users/{uid} {
+        allow read: if isAuth() && (request.auth.uid == uid || isAdminOrSuperadmin(schoolId));
+        allow write: if isAdminOrSuperadmin(schoolId);
+      }
+
+      // ── Sekolah (peserta PP) ────────────────────────────────────
+      // Awam boleh baca sebahagian (untuk lupa PIN lookup dari Home.jsx)
+      match /sekolah/{kodSekolah} {
         allow read: if true;
-        allow write: if isSuperAdmin();
+        allow write: if isAdminOrSuperadmin(schoolId);
+      }
 
-        // heat (sub-collection)
+      // ── Atlet ───────────────────────────────────────────────────
+      match /atlet/{atletId} {
+        allow read: if true;
+        allow write: if isAdminOrSuperadmin(schoolId);
+      }
+
+      // ── Tetapan (home, sijil, dsb) ──────────────────────────────
+      // Awam boleh baca tetapan/home (untuk Home.jsx & SchoolLanding)
+      match /tetapan/{docId} {
+        allow read: if true;
+        allow write: if isAdminOrSuperadmin(schoolId);
+      }
+
+      // ── Rekod ───────────────────────────────────────────────────
+      // Awam boleh baca (SchoolLanding papar rekod)
+      match /rekod/{rekodId} {
+        allow read: if true;
+        allow write: if isPencatat(schoolId);
+      }
+
+      // ── Rekod sejarah ───────────────────────────────────────────
+      match /rekod_sejarah/{docId} {
+        allow read: if true;
+        allow write: if isPencatat(schoolId);
+      }
+
+      // ── Log reset ───────────────────────────────────────────────
+      match /log_reset/{docId} {
+        allow read: if isAdminOrSuperadmin(schoolId);
+        allow write: if isAdminOrSuperadmin(schoolId);
+      }
+
+      // ── Kejohanan ───────────────────────────────────────────────
+      match /kejohanan/{kejohananId} {
+        allow read: if true;
+        allow write: if isAdminOrSuperadmin(schoolId);
+
+        // acara
+        match /acara/{aceraId} {
+          allow read: if true;
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // heat (FLAT)
         match /heat/{heatId} {
           allow read: if true;
-          allow write: if isSuperAdmin() || isPencatat();
+          allow create: if isAdminOrSuperadmin(schoolId);
+          allow update: if isPencatat(schoolId);
+          allow delete: if isAdminOrSuperadmin(schoolId);
+        }
 
-          // keputusan (sub-collection)
-          match /keputusan/{keputusanId} {
-            allow read: if true;
-            allow create, update: if isSuperAdmin() || isPencatat();
-            allow delete: if isSuperAdmin();
-          }
+        // pendaftaran
+        match /pendaftaran/{docId} {
+          allow read: if isStaff(schoolId);
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // jadual
+        match /jadual/{docId} {
+          allow read: if true;
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // jadual_khas
+        match /jadual_khas/{docId} {
+          allow read: if true;
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // kategori
+        match /kategori/{katId} {
+          allow read: if true;
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // medal_tally (awam baca — SchoolLanding papar)
+        match /medal_tally/{docId} {
+          allow read: if true;
+          allow write: if isPencatat(schoolId);
+        }
+
+        // mata_olahragawan
+        match /mata_olahragawan/{docId} {
+          allow read: if true;
+          allow write: if isPencatat(schoolId);
+        }
+
+        // pilihan_olahragawan
+        match /pilihan_olahragawan/{docId} {
+          allow read: if true;
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // anugerah_custom
+        match /anugerah_custom/{docId} {
+          allow read: if true;
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // pengesahan
+        match /pengesahan/{docId} {
+          allow read: if isStaff(schoolId);
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // tetapan per-kejohanan (finalSetup, waConfig, dsb)
+        match /tetapan/{docId} {
+          allow read: if true;
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // bantahan
+        match /bantahan/{docId} {
+          allow read: if isStaff(schoolId);
+          allow write: if isPencatat(schoolId);
+        }
+
+        // pendaftaran_counter
+        match /pendaftaran_counter/{docId} {
+          allow read: if isStaff(schoolId);
+          allow write: if isAdminOrSuperadmin(schoolId);
+        }
+
+        // slot_khas
+        match /slot_khas/{docId} {
+          allow read: if isStaff(schoolId);
+          allow write: if isAdminOrSuperadmin(schoolId);
         }
       }
 
-      // pendaftaran (sub-collection)
-      match /pendaftaran/{noBib} {
-        allow read: if isStaff();
-        allow create: if isAdminOrAbove();
-        allow update: if isSuperAdmin() ||
-          (isAdmin() && resource.data.kodSekolah ==
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
-        allow delete: if isSuperAdmin();
+      // ── Notifikasi ──────────────────────────────────────────────
+      match /notifikasi/{notifId} {
+        allow read: if isAuth() && resource.data.penerimUid == request.auth.uid;
+        allow create: if false;
+        allow update: if isAuth() && resource.data.penerimUid == request.auth.uid;
+        allow delete: if false;
       }
-
-      // relay_pasukan (sub-collection)
-      match /relay_pasukan/{relayId} {
-        allow read: if isStaff();
-        allow create: if isAdminOrAbove();
-        allow update: if isSuperAdmin() ||
-          (isAdmin() && resource.data.kodSekolah ==
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kodSekolah);
-        allow delete: if isSuperAdmin();
-      }
-    }
-
-    // ── rekod ─────────────────────────────────────────────────────
-    match /rekod/{rekodId} {
-      allow read: if true;
-      allow write: if isSuperAdmin() || isPengurusTeknik();
-    }
-
-    // ── rekod_sejarah ─────────────────────────────────────────────
-    match /rekod_sejarah/{sejarahId} {
-      allow read: if isStaff();
-      allow write: if isSuperAdmin() || isPengurusTeknik();
-    }
-
-    // ── bantahan ─────────────────────────────────────────────────
-    match /bantahan/{bantahanId} {
-      allow read: if isStaff();
-      allow create: if isAdmin();
-      allow update: if isSuperAdmin();
-      allow delete: if isSuperAdmin();
-    }
-
-    // ── mata_olahragawan ─────────────────────────────────────────
-    match /mata_olahragawan/{docId} {
-      allow read: if true;
-      allow write: if isSuperAdmin();  // dikira oleh Cloud Functions
-    }
-
-    // ── jadual_acara ─────────────────────────────────────────────
-    match /jadual_acara/{jadualId} {
-      allow read: if true;
-      allow write: if isSuperAdmin();
-    }
-
-    // ── notifikasi ───────────────────────────────────────────────
-    match /notifikasi/{notifId} {
-      allow read: if isAuth() &&
-        resource.data.penerimUid == request.auth.uid;
-      allow create: if false;   // tulis oleh Cloud Functions sahaja
-      allow update: if isAuth() &&
-        resource.data.penerimUid == request.auth.uid;  // mark as read
-      allow delete: if false;
-    }
-
-    // ── audit_log ────────────────────────────────────────────────
-    // KRITIKAL: client TIDAK boleh tulis terus — Cloud Functions sahaja
-    match /audit_log/{logId} {
-      allow read: if isSuperAdmin();
-      allow write: if false;  // Cloud Functions sahaja
     }
 
   }

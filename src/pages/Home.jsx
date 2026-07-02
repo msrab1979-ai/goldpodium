@@ -220,7 +220,7 @@ function LupaPinModal({ onClose, schoolId }) {
 
 // ─── LoginForm ────────────────────────────────────────────────────────────────
 
-function LoginForm({ role, onCancel, cfg, schoolId }) {
+function LoginForm({ role, onCancel, cfg, schoolId, schoolSlug }) {
   const { loginPencatat, loginPengurus } = useAuth()
   const navigate = useNavigate()
   const [kod, setKod] = useState('')
@@ -237,11 +237,11 @@ function LoginForm({ role, onCancel, cfg, schoolId }) {
     if (!/^\d{6}$/.test(pin)) return setError('PIN mesti 6 digit.')
     setLoading(true)
     try {
-      if (isPengurus) await loginPengurus(kod.trim(), pin)
-      else await loginPencatat(kod.trim(), pin)
+      if (isPengurus) await loginPengurus(schoolId, kod.trim(), pin, schoolSlug)
+      else await loginPencatat(schoolSlug, kod.trim(), pin)
       navigate('/dashboard')
     } catch (err) {
-      setError(errMsg(err.code))
+      setError(errMsg(err.code) || err.message || 'Ralat sistem.')
     } finally {
       setLoading(false)
     }
@@ -327,7 +327,7 @@ function AdminModal({ onClose }) {
       <div className="bg-white w-full max-w-xs rounded-xl shadow-2xl overflow-hidden">
         <div className="bg-[#003399] px-5 py-4 flex items-center justify-between">
           <div>
-            <p className="text-[9px] text-white/40 uppercase tracking-widest">Sistem KOAM</p>
+            <p className="text-[9px] text-white/40 uppercase tracking-widest">Gold Podium</p>
             <p className="text-sm font-bold text-white mt-0.5">Log Masuk Pentadbir</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
@@ -367,8 +367,11 @@ const PERINGKAT_LABEL_M = { D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
 
 // Mesti sama dengan rekodKeyStr() dalam postRasmiUtils.js
 function rekodKeyHome(namaAcara, jantina, kategoriKod, peringkat) {
-  return [namaAcara, jantina, kategoriKod, peringkat]
-    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+  const norm = String(namaAcara).toUpperCase()
+    .replace(/(\d)\s*METER\b/g, '$1M')
+    .replace(/(\d)\s+M\b/g, '$1M')
+  return [norm, jantina, kategoriKod, peringkat]
+    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_')
 }
 
 function RekodModal({ peserta, acara, onClose, schoolId }) {
@@ -932,6 +935,7 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
   const status   = acara.statusAcara || 'akan_datang'
   const peringkatRaw = (acara.peringkat || '').toLowerCase()
   const namaRaw      = (acara.namaAcara  || '').toLowerCase()
+  const peringkat = acara.peringkat || ''
   const peringkatLabel = (() => {
     if (peringkatRaw === 'saringan_qf') return 'Saringan/QF'
     if (peringkatRaw === 'saringan_sf') return 'Saringan/SF'
@@ -939,7 +943,6 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
     if (peringkatRaw === 'akhir') return 'Final'
     return peringkat || '—'
   })()
-  const peringkat = acara.peringkat || ''
 
   const hasResult = ['ada_keputusan','rasmi','tidak_rasmi'].includes(status)
   let catatanText = '—'
@@ -1010,6 +1013,7 @@ export default function Home() {
 
   // Config
   const [cfg,          setCfg]          = useState(TETAPAN_DEFAULTS)
+  const [schoolSlug,   setSchoolSlug]   = useState('')
   const [kejohanan,    setKejohanan]    = useState(null)
   const [kejohananId,  setKejohananId]  = useState(null)
   const [sekolahMap,     setSekolahMap]     = useState({}) // kodSekolah → namaSekolah
@@ -1078,6 +1082,9 @@ export default function Home() {
   // Config — real-time listener supaya Home auto-update bila TetapanHome disimpan
   useEffect(() => {
     if (!schoolId) return
+    getDoc(doc(db, 'tenants', schoolId))
+      .then(s => { if (s.exists()) setSchoolSlug(s.data().slug || '') })
+      .catch(() => {})
     const unsub = onSnapshot(doc(db, 'tenants', schoolId, 'tetapan', 'home'), s => {
       if (s.exists()) setCfg({ ...TETAPAN_DEFAULTS, ...s.data() })
     })
@@ -1536,11 +1543,11 @@ export default function Home() {
     })
 
     // Step 2: scan contrib_ fields — kenalpasti relay entries
-    // Relay: isRelay===true (data baru) ATAU noKP===null (data lama)
+    // Relay: isRelay===true (data baru) ATAU noBib===null/undefined (data lama: noKP===null)
     // Pindah medal relay dari bucket individu ke bucket RELAY
     Object.entries(tallyRow).forEach(([key, val]) => {
       if (!key.startsWith('contrib_') || typeof val !== 'object' || !val || !val.pingat) return
-      const isRelayEntry = val.isRelay === true || (val.isRelay === undefined && val.noKP === null)
+      const isRelayEntry = val.isRelay === true || (val.isRelay === undefined && !val.noBib && !val.noKP)
       if (!isRelayEntry) return
 
       const kat    = val.kategoriKod || ''
@@ -1572,32 +1579,34 @@ export default function Home() {
       const tallyRow = medalTally.find(r => r.kodSekolah === kodSekolah)
       if (!tallyRow) { setAcaraSekolahCache(prev => ({ ...prev, [kodSekolah]: {} })); return }
 
-      // Kumpul noKP unik dari contrib (individu sahaja, skip relay)
-      const noKPSet = new Set()
-      const contribList = [] // { noKP, katKod, jan, pingat }
+      // Kumpul noBib unik dari contrib (individu sahaja, skip relay)
+      // noBib digunakan sebagai doc ID mata_olahragawan (bukan noKP — PDPA)
+      const noBibSet = new Set()
+      const contribList = [] // { noBib, katKod, jan, pingat }
       Object.entries(tallyRow).forEach(([k, v]) => {
         if (!k.startsWith('contrib_') || !v || !v.pingat) return
-        if (v.isRelay === true || (!v.noKP)) return // skip relay
+        if (v.isRelay === true || (!v.noBib && !v.noKP)) return // skip relay; data lama: noKP
         if (!['emas','perak','gangsa'].includes(v.pingat)) return
-        contribList.push({ noKP: v.noKP, katKod: v.kategoriKod || '', jan: v.jantina || '', pingat: v.pingat })
-        noKPSet.add(v.noKP)
+        const bibOrNoKP = v.noBib || v.noKP
+        contribList.push({ noBib: bibOrNoKP, katKod: v.kategoriKod || '', jan: v.jantina || '', pingat: v.pingat })
+        noBibSet.add(bibOrNoKP)
       })
 
-      // Step 2: ambil mata_olahragawan untuk noKP yang ada pingat
-      const noKPList = [...noKPSet]
-      const maMap = {} // noKP → data
-      await Promise.all(noKPList.map(async noKP => {
+      // Step 2: ambil mata_olahragawan untuk noBib yang ada pingat
+      const noBibList = [...noBibSet]
+      const maMap = {} // noBib → data
+      await Promise.all(noBibList.map(async noBib => {
         try {
-          const snap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan', `${noKP}_${kejId}`))
-          if (snap.exists()) maMap[noKP] = snap.data()
+          const snap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan', `${noBib}_${kejId}`))
+          if (snap.exists()) maMap[noBib] = snap.data()
         } catch { }
       }))
 
       // Step 3: bina map `${jan}_${katKod}_${pingat}` → [namaAcara]
       // Untuk setiap contrib, cari namaAcara dari acaraDetail_ dalam mata_olahragawan
       const map = {}
-      contribList.forEach(({ noKP, katKod, jan, pingat }) => {
-        const maData = maMap[noKP]
+      contribList.forEach(({ noBib, katKod, jan, pingat }) => {
+        const maData = maMap[noBib]
         if (!maData) return
         // Cari acaraDetail_ yang matching pingat ini
         Object.entries(maData).forEach(([k, v]) => {
@@ -3257,7 +3266,7 @@ export default function Home() {
                                 {extraCols.map(c => (
                                   <td key={c.key} className="px-1 sm:px-2 py-2 text-center text-xs font-bold text-gray-400">{rows.reduce((s,t)=>s+(t[c.key]||0),0)}</td>
                                 ))}
-                                <td className="px-2 sm:px-3 py-2 text-center text-xs font-black text-gray-600">{rows.reduce((s,t)=>s+(t.emas||0)+(t.perak||0)+(t.gangsa||0),0)}</td>
+                                {showJumlahCol && <td className="px-2 sm:px-3 py-2 text-center text-xs font-black text-gray-600">{rows.reduce((s,t)=>s+(t.emas||0)+(t.perak||0)+(t.gangsa||0),0)}</td>}
                               </tr>
                             </tfoot>
                           </table>
@@ -3357,7 +3366,7 @@ export default function Home() {
             <div className="bg-gradient-to-br from-[#003399] to-blue-900 px-6 py-5 text-white">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] text-white/60 font-bold uppercase tracking-[0.2em] mb-1">Sistem KOAM</p>
+                  <p className="text-[10px] text-white/60 font-bold uppercase tracking-[0.2em] mb-1">Gold Podium</p>
                   <h2 className="text-lg font-black tracking-wide">Akses Staff</h2>
                   <p className="text-[11px] text-white/70 mt-1">Sila pilih kategori akses anda</p>
                 </div>
@@ -3386,7 +3395,7 @@ export default function Home() {
                     </svg>
                     Pilihan Akses
                   </button>
-                  <LoginForm role={activeRole} onCancel={() => setSelected(null)} cfg={cfg} schoolId={schoolId} />
+                  <LoginForm role={activeRole} onCancel={() => setSelected(null)} cfg={cfg} schoolId={schoolId} schoolSlug={schoolSlug} />
                 </>
               ) : (
                 <div className="space-y-2.5">

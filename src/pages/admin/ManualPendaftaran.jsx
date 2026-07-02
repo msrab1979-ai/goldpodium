@@ -108,11 +108,13 @@ export default function ManualPendaftaran() {
         }
 
         // Kategori — had acara individu & beregu (live)
-        const katSnap = await getDocs(query(
-          collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'),
-          orderBy('umurHad')
-        ))
-        setKategoriList(katSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+        if (kejId) {
+          const katSnap = await getDocs(query(
+            collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'),
+            orderBy('umurHad')
+          ))
+          setKategoriList(katSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+        }
 
         // Acara — had atlet per sekolah (live), dari kejohanan aktif
         if (kejId) {
@@ -627,7 +629,7 @@ export default function ManualPendaftaran() {
         </p>
         <div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-gray-400">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-          Data dikemaskini secara langsung dari Sistem KOAM
+          Data dikemaskini secara langsung dari Sistem Gold Podium
         </div>
       </div>
 

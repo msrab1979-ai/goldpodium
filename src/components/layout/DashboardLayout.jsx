@@ -3,6 +3,8 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { useLesen } from '../../hooks/useLesen'
+import LesenTamat from '../../pages/LesenTamat'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -127,9 +129,9 @@ function SidebarContent({ userData, userRole, visibleNav, onLogout, onNavClick }
     <div className="flex flex-col h-full">
       {/* Branding */}
       <div className="px-4 py-4 border-b border-white/10">
-        <p className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Sistem KOAM</p>
-        <p className="text-sm font-bold text-white leading-tight mt-0.5">Olahraga Antara Murid</p>
-        <p className="text-[10px] text-white/40 mt-0.5">mssdkemaman-olahraga</p>
+        <p className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Gold Podium</p>
+        <p className="text-sm font-bold text-white leading-tight mt-0.5">Sistem Pengurusan Olahraga</p>
+        <p className="text-[10px] text-white/40 mt-0.5">goldpodium.web.app</p>
       </div>
 
       {/* User info */}
@@ -214,10 +216,16 @@ export default function DashboardLayout({ children }) {
   const schoolId = userData?.schoolId || ''
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const lesen = useLesen(schoolId)
 
   async function handleLogout() {
     await logout()
     navigate('/login')
+  }
+
+  // Superadmin dikecualikan dari lesen check
+  if (!lesen.loading && lesen.expired && userRole !== 'superadmin') {
+    return <LesenTamat lessenTamat={lesen.lessenTamat} onLogout={handleLogout} />
   }
 
   // ── Subscribe toggle Sijil Pencapaian + Buku Kongsi (real-time) ──────────
@@ -227,6 +235,7 @@ export default function DashboardLayout({ children }) {
   const [sijilPencapaianAktif, setSijilPencapaianAktif] = useState(false)
   const [bukuKongsiAktif, setBukuKongsiAktif]           = useState(false)
   useEffect(() => {
+    if (!schoolId) return
     const unsub1 = onSnapshot(
       doc(db, 'tenants', schoolId, 'tetapan', 'sijilPencapaian'),
       snap => {
@@ -306,7 +315,7 @@ export default function DashboardLayout({ children }) {
             <div>
               <p className="text-xs text-gray-400 leading-none">Kementerian Pendidikan Malaysia</p>
               <p className="text-sm font-bold text-[#003399] leading-tight">
-                Kejohanan Olahraga Antara Murid (KOAM)
+                Sistem Pengurusan Kejohanan Olahraga
               </p>
             </div>
           </div>
@@ -321,7 +330,21 @@ export default function DashboardLayout({ children }) {
           </div>
         </header>
 
-<main className="flex-1 overflow-y-auto">
+        {/* Banner amaran lesen hampir tamat (7 hari atau kurang) */}
+        {!lesen.loading && !lesen.expired && lesen.bakiHari !== null && lesen.bakiHari <= 7 && userRole !== 'superadmin' && (
+          <div className="bg-amber-500 px-4 py-2 flex items-center gap-2.5 shrink-0">
+            <svg className="w-4 h-4 text-white shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <p className="text-white font-bold text-xs">
+              Amaran: Lesen sistem tamat pada {lesen.lessenTamat}
+              {lesen.bakiHari === 0 ? ' — HARI INI!' : ` — ${lesen.bakiHari} hari lagi`}
+            </p>
+            <p className="text-white/70 text-xs hidden sm:block">· Hubungi pentadbir Gold Podium untuk perbaharui.</p>
+          </div>
+        )}
+
+        <main className="flex-1 overflow-y-auto">
           {children}
         </main>
       </div>

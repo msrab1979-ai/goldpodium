@@ -202,7 +202,7 @@ function AcaraRow({ acara, isLast, nowMs, onClick }) {
   const peringkat = acara.peringkat || ''
   const jenisBadge = ['saringan_qf','saringan_sf','separuh_akhir'].includes(peringkat)
     ? { text: peringkat === 'saringan_qf' ? 'Saringan/QF' : peringkat === 'saringan_sf' ? 'Saringan/SF' : 'Separuh Akhir', cls: 'bg-blue-50 text-blue-600 border border-blue-100' }
-    : peringkat === 'final'
+    : ['akhir', 'final_p'].includes(peringkat)
     ? { text: 'Final', cls: 'bg-amber-50 text-amber-600 border border-amber-100' }
     : { text: 'Terus Final', cls: 'bg-purple-50 text-purple-500 border border-purple-100' }
 
@@ -1472,7 +1472,7 @@ export default function PencatatInputKeputusan() {
       const grantMedal = !isSaringanLocal && (
         ['final', 'terus_final'].includes(selectedHeat.fasa) || heats.length === 1
       )
-      const heatDocForPost  = { id: selectedHeat.heatId, peserta: pesertaFinal, windSpeed: selectedHeat.windSpeed ?? '' }
+      const heatDocForPost  = { id: selectedHeat.heatId, peserta: pesertaFinal, windSpeed: windSpeedVal ?? selectedHeat.windSpeed ?? '' }
       const acaraDocForPost = { ...acara, id: acara.acaraId }
       await runPostRasmi(db, heatDocForPost, acaraDocForPost, kejId, {
         schoolId, mataPingat, peringkatKej, grantMedal,
@@ -1861,8 +1861,9 @@ export default function PencatatInputKeputusan() {
                   {allDates.map(d => {
                     const isActive = d === selectedHari
                     const isToday  = d === new Date().toISOString().slice(0, 10)
-                    const hari = ['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'][new Date(d).getDay()]
-                    const tgl  = `${new Date(d).getDate()}/${new Date(d).getMonth() + 1}`
+                    const dt   = new Date(d + 'T00:00:00')
+                    const hari = ['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'][dt.getDay()]
+                    const tgl  = `${dt.getDate()}/${dt.getMonth() + 1}`
                     return (
                       <button key={d} onClick={() => setSelectedHari(d)}
                         className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${

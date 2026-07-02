@@ -239,6 +239,36 @@ async function gate2_hadAtletSekolah(schoolId, kodSekolah, aceraId, kejohananId)
   return { valid: true, had: hadPerSekolah, semasa }
 }
 
+// ─── GATE OVERRIDE KATEGORI ───────────────────────────────────────────────────
+//
+// Jika atlet ada kategoriOverride dalam pendaftaran:
+//   - Mesti daftar acara kategori override sahaja
+//   - Tidak boleh daftar acara kategori asal
+//   - Gate 3 (umur) diskip untuk kategori override
+
+async function gateOverrideKategori(schoolId, noKP, aceraId, kejohananId, kategoriId) {
+  const pendSnap = await getDocs(
+    query(pendCol(schoolId, kejohananId), where('noKP', '==', noKP))
+  )
+  if (pendSnap.empty) return { valid: true, override: null }
+
+  const pData = pendSnap.docs[0].data()
+  const override = pData.kategoriOverride || null
+  if (!override) return { valid: true, override: null }
+
+  if (kategoriId !== override) {
+    return {
+      valid: false,
+      gate: 'GATE_OVERRIDE',
+      mesej: `Atlet ini telah ditetapkan kategori ${override}. Tidak boleh daftar acara kategori ${kategoriId}. Sila daftar ke acara kategori ${override} sahaja.`,
+      had: 0,
+      semasa: 0,
+    }
+  }
+
+  return { valid: true, override }
+}
+
 // ─── GATE 3 — Kelayakan Umur (WA Standard) ────────────────────────────────────
 //
 // KategoriSetup simpan: umurMin (cth: 9) + umurHad (cth: 10) — nilai UMUR
@@ -523,17 +553,23 @@ export async function validasiPendaftaran({
     }
   }
 
+  // GATE OVERRIDE — semak kategoriOverride dulu sebelum gate lain
+  const overrideResult = await gateOverrideKategori(schoolId, noKP, aceraId, kejohananId, kategoriId)
+  if (!overrideResult.valid) return overrideResult
+  const hasOverride = !!overrideResult.override
+
   result = await gate1_hadAcaraAtlet(schoolId, noKP, kejohananId, acaraBaruIsIndividu, tarikhLahir, jantina, tahunKejohanan)
-  console.log('[GATE1]', { noKP, acaraBaruIsIndividu, result })
   if (!result.valid) return result
 
   // GATE 2 — Had atlet per sekolah per acara
   result = await gate2_hadAtletSekolah(schoolId, kodSekolah, aceraId, kejohananId)
   if (!result.valid) return result
 
-  // GATE 3 — Kelayakan umur (WA standard — ikut tarikh lahir)
-  result = await gate3_kelayakanUmur(schoolId, tarikhLahir, kategoriId, kejohananId, tahunKejohanan)
-  if (!result.valid) return result
+  // GATE 3 — Kelayakan umur — skip jika ada override kategori yang sah
+  if (!hasOverride) {
+    result = await gate3_kelayakanUmur(schoolId, tarikhLahir, kategoriId, kejohananId, tahunKejohanan)
+    if (!result.valid) return result
+  }
 
   // GATE 4 — Jantina match
   result = await gate4_jantina(schoolId, noKP, aceraId, kejohananId)

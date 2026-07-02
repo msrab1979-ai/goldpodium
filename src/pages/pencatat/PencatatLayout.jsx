@@ -4,6 +4,8 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { usePWATitle } from '../../hooks/usePWATitle'
+import { useLesen } from '../../hooks/useLesen'
+import LesenTamat from '../LesenTamat'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
@@ -16,16 +18,16 @@ function buildNavItems(slug) {
       ],
     },
     {
+      section: 'PENGURUSAN',
+      items: [
+        { label: 'Start List',      path: `/${slug}/pencatat/startlist`,         icon: 'startlist' },
+      ],
+    },
+    {
       section: 'OPERASI',
       items: [
         { label: 'Input Keputusan', path: `/${slug}/pencatat/input-keputusan`,   icon: 'clipboard' },
         { label: 'Cetakan Hadiah',  path: `/${slug}/pencatat/cetakan-hadiah`,    icon: 'gift'      },
-      ],
-    },
-    {
-      section: 'RUJUKAN',
-      items: [
-        { label: 'Start List',      path: `/${slug}/pencatat/startlist`,         icon: 'startlist' },
         { label: 'Rekod Semasa',    path: `/${slug}/pencatat/rekod`,             icon: 'star'      },
         { label: 'Cetak Acara',     path: `/${slug}/pencatat/cetak-acara`,       icon: 'file'      },
       ],
@@ -57,7 +59,8 @@ function SidebarContent({ userData, slug, sistemTutup, mesejTutup, onLogout, onN
       {/* Branding */}
       <div className="px-4 py-4 border-b border-white/10">
         <p className="text-[10px] font-medium tracking-widest text-white/50 uppercase">Gold Podium</p>
-        <p className="text-sm font-bold text-white leading-tight mt-0.5">Panel Pencatat</p>
+        <p className="text-sm font-bold text-white leading-tight mt-0.5">Sistem Pengurusan Olahraga</p>
+        <p className="text-[10px] text-white/40 mt-0.5">goldpodium.web.app</p>
       </div>
 
       {/* User info */}
@@ -122,9 +125,11 @@ export default function PencatatLayout({ children }) {
   const { userData, logout } = useAuth()
   const navigate = useNavigate()
   const { slug }  = useParams()
+  const schoolId  = userData?.schoolId || ''
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sistemTutup, setSistemTutup] = useState(false)
   const [mesejTutup,  setMesejTutup]  = useState('')
+  const lesen = useLesen(schoolId)
 
   useEffect(() => {
     if (!userData?.schoolId) return
@@ -148,6 +153,10 @@ export default function PencatatLayout({ children }) {
 
   const nama = userData?.name || userData?.nama || userData?.kodAkses || 'Pencatat'
   usePWATitle(slug ? slug.toUpperCase() : null)
+
+  if (!lesen.loading && lesen.expired) {
+    return <LesenTamat lessenTamat={lesen.lessenTamat} onLogout={handleLogout} />
+  }
 
   const sidebarProps = {
     userData,
@@ -186,14 +195,14 @@ export default function PencatatLayout({ children }) {
               {Icons.menu}
             </button>
             <div>
-              <p className="text-xs text-gray-400 leading-none">Gold Podium</p>
-              <p className="text-sm font-bold text-[#003399] leading-tight">Panel Pencatat</p>
+              <p className="text-xs text-gray-400 leading-none">Kementerian Pendidikan Malaysia</p>
+              <p className="text-sm font-bold text-[#003399] leading-tight">Sistem Pengurusan Kejohanan Olahraga</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:block text-right">
               <p className="text-xs font-semibold text-gray-700">{nama}</p>
-              <p className="text-[10px] text-gray-400">Pencatat</p>
+              <p className="text-[10px] text-gray-400">{userData?.role === 'urusetia' ? 'Urusetia' : userData?.role === 'pengurus_teknik' ? 'Pengurus Teknik' : 'Pencatat'}</p>
             </div>
             <div className="w-8 h-8 rounded-full bg-[#003399] flex items-center justify-center text-xs font-bold text-white">
               {nama.charAt(0).toUpperCase()}

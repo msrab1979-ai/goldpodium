@@ -68,7 +68,7 @@ export function getFinalistSetup(acara, finalSetup, fasa = 'toFinal') {
  * @param {Array}  heats       - senarai heat (field: heatId|id, peserta, peringkat, statusKeputusan, noHeat)
  * @param {Object} acara       - acara doc (jenisAcara, kategoriKod, noAcara, ...)
  * @param {Object} finalSetup  - dari Firestore tetapan/finalSetup (boleh null → guna fallback)
- * @returns {Array} senarai atlet layak { noBib, namaAtlet, kodSekolah, noKP, keputusan, heatId, noHeat }
+ * @returns {Array} senarai atlet layak { noBib, namaAtlet, kodSekolah, keputusan, heatId, noHeat }
  */
 export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
   const { bestHeat, bestTime } = getFinalistSetup(acara, finalSetup, fasa)
@@ -93,7 +93,6 @@ export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
     noBib:      p.noBib      || '',
     namaAtlet:  p.namaAtlet  || '',
     kodSekolah: p.kodSekolah || '',
-    noKP:       p.noKP       || '',
     keputusan:  Number(p.keputusan),
     heatId:     heat.heatId  || heat.id || '',
     noHeat:     heat.noHeat  || 0,

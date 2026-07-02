@@ -68,9 +68,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   const tPath  = (col, id)      => doc(db, 'tenants', schoolId, 'kejohanan', kejId, col, id)
   const rekodP = (key)          => doc(db, 'tenants', schoolId, 'rekod', key)
 
-  const pecahRekodMap      = {} // noKP      → peringkat (individu) — pecah rekod
+  const pecahRekodMap      = {} // noBib     → peringkat (individu) — pecah rekod
   const pecahRekodRelayMap = {} // kodSekolah → peringkat (relay) — pecah rekod
-  const samaiRekodMap      = {} // noKP      → peringkat (individu) — samai rekod
+  const samaiRekodMap      = {} // noBib     → peringkat (individu) — samai rekod
   const samaiRekodRelayMap = {} // kodSekolah → peringkat (relay) — samai rekod
 
   // namaSekolah — guna yang tersimpan dalam peserta terus (GP simpan namaSekolah dalam heat)
@@ -102,8 +102,8 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       if (bK !== null) return 1
       return 0
     })
-  // Relay guna kodSekolah sebagai key (noBib/noKP tiada)
-  const pKey = p => isRelay ? (p.kodSekolah || p.lorong) : (p.noKP || p.noBib)
+  // Relay guna kodSekolah sebagai key; individu guna noBib (bukan noKP — PDPA)
+  const pKey = p => isRelay ? (p.kodSekolah || p.lorong) : (p.noBib || p.noKP)
   const computedRankMap = new Map()
   // Lompat Tinggi: GUNA kedudukan manual pencatat (count-back rules MSSM)
   // Lain: sequential auto dengan tiebreak masaSebenar → kedudukan manual
@@ -125,16 +125,17 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
     if (!rank || isFlagged || !hasResult) continue
 
     // ── Mata olahragawan (individu, bukan relay, top 4, fasa final sahaja) ─────
-    if (grantMedal && !isRelay && p.noKP && rank <= 4) {
+    // Doc ID guna noBib (bukan noKP — PDPA, mata_olahragawan allow read: if true)
+    if (grantMedal && !isRelay && p.noBib && rank <= 4) {
       const mata      = mataPingat[rank] ?? 0
       const pingat    = NAMA_PINGAT[rank]
-      const mId       = `${p.noKP}_${kejId}`
+      const mId       = `${p.noBib}_${kejId}`
       const mRef      = tPath('mata_olahragawan', mId)
       const unitAcara = isPadang ? 'm' : 's'
       const acaraKey  = `acaraDetail_${acaraDoc.id}`
       try {
         await setDoc(mRef, {
-          noKP:        p.noKP,
+          noBib:       p.noBib       || '',
           namaAtlet:   p.namaAtlet   || '',
           kodSekolah:  p.kodSekolah  || '',
           namaSekolah: getNamaSekolah(p),
@@ -169,8 +170,8 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       const pingat     = NAMA_PINGAT[rank]
       const tId        = `${p.kodSekolah}_${kejId}`
       const tRef       = tPath('medal_tally', tId)
-      // Relay: guna kodSekolah sebagai key unik (noBib/noKP tiada)
-      const contribKey = `contrib_${heatDoc.id}_${isRelay ? p.kodSekolah : (p.noKP || p.noBib || rank)}`
+      // Relay: guna kodSekolah; individu: guna noBib → lorong → rank (bukan noKP — PDPA)
+      const contribKey = `contrib_${heatDoc.id}_${isRelay ? p.kodSekolah : (p.noBib || p.lorong || rank)}`
       try {
         await setDoc(tRef, {
           kodSekolah: p.kodSekolah, namaSekolah: getNamaSekolah(p), kejohananId: kejId,
@@ -183,7 +184,8 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         // Relay guna 'RELAY' sebagai katKey supaya breakdown tally papar row berasingan
         const katKey       = isRelay ? 'RELAY' : (acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''))
         const katPingat    = `kat_${katKey}_${acaraDoc.jantina}_${pingat}`
-        const tPatch = { [contribKey]: { pingat, noKP: p.noKP || null, rank, kategoriKod: katKey, jantina: acaraDoc.jantina, isRelay: !!isRelay } }
+        // noKP TIDAK disimpan dalam medal_tally — public-readable collection
+        const tPatch = { [contribKey]: { pingat, noBib: p.noBib || null, rank, kategoriKod: katKey, jantina: acaraDoc.jantina, isRelay: !!isRelay } }
         if (prevContr) {
           const prevPingat   = prevContr.pingat      || ''
           const prevKat      = prevContr.kategoriKod || katKey
@@ -287,18 +289,18 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         }
 
         // Samai rekod — badge MRKL, tiada tuntutan (rekod tidak berubah)
-        if (isEqual && p.noKP) {
-          samaiRekodMap[p.noKP] = peringkatKej
+        if (isEqual && p.noBib) {
+          samaiRekodMap[p.noBib] = peringkatKej
         }
 
         if (isBetter) {
           const today    = new Date().toISOString().split('T')[0]
-          if (p.noKP) pecahRekodMap[p.noKP] = peringkatKej
+          if (p.noBib) pecahRekodMap[p.noBib] = peringkatKej
 
           // Simpan dalam mata_olahragawan untuk paparan Olahragawan
-          if (p.noKP) {
+          if (p.noBib) {
             const rekodLama = rekodSedia ?? null
-            await setDoc(tPath('mata_olahragawan', `${p.noKP}_${kejId}`), {
+            await setDoc(tPath('mata_olahragawan', `${p.noBib}_${kejId}`), {
               [`rekod_${acaraDoc.id}`]: {
                 namaAcara:        acaraDoc.namaAcara,
                 namaAcaraPendek:  acaraDoc.namaAcaraPendek || acaraDoc.namaAcara,
@@ -323,7 +325,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
             jantina:      acaraDoc.jantina,
             kategoriKod:  acaraDoc.kategoriKod,
             peringkat:    peringkatKej,
-            noKP:         p.noKP    || '',
+            // noKP TIDAK disimpan dalam rekod — public-readable collection
+            // atletId digunakan sebagai ref jika perlu lookup (sama nilai tapi tidak IC)
+            atletId:      p.noKP    || '',
             namaAtlet:    p.namaAtlet  || '',
             kodSekolah:   p.kodSekolah || '',
             namaSekolah:  getNamaSekolah(p),
@@ -473,8 +477,8 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
           if (pecah) return { ...p, pecahRekod: pecah }
           if (samai) return { ...p, samaiRekod: samai }
         } else {
-          const pecah = pecahRekodMap[p.noKP]
-          const samai = samaiRekodMap[p.noKP]
+          const pecah = pecahRekodMap[p.noBib]
+          const samai = samaiRekodMap[p.noBib]
           if (pecah) return { ...p, pecahRekod: pecah }
           if (samai) return { ...p, samaiRekod: samai }
         }

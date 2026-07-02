@@ -56,8 +56,8 @@ export default function AnalisaPingat() {
   const [cetakTBLoading, setCetakTBLoading] = useState(false)
 
   // Calon Home state
-  const [calonList,    setCalonList]    = useState([])   // [{ noKP, namaAtlet, namaSekolah, kategoriKod, pingat, acaraPingat, mata, rekodList }]
-  const [savingCalon,  setSavingCalon]  = useState(null) // noKP yang sedang disimpan
+  const [calonList,    setCalonList]    = useState([])   // [{ noBib, namaAtlet, namaSekolah, kategoriKod, pingat, acaraPingat, mata, rekodList }]
+  const [savingCalon,  setSavingCalon]  = useState(null) // noBib yang sedang disimpan
   const [showAtHome,   setShowAtHome]   = useState(false)
   const [savingShow,   setSavingShow]   = useState(false)
 
@@ -89,16 +89,17 @@ export default function AnalisaPingat() {
 
         // 4. Rekod dipecah dari mata_olahragawan
         const mataSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan'), where('kejohananId', '==', kejId)))
-        const tuntutanByNoKP = {}
+        const tuntutanByBib = {}
         mataSnap.docs.forEach(d => {
           const data = d.data()
-          const noKP = data.noKP || d.id.replace(`_${kejId}`, '')
-          if (!noKP) return
+          // noBib adalah doc ID prefix (data baru); data.noKP = data lama (backward compat)
+          const bib = data.noBib || d.id.replace(`_${kejId}`, '')
+          if (!bib) return
           Object.entries(data).forEach(([key, val]) => {
             if (!key.startsWith('rekod_')) return
             if (!val?.namaAcara) return
-            if (!tuntutanByNoKP[noKP]) tuntutanByNoKP[noKP] = []
-            tuntutanByNoKP[noKP].push({
+            if (!tuntutanByBib[bib]) tuntutanByBib[bib] = []
+            tuntutanByBib[bib].push({
               namaAcara:    val.namaAcara    || '—',
               namaAcaraPendek: val.namaAcaraPendek || val.namaAcara || '—',
               prestasiBaru: val.prestasiBaru ?? null,
@@ -129,10 +130,11 @@ export default function AnalisaPingat() {
 
             for (const p of (hd.peserta || [])) {
               const rank = p.rankDalamHeat
-              if (!p.noKP) continue
+              const bib  = p.noBib || p.noKP  // backward compat: data lama guna noKP
+              if (!bib) continue
               if (!rank || rank > 3) continue
 
-              if (!aMap[p.noKP]) aMap[p.noKP] = {
+              if (!aMap[bib]) aMap[bib] = {
                 namaAtlet:   p.namaAtlet   || '—',
                 kodSekolah:  p.kodSekolah  || '',
                 kategoriKod: p.kategoriKod || ad.kategoriKod || '',
@@ -140,27 +142,27 @@ export default function AnalisaPingat() {
                 acaraPingat: { 1: [], 2: [], 3: [] },
                 mata:        0,
               }
-              aMap[p.noKP].pingat[rank]++
-              aMap[p.noKP].acaraPingat[rank].push(ad.namaAcaraPendek || ad.namaAcara || '—')
+              aMap[bib].pingat[rank]++
+              aMap[bib].acaraPingat[rank].push(ad.namaAcaraPendek || ad.namaAcara || '—')
             }
           }
         }
 
         // 6. Attach sekolah, mata, rekodList
-        Object.entries(aMap).forEach(([noKP, a]) => {
+        Object.entries(aMap).forEach(([bib, a]) => {
           a.namaSekolah = skolMap[a.kodSekolah] || a.kodSekolah || '—'
           a.mata        = (a.pingat[1] * 5) + (a.pingat[2] * 3) + (a.pingat[3] * 2)
-          a.rekodList   = tuntutanByNoKP[noKP] || []
+          a.rekodList   = tuntutanByBib[bib] || []
         })
 
         // 7. Atlet ada rekod tapi tiada pingat
         mataSnap.docs.forEach(d => {
           const data = d.data()
-          const noKP = data.noKP || d.id.replace(`_${kejId}`, '')
-          if (!noKP || !tuntutanByNoKP[noKP] || aMap[noKP]) return
+          const bib  = data.noBib || d.id.replace(`_${kejId}`, '')
+          if (!bib || !tuntutanByBib[bib] || aMap[bib]) return
           const firstRekod = Object.entries(data).find(([k]) => k.startsWith('rekod_'))
           const katKod = firstRekod?.[1]?.kategoriKod || ''
-          aMap[noKP] = {
+          aMap[bib] = {
             namaAtlet:   data.namaAtlet  || '—',
             kodSekolah:  data.kodSekolah || '',
             namaSekolah: skolMap[data.kodSekolah] || data.namaSekolah || data.kodSekolah || '—',
@@ -168,7 +170,7 @@ export default function AnalisaPingat() {
             pingat:      { 1: 0, 2: 0, 3: 0 },
             acaraPingat: { 1: [], 2: [], 3: [] },
             mata:        0,
-            rekodList:   tuntutanByNoKP[noKP],
+            rekodList:   tuntutanByBib[bib],
           }
         })
 
@@ -195,7 +197,7 @@ export default function AnalisaPingat() {
     if (!selKat) return []
     return Object.entries(atletMap)
       .filter(([, a]) => a.kategoriKod === selKat)
-      .map(([noKP, a]) => ({ noKP, ...a }))
+      .map(([noBib, a]) => ({ noBib, ...a }))
       .sort((a, b) => {
         if (b.pingat[1] !== a.pingat[1]) return b.pingat[1] - a.pingat[1]
         if (b.pingat[2] !== a.pingat[2]) return b.pingat[2] - a.pingat[2]
@@ -234,10 +236,10 @@ export default function AnalisaPingat() {
       let   rekodSah     = 0
 
       mataSnap.docs.forEach(d => {
-        const data  = d.data()
-        const noKP  = data.noKP || d.id.replace(`_${kejId}`, '')
-        const nama  = data.namaAtlet  || noKP
-        const skol  = data.namaSekolah || data.kodSekolah || '—'
+        const data   = d.data()
+        const bib    = data.noBib || d.id.replace(`_${kejId}`, '')
+        const nama   = data.namaAtlet  || bib
+        const skol   = data.namaSekolah || data.kodSekolah || '—'
         const katKod = data.kategoriKod || ''
 
         const fsEmas   = data.pingat_emas   || 0
@@ -245,7 +247,7 @@ export default function AnalisaPingat() {
         const fsGangsa = data.pingat_gangsa || 0
         const fsMata   = data.jumlahMata    || 0
 
-        const atlet = atletMap[noKP]
+        const atlet = atletMap[bib]
         if (atlet) {
           const kirEmas   = atlet.pingat[1] || 0
           const kirPerak  = atlet.pingat[2] || 0
@@ -254,7 +256,7 @@ export default function AnalisaPingat() {
 
           if (fsEmas !== kirEmas || fsPerak !== kirPerak || fsGangsa !== kirGangsa) {
             medalBeza.push({
-              noKP, nama, skol, katKod,
+              bib, nama, skol, katKod,
               fs:  { emas: fsEmas,  perak: fsPerak,  gangsa: fsGangsa,  mata: fsMata  },
               kir: { emas: kirEmas, perak: kirPerak, gangsa: kirGangsa, mata: kirMata },
             })
@@ -266,24 +268,29 @@ export default function AnalisaPingat() {
           if (!val?.namaAcara) return
 
           const rekodNama = val.namaAcaraPendek || val.namaAcara || ''
-          const rKey = [rekodNama, val.jantina || data.jantina || '', val.kategoriKod || katKod, val.peringkat || 'D']
-            .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+          const rekodNamaNorm = String(rekodNama).toUpperCase()
+            .replace(/(\d)\s*METER\b/g, '$1M')
+            .replace(/(\d)\s+M\b/g, '$1M')
+            .replace(/\s+/g, '_')
+            .replace(/[^A-Z0-9_]/g, '_')
+          const rKey = [rekodNamaNorm, val.jantina || data.jantina || '', val.kategoriKod || katKod, val.peringkat || 'D']
+            .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_')
 
           const inLib      = !!rekodLib[rKey]
           const inTuntutan = !!tuntutanLib[rKey]
 
           if (inLib) {
-            const lib = rekodLib[rKey]
-            const libNoKP = lib.noKP || ''
-            if (libNoKP && libNoKP !== noKP) {
-              rekodStale.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Rekod disahkan — pemegang lain', libNoKP, libNama: lib.namaAtlet || '—' })
+            const lib    = rekodLib[rKey]
+            const libBib = lib.atletId || lib.noKP || ''  // atletId = data baru, noKP = data lama
+            if (libBib && libBib !== bib) {
+              rekodStale.push({ bib, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Rekod disahkan — pemegang lain', libBib, libNama: lib.namaAtlet || '—' })
             } else {
               rekodSah++
             }
           } else if (inTuntutan) {
-            rekodPending.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey })
+            rekodPending.push({ bib, nama, skol, namaAcara: val.namaAcara, rKey })
           } else {
-            rekodStale.push({ noKP, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Tiada dalam library & tiada tuntutan' })
+            rekodStale.push({ bib, nama, skol, namaAcara: val.namaAcara, rKey, sebab: 'Tiada dalam library & tiada tuntutan' })
           }
         })
       })
@@ -312,13 +319,13 @@ export default function AnalisaPingat() {
   }
 
   async function toggleCalon(atlet) {
-    const noKP = atlet.noKP
-    setSavingCalon(noKP)
-    const sudahCalon = calonList.some(c => c.noKP === noKP)
+    const noBib = atlet.noBib
+    setSavingCalon(noBib)
+    const sudahCalon = calonList.some(c => c.noBib === noBib)
     const newCalon = sudahCalon
-      ? calonList.filter(c => c.noKP !== noKP)
+      ? calonList.filter(c => c.noBib !== noBib)
       : [...calonList, {
-          noKP,
+          noBib,
           namaAtlet:    atlet.namaAtlet,
           namaSekolah:  atlet.namaSekolah,
           kategoriKod:  atlet.kategoriKod,
@@ -414,7 +421,7 @@ export default function AnalisaPingat() {
       kategoriList.forEach(kat => {
         const katRows = Object.entries(atletMap)
           .filter(([, a]) => a.kategoriKod === kat.kod)
-          .map(([noKP, a]) => ({ noKP, ...a }))
+          .map(([noBib, a]) => ({ noBib, ...a }))
           .sort((a, b) => {
             if (b.pingat[1] !== a.pingat[1]) return b.pingat[1] - a.pingat[1]
             if (b.pingat[2] !== a.pingat[2]) return b.pingat[2] - a.pingat[2]
@@ -499,7 +506,7 @@ export default function AnalisaPingat() {
         pdf.setFontSize(6)
         pdf.setTextColor(150)
         pdf.text(`Muka ${i} / ${totalPages}`, pageW / 2, pageH - 5, { align: 'center' })
-        pdf.text('Sistem KOAM — mssdkemaman-olahraga.web.app', pageW - 10, pageH - 5, { align: 'right' })
+        pdf.text('Sistem Gold Podium — goldpodium.web.app', pageW - 10, pageH - 5, { align: 'right' })
         pdf.setTextColor(0)
       }
 
@@ -609,7 +616,7 @@ export default function AnalisaPingat() {
         // Footer
         pdf.setFontSize(6)
         pdf.setTextColor(150)
-        pdf.text(`Sistem KOAM — mssdkemaman-olahraga.web.app`, pageW / 2, pageH - 5, { align: 'center' })
+        pdf.text(`Sistem Gold Podium — goldpodium.web.app`, pageW / 2, pageH - 5, { align: 'center' })
         pdf.setTextColor(0)
       })
 
@@ -898,13 +905,13 @@ export default function AnalisaPingat() {
                   {rows.map((a, i) => {
                     const rowBg = i === 0 ? 'bg-yellow-50' : i === 1 ? 'bg-gray-50/60' : i === 2 ? 'bg-orange-50' : ''
                     return (
-                      <tr key={a.noKP} className={`${rowBg} hover:bg-blue-50/40 transition-colors`}>
+                      <tr key={a.noBib} className={`${rowBg} hover:bg-blue-50/40 transition-colors`}>
                         <td className="px-3 py-3 text-center font-black text-gray-400">
                           {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
                         </td>
                         <td className="px-3 py-3">
                           <p className="font-semibold text-gray-900">{a.namaAtlet}</p>
-                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">{a.noKP}</p>
+                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">{a.noBib}</p>
                         </td>
                         <td className="px-3 py-3 text-gray-600 max-w-[160px]">
                           <p className="truncate">{a.namaSekolah}</p>
@@ -949,8 +956,8 @@ export default function AnalisaPingat() {
                         {/* Kolum Calon — toggle show di Home */}
                         <td className="px-3 py-3 text-center">
                           {(() => {
-                            const isCalon = calonList.some(c => c.noKP === a.noKP)
-                            const isSaving = savingCalon === a.noKP
+                            const isCalon = calonList.some(c => c.noBib === a.noBib)
+                            const isSaving = savingCalon === a.noBib
                             return (
                               <button
                                 onClick={() => toggleCalon(a)}
@@ -974,7 +981,7 @@ export default function AnalisaPingat() {
                               {tajukList.map(t => (
                                 <button key={t.id}
                                   onClick={() => handlePilihAtlet(t.id, {
-                                    noKP:        a.noKP,
+                                    noBib:       a.noBib,
                                     namaAtlet:   a.namaAtlet,
                                     namaSekolah: a.namaSekolah,
                                     pingat:      a.pingat,
@@ -984,11 +991,11 @@ export default function AnalisaPingat() {
                                   })}
                                   disabled={savingTajuk}
                                   className={`text-[10px] px-2 py-1 rounded font-semibold border transition-colors ${
-                                    t.atlet?.noKP === a.noKP
+                                    t.atlet?.noBib === a.noBib
                                       ? 'bg-green-100 border-green-300 text-green-700'
                                       : 'bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'
                                   }`}>
-                                  {t.atlet?.noKP === a.noKP ? '✓ ' : ''}{t.namaTajuk}
+                                  {t.atlet?.noBib === a.noBib ? '✓ ' : ''}{t.namaTajuk}
                                 </button>
                               ))}
                             </div>
@@ -1018,6 +1025,7 @@ export default function AnalisaPingat() {
                     <td className="px-3 py-2 text-[10px] text-gray-400">
                       {rows.reduce((s, a) => s + a.rekodList.length, 0)} rekod dipecah
                     </td>
+                    <td />
                     <td />
                   </tr>
                 </tfoot>

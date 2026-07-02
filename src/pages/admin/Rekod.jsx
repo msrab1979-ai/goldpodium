@@ -60,8 +60,14 @@ function formatPrestasi(prestasi, unit) {
 }
 
 function rekodKey(namaAcara, jantina, kategoriKod, peringkat) {
-  return [namaAcara, jantina, kategoriKod, peringkat]
-    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+  const normalized = String(namaAcara || '')
+    .toUpperCase()
+    .replace(/(\d)\s*METER\b/g, '$1M')
+    .replace(/(\d)\s+M\b/g, '$1M')
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Z0-9_]/g, '_')
+  return [normalized, jantina, kategoriKod, peringkat]
+    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_')
 }
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
@@ -1148,6 +1154,10 @@ export default function Rekod() {
     setAuditLoading(true)
     setAuditResult(null)
     try {
+      const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const kejDoc = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', aktifKejId))
+      const peringkatKej = PKOD[(kejDoc.data()?.peringkat || '').toLowerCase()] || 'D'
+
       // 1. Ambil semua acara untuk kejohanan aktif
       const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'acara'))
       const semuaAcara = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -1179,10 +1189,8 @@ export default function Rekod() {
       const tertinggal = []
       let scanned = 0
 
-      // 3. Scan setiap acara final/terus_final
+      // 3. Scan semua acara — rekod boleh berlaku di mana-mana fasa
       for (const acara of semuaAcara) {
-        const fasa = acara.fasa || acara.jenisAcara || ''
-        if (acara.parentAcaraId && fasa !== 'final' && fasa !== 'terus_final') continue
 
         const heatSnap = await getDocs(
           query(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'heat'), where('aceraId', '==', acara.id))
@@ -1190,7 +1198,7 @@ export default function Rekod() {
 
         for (const heatDoc of heatSnap.docs) {
           const heat = heatDoc.data()
-          if (heat.status !== 'diterima') continue
+          if (!['rasmi', 'diterima'].includes(heat.statusKeputusan)) continue
 
           const peserta = heat.peserta || []
           const unit = acara.unit || 's'
@@ -1199,10 +1207,8 @@ export default function Rekod() {
             if (!p.keputusan || !p.noKP) continue
             scanned++
 
-            // Bina rekodKey
             const rekodNama = acara.namaAcaraPendek || acara.namaAcara
-            const rKey = [rekodNama, acara.jantina, acara.kategoriKod, 'D']
-              .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+            const rKey = rekodKey(rekodNama, acara.jantina, acara.kategoriKod, peringkatKej)
 
             // Semak sama ada rekod library wujud
             const libExists = rekodLibSet.has(rKey)
@@ -1370,8 +1376,7 @@ export default function Rekod() {
           if (!fieldVal?.namaAcara || !fieldVal?.kategoriKod || !fieldVal?.jantina || !fieldVal?.peringkat) continue
 
           // 4. Bina key dan baca dari library
-          const rKey = [fieldVal.namaAcara, fieldVal.jantina, fieldVal.kategoriKod, fieldVal.peringkat]
-            .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+          const rKey = rekodKey(fieldVal.namaAcara, fieldVal.jantina, fieldVal.kategoriKod, fieldVal.peringkat)
 
           // Kita nak rekod SEBELUM yang ini — iaitu rekod yang wujud
           // Untuk rekod pertama yang pernah dihantar, rekod library sekarang = rekod baru itu sendiri

@@ -1,448 +1,33 @@
-import { useState, useEffect, useRef } from 'react'
-import {
-  collection, getDocs, query, orderBy, onSnapshot, where,
-} from 'firebase/firestore'
+import { useState, useEffect } from 'react'
+import { collection, getDocs, query, orderBy } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate, useParams } from 'react-router-dom'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtTarikh(str) {
-  if (!str) return '—'
-  try { return new Date(str).toLocaleDateString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric' }) }
-  catch { return str }
+function fmtTarikh(val) {
+  if (!val) return '—'
+  try {
+    const d = val?.toDate ? val.toDate() : new Date(val)
+    return d.toLocaleDateString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+  } catch { return '—' }
 }
 
-function fmtMasa(saat) {
-  if (saat === '' || saat == null) return '—'
-  const n = Number(saat)
-  if (isNaN(n) || n <= 0) return '—'
-  const m = Math.floor(n / 60)
-  const s = (n % 60).toFixed(2).padStart(5, '0')
-  return m > 0 ? `${m}:${s}` : `${Number(s).toFixed(2)}s`
-}
-
-function hariList(tarikhMula, tarikhTamat) {
-  if (!tarikhMula || !tarikhTamat) return []
-  const hasil = []
-  const mula  = new Date(tarikhMula)
-  const tamat = new Date(tarikhTamat)
-  for (let d = new Date(mula); d <= tamat; d.setDate(d.getDate() + 1)) {
-    hasil.push(d.toISOString().split('T')[0])
-  }
-  return hasil
-}
-
-const HARI_SINGKAT = ['Ahd', 'Isn', 'Sel', 'Rab', 'Kha', 'Jum', 'Sab']
-function namaHari(str) {
-  try { return HARI_SINGKAT[new Date(str).getDay()] } catch { return '' }
-}
-
-// ─── Tab Pilih Kejohanan ──────────────────────────────────────────────────────
-
-function TabKejohanan({ schoolId, slug, onSelect }) {
-  const navigate  = useNavigate()
-  const [list, setList]     = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (!schoolId) { setLoading(false); return }
-    getDocs(query(
-      collection(db, 'tenants', schoolId, 'kejohanan'),
-      orderBy('tarikhMula', 'desc')
-    )).then(snap => setList(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [schoolId])
-
-  const aktif = list.filter(k => k.statusKejohanan === 'aktif')
-  const lain  = list.filter(k => k.statusKejohanan !== 'aktif')
-
-  if (loading) return <Spinner />
-
-  if (list.length === 0) return (
-    <div className="text-center py-16 text-gray-400">
-      <p className="text-sm">Tiada kejohanan berdaftar.</p>
-      <p className="text-xs mt-1">Hubungi pentadbir sekolah untuk setup kejohanan.</p>
-    </div>
-  )
-
+function Spinner() {
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-gray-400">Klik kejohanan untuk mula input keputusan</p>
-
-      {aktif.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">Sedang Aktif</p>
-          {aktif.map(k => (
-            <KejCard key={k.id} kej={k}
-              onClick={() => { onSelect(k); navigate(`/${slug}/pencatat/kejohanan/${k.id}/keputusan`) }} />
-          ))}
-        </div>
-      )}
-      {lain.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Lain-lain</p>
-          {lain.map(k => (
-            <KejCard key={k.id} kej={k}
-              onClick={() => { onSelect(k); navigate(`/${slug}/pencatat/kejohanan/${k.id}/keputusan`) }} />
-          ))}
-        </div>
-      )}
+    <div className="flex items-center justify-center py-20 gap-2 text-gray-400">
+      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+      </svg>
+      <span className="text-sm">Memuatkan…</span>
     </div>
   )
 }
-
-// ─── Tab Semak Jadual ─────────────────────────────────────────────────────────
-
-function TabJadual({ schoolId, kej }) {
-  const [acara, setAcara]     = useState([])
-  const [loading, setLoading] = useState(true)
-  const [hariIdx, setHariIdx] = useState(0)
-  const unsubRef = useRef(null)
-
-  const hari = kej ? hariList(kej.tarikhMula, kej.tarikhTamat) : []
-
-  useEffect(() => {
-    if (!schoolId || !kej) { setLoading(false); return }
-
-    setLoading(true)
-    if (unsubRef.current) unsubRef.current()
-
-    unsubRef.current = onSnapshot(
-      query(
-        collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'),
-        orderBy('noAcara', 'asc')
-      ),
-      snap => {
-        setAcara(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-        setLoading(false)
-      },
-      () => setLoading(false)
-    )
-    return () => { if (unsubRef.current) unsubRef.current() }
-  }, [schoolId, kej?.id])
-
-  // reset ke hari ini bila tukar kejohanan
-  useEffect(() => {
-    if (!hari.length) return
-    const hariIni = new Date().toISOString().split('T')[0]
-    const idx = hari.findIndex(h => h === hariIni)
-    setHariIdx(idx >= 0 ? idx : 0)
-  }, [kej?.id])
-
-  if (!kej) return (
-    <div className="text-center py-16 text-gray-400 text-sm">
-      Pilih kejohanan dahulu di tab <span className="font-bold">Kejohanan</span>.
-    </div>
-  )
-
-  const tarikhPilih = hari[hariIdx] || ''
-  const acaraHari   = acara.filter(a => a.tarikhAcara === tarikhPilih)
-    .sort((a, b) => {
-      const tA = a.masa || '99:99'
-      const tB = b.masa || '99:99'
-      return tA.localeCompare(tB) || (a.noAcara || 0) - (b.noAcara || 0)
-    })
-
-  return (
-    <div className="space-y-3">
-
-      {/* Nama kejohanan */}
-      <div className="bg-[#003399]/5 border border-[#003399]/10 rounded-xl px-3 py-2.5">
-        <p className="text-[10px] text-[#003399]/60 uppercase tracking-widest font-bold">Kejohanan</p>
-        <p className="text-sm font-bold text-[#003399]">{kej.namaKejohanan}</p>
-      </div>
-
-      {/* Pilih hari */}
-      {hari.length > 1 && (
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {hari.map((h, i) => (
-            <button key={h} onClick={() => setHariIdx(i)}
-              className={`shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
-                i === hariIdx
-                  ? 'bg-[#003399] text-white shadow'
-                  : 'bg-white border border-gray-200 text-gray-500 hover:border-[#003399]/30'
-              }`}>
-              <span className="block text-center">{namaHari(h)}</span>
-              <span className="block text-center text-[10px] opacity-70">
-                {new Date(h).getDate()}/{new Date(h).getMonth() + 1}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {loading ? <Spinner /> : acaraHari.length === 0 ? (
-        <div className="text-center py-10 text-gray-400 text-sm">
-          Tiada acara untuk hari ini.
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {acaraHari.map(a => (
-            <JadualRow key={a.id} acara={a} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function JadualRow({ acara }) {
-  const statusWarna = acara.ada_keputusan
-    ? 'bg-green-100 text-green-700 border-green-200'
-    : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-  const statusLabel = acara.ada_keputusan ? 'Selesai' : 'Belum'
-
-  return (
-    <div className="bg-white border border-gray-100 rounded-xl px-3.5 py-3 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="text-center shrink-0 w-9">
-          <p className="text-[10px] text-gray-400 leading-none">No</p>
-          <p className="text-sm font-black text-[#003399]">{acara.noAcara ?? '—'}</p>
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-gray-800 truncate">{acara.namaAcara || '—'}</p>
-          <p className="text-[11px] text-gray-400 leading-tight truncate">
-            {acara.jantina === 'L' ? 'L' : acara.jantina === 'P' ? 'P' : (acara.jantina || '')}
-            {acara.kategoriKod ? ` · ${acara.kategoriKod}` : ''}
-            {acara.masa ? ` · ${acara.masa}` : ''}
-          </p>
-        </div>
-      </div>
-      <span className={`shrink-0 text-[9px] font-black px-2 py-0.5 rounded-full border ${statusWarna}`}>
-        {statusLabel}
-      </span>
-    </div>
-  )
-}
-
-// ─── Tab Semak Keputusan ──────────────────────────────────────────────────────
-
-function TabKeputusan({ schoolId, kej }) {
-  const [acara, setAcara]     = useState([])
-  const [heats, setHeats]     = useState([])
-  const [loading, setLoading] = useState(true)
-  const [pilihAcara, setPilihAcara] = useState(null)
-  const unsubAcara = useRef(null)
-  const unsubHeat  = useRef(null)
-
-  useEffect(() => {
-    if (!schoolId || !kej) { setLoading(false); return }
-
-    setLoading(true)
-    if (unsubAcara.current) unsubAcara.current()
-
-    unsubAcara.current = onSnapshot(
-      query(
-        collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'),
-        where('statusAcara', '==', 'ada_keputusan')
-      ),
-      snap => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        list.sort((a, b) => (a.noAcara || 0) - (b.noAcara || 0))
-        setAcara(list)
-        setLoading(false)
-      },
-      () => setLoading(false)
-    )
-    return () => { if (unsubAcara.current) unsubAcara.current() }
-  }, [schoolId, kej?.id])
-
-  useEffect(() => {
-    if (!pilihAcara || !schoolId || !kej) { setHeats([]); return }
-
-    if (unsubHeat.current) unsubHeat.current()
-
-    unsubHeat.current = onSnapshot(
-      query(
-        collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'heat'),
-        where('aceraId', '==', pilihAcara.id)
-      ),
-      snap => setHeats(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-      () => {}
-    )
-    return () => { if (unsubHeat.current) unsubHeat.current() }
-  }, [pilihAcara?.id, schoolId, kej?.id])
-
-  if (!kej) return (
-    <div className="text-center py-16 text-gray-400 text-sm">
-      Pilih kejohanan dahulu di tab <span className="font-bold">Kejohanan</span>.
-    </div>
-  )
-
-  if (loading) return <Spinner />
-
-  if (pilihAcara) return (
-    <div className="space-y-3">
-      <button onClick={() => { setPilihAcara(null); setHeats([]) }}
-        className="flex items-center gap-1.5 text-xs text-[#003399] font-bold hover:underline">
-        ← Balik ke senarai acara
-      </button>
-
-      <div className="bg-[#003399]/5 border border-[#003399]/10 rounded-xl px-3 py-2.5">
-        <p className="text-[10px] text-[#003399]/60 uppercase tracking-widest font-bold">Acara #{pilihAcara.noAcara}</p>
-        <p className="text-sm font-bold text-[#003399]">{pilihAcara.namaAcara}</p>
-        <p className="text-[11px] text-[#003399]/60">
-          {pilihAcara.jantina === 'L' ? 'Lelaki' : pilihAcara.jantina === 'P' ? 'Perempuan' : pilihAcara.jantina}
-          {pilihAcara.kategoriKod ? ` · ${pilihAcara.kategoriKod}` : ''}
-        </p>
-      </div>
-
-      {heats.length === 0 ? (
-        <p className="text-center py-8 text-gray-400 text-sm">Tiada heat ditemui.</p>
-      ) : heats.map(h => <HeatKeputusan key={h.id} heat={h} />)}
-    </div>
-  )
-
-  return (
-    <div className="space-y-3">
-      <div className="bg-[#003399]/5 border border-[#003399]/10 rounded-xl px-3 py-2.5">
-        <p className="text-[10px] text-[#003399]/60 uppercase tracking-widest font-bold">Kejohanan</p>
-        <p className="text-sm font-bold text-[#003399]">{kej.namaKejohanan}</p>
-      </div>
-
-      {acara.length === 0 ? (
-        <div className="text-center py-10 text-gray-400 text-sm">
-          Belum ada keputusan yang dihantar.
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            {acara.length} acara ada keputusan — klik untuk lihat
-          </p>
-          {acara.map(a => (
-            <button key={a.id} onClick={() => setPilihAcara(a)}
-              className="w-full text-left bg-white border border-gray-100 rounded-xl px-3.5 py-3 hover:border-[#003399]/30 hover:shadow-sm transition-all flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="text-center shrink-0 w-9">
-                  <p className="text-[10px] text-gray-400 leading-none">No</p>
-                  <p className="text-sm font-black text-[#003399]">{a.noAcara ?? '—'}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-gray-800 truncate">{a.namaAcara || '—'}</p>
-                  <p className="text-[11px] text-gray-400">
-                    {a.jantina === 'L' ? 'L' : a.jantina === 'P' ? 'P' : a.jantina}
-                    {a.kategoriKod ? ` · ${a.kategoriKod}` : ''}
-                  </p>
-                </div>
-              </div>
-              <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function HeatKeputusan({ heat }) {
-  const peserta = heat.peserta || []
-  const isLorong = heat.jenisAcara === 'lorong' || heat.jenisAcara === 'relay'
-  const isPadang = heat.jenisAcara === 'padang_lompat' || heat.jenisAcara === 'padang_balin'
-  const isMass   = heat.jenisAcara === 'mass_start'
-
-  const fasaLabel = heat.fasa === 'final' ? 'Final'
-    : heat.fasa === 'terus_final' ? 'Terus Final'
-    : heat.fasa === 'separuh_akhir' ? `Separuh Akhir ${heat.noHeat || ''}`
-    : `Heat ${heat.noHeat || ''}`
-
-  // Bina senarai peserta dari heat.peserta[]
-  let rows = []
-
-  if (isLorong || isMass) {
-    rows = peserta
-      .filter(p => p.namaAtlet || p.nama)
-      .map(p => ({
-        key: p.lorong ?? p.noBib ?? p.namaAtlet,
-        label: p.lorong ? `Lorong ${p.lorong}` : '',
-        nama: p.namaAtlet || p.nama || '—',
-        pasukan: p.namaSekolah || p.pasukan || '',
-        keputusan: p.keputusan,
-        status: p.status,
-        tempat: p.kedudukan ?? p.tempat,
-        noBib: p.noBib,
-      }))
-      .sort((a, b) => (a.tempat || 99) - (b.tempat || 99))
-  } else if (isPadang) {
-    rows = peserta
-      .filter(p => p.namaAtlet || p.nama)
-      .map(p => ({
-        key: p.noBib ?? p.namaAtlet,
-        label: '',
-        nama: p.namaAtlet || p.nama || '—',
-        pasukan: p.namaSekolah || p.pasukan || '',
-        keputusan: p.keputusan,
-        status: p.status,
-        tempat: p.kedudukan ?? p.tempat,
-        noBib: p.noBib,
-      }))
-      .sort((a, b) => (a.tempat || 99) - (b.tempat || 99))
-  } else {
-    rows = peserta
-      .filter(p => p.namaAtlet || p.nama)
-      .map(p => ({
-        key: p.noBib ?? p.namaAtlet,
-        label: '',
-        nama: p.namaAtlet || p.nama || '—',
-        pasukan: p.namaSekolah || p.pasukan || '',
-        keputusan: p.keputusan,
-        status: p.status,
-        tempat: p.kedudukan ?? p.tempat,
-        noBib: p.noBib,
-      }))
-      .sort((a, b) => (a.tempat || 99) - (b.tempat || 99))
-  }
-
-  return (
-    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-      <div className="bg-gray-50 border-b border-gray-100 px-3.5 py-2 flex items-center justify-between">
-        <p className="text-xs font-black text-gray-700">{fasaLabel}</p>
-        {heat.windSpeed != null && (
-          <p className="text-[11px] text-gray-400">Angin: {heat.windSpeed > 0 ? '+' : ''}{heat.windSpeed} m/s</p>
-        )}
-      </div>
-
-      {rows.length === 0 ? (
-        <p className="text-center py-4 text-gray-400 text-xs">Tiada keputusan.</p>
-      ) : (
-        <div className="divide-y divide-gray-50">
-          {rows.map(r => (
-            <div key={r.key} className="flex items-center gap-3 px-3.5 py-2.5">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
-                r.tempat === 1 ? 'bg-yellow-400 text-yellow-900'
-                : r.tempat === 2 ? 'bg-gray-300 text-gray-700'
-                : r.tempat === 3 ? 'bg-orange-300 text-orange-900'
-                : 'bg-gray-100 text-gray-500'
-              }`}>
-                {r.status ? r.status : (r.tempat || '—')}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">{r.nama}</p>
-                {r.pasukan && <p className="text-[11px] text-gray-400 truncate">{r.pasukan}</p>}
-              </div>
-              <p className="text-sm font-black text-[#003399] shrink-0">
-                {r.status ? r.status : fmtMasa(r.keputusan)}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Shared Components ────────────────────────────────────────────────────────
 
 function KejCard({ kej, onClick }) {
   const isAktif = kej.statusKejohanan === 'aktif'
-  const tarikh  = kej.tarikhMula
-    ? (kej.tarikhMula.toDate?.()?.toLocaleDateString('ms-MY') || kej.tarikhMula)
-    : '—'
-
   return (
     <button onClick={onClick}
       className={`w-full text-left border rounded-2xl px-4 py-3.5 transition-all active:scale-[0.98] shadow-sm hover:shadow-md ${
@@ -456,7 +41,7 @@ function KejCard({ kej, onClick }) {
               <span className="shrink-0 text-[9px] font-black bg-green-500 text-white px-1.5 py-0.5 rounded-full">AKTIF</span>
             )}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">{tarikh} · {kej.lokasi || '—'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{fmtTarikh(kej.tarikhMula)} · {kej.lokasi || '—'}</p>
         </div>
         <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -466,70 +51,105 @@ function KejCard({ kej, onClick }) {
   )
 }
 
-function Spinner() {
-  return (
-    <div className="flex items-center justify-center py-16 gap-2 text-gray-400">
-      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-      </svg>
-      <span className="text-sm">Memuatkan…</span>
-    </div>
-  )
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
-
-const TABS = [
-  { id: 'kejohanan', label: 'Kejohanan', ikon: '🏆' },
-  { id: 'jadual',    label: 'Jadual',    ikon: '📅' },
-  { id: 'keputusan', label: 'Keputusan', ikon: '📋' },
-]
 
 export default function PencatatInputKeputusanPage() {
   const { userData } = useAuth()
+  const navigate     = useNavigate()
   const { slug }     = useParams()
   const schoolId     = userData?.schoolId || ''
 
-  const [tab, setTab]           = useState('kejohanan')
-  const [kejAktif, setKejAktif] = useState(null)
+  const [list,    setList]    = useState([])
+  const [loading, setLoading] = useState(true)
+  const [done,    setDone]    = useState(false)
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem('gp_kej_aktif') || '{}')
-      if (saved?.id && saved?.namaKejohanan) setKejAktif(saved)
-    } catch {}
-  }, [])
+    if (!schoolId) { setLoading(false); setDone(true); return }
 
-  function handleSelect(kej) {
-    setKejAktif(kej)
-    sessionStorage.setItem('gp_kej_aktif', JSON.stringify({
-      id: kej.id, namaKejohanan: kej.namaKejohanan, schoolId
-    }))
+    getDocs(query(
+      collection(db, 'tenants', schoolId, 'kejohanan'),
+      orderBy('tarikhMula', 'desc')
+    ))
+      .then(snap => {
+        const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        const aktif = all.filter(k => k.statusKejohanan === 'aktif')
+
+        // Tepat 1 aktif → auto-redirect terus
+        if (aktif.length === 1) {
+          navigate(`/${slug}/pencatat/kejohanan/${aktif[0].id}/keputusan`, { replace: true })
+          return
+        }
+
+        // Tiada aktif tapi ada tepat 1 kejohanan sahaja → terus redirect juga
+        if (aktif.length === 0 && all.length === 1) {
+          navigate(`/${slug}/pencatat/kejohanan/${all[0].id}/keputusan`, { replace: true })
+          return
+        }
+
+        setList(all)
+        setDone(true)
+      })
+      .catch(() => { setList([]); setDone(true) })
+      .finally(() => setLoading(false))
+  }, [schoolId, slug, navigate])
+
+  if (loading || !done) return (
+    <div className="w-full">
+      <Spinner />
+    </div>
+  )
+
+  const aktif = list.filter(k => k.statusKejohanan === 'aktif')
+  const lain  = list.filter(k => k.statusKejohanan !== 'aktif')
+
+  function pilih(kej) {
+    navigate(`/${slug}/pencatat/kejohanan/${kej.id}/keputusan`)
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Tab Bar */}
-      <div className="bg-white border-b border-gray-100 flex shrink-0">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex-1 py-3 flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors border-b-2 ${
-              tab === t.id
-                ? 'border-[#003399] text-[#003399]'
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}>
-            <span className="text-base leading-none">{t.ikon}</span>
-            {t.label}
-          </button>
-        ))}
+    <div className="w-full pb-12">
+
+      {/* Top bar — gaya KOAM */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+        <div className="px-4 py-3">
+          <p className="text-sm font-bold text-gray-800">Pilih Kejohanan</p>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 max-w-lg mx-auto w-full px-4 py-5 overflow-y-auto">
-        {tab === 'kejohanan' && <TabKejohanan schoolId={schoolId} slug={slug} onSelect={handleSelect} />}
-        {tab === 'jadual'    && <TabJadual    schoolId={schoolId} kej={kejAktif} />}
-        {tab === 'keputusan' && <TabKeputusan schoolId={schoolId} kej={kejAktif} />}
+      <div className="max-w-lg mx-auto px-4 py-5 space-y-4">
+
+        {list.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-sm">Tiada kejohanan berdaftar.</p>
+            <p className="text-xs mt-1">Hubungi pentadbir sekolah untuk setup kejohanan.</p>
+          </div>
+        ) : (
+          <>
+            {aktif.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+                Tiada kejohanan aktif. Pilih mana-mana kejohanan di bawah atau hubungi admin.
+              </div>
+            )}
+
+            {aktif.length > 1 && (
+              <>
+                <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">Sedang Aktif</p>
+                <div className="space-y-2">
+                  {aktif.map(k => <KejCard key={k.id} kej={k} onClick={() => pilih(k)} />)}
+                </div>
+              </>
+            )}
+
+            {lain.length > 0 && (
+              <>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Lain-lain</p>
+                <div className="space-y-2">
+                  {lain.map(k => <KejCard key={k.id} kej={k} onClick={() => pilih(k)} />)}
+                </div>
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   )

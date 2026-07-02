@@ -5,6 +5,193 @@ import { createAdminAccount, hantarResetPassword } from '../../firebase/auth'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
+// ── Modal Data & Reset ────────────────────────────────────────────────────────
+
+function ModalDataReset({ sekolah, onTutup, onSelesai }) {
+  const [mod,        setMod]        = useState(null) // 'hard' | 'soft'
+  const [konfirmasi, setKonfirmasi] = useState('')
+  const [sedang,     setSedang]     = useState(false)
+  const [ralat,      setRalat]      = useState('')
+  const [selesai,    setSelesai]    = useState('')
+
+  const sid = sekolah.id
+  const namaSekolah = sekolah.namaSekolah || sid
+
+  async function jalanHardDelete() {
+    setSedang(true); setRalat('')
+    try {
+      const subcols = ['kejohanan', 'atlet', 'sekolah', 'rekod', 'rekod_sejarah',
+                       'users', 'login_attempts', 'tetapan', '_private', 'kategori']
+      for (const col of subcols) {
+        const snap = await getDocs(collection(db, 'tenants', sid, col))
+        if (snap.empty) continue
+        // Padam subcollection dalam kejohanan juga
+        if (col === 'kejohanan') {
+          for (const kd of snap.docs) {
+            const subKej = ['acara', 'heat', 'pendaftaran', 'jadual', 'kategori', 'tetapan', 'pengesahan', 'medal_tally', 'jadual_khas']
+            for (const sk of subKej) {
+              const skSnap = await getDocs(collection(db, 'tenants', sid, 'kejohanan', kd.id, sk))
+              const b2 = writeBatch(db)
+              skSnap.docs.forEach(d => b2.delete(d.ref))
+              if (!skSnap.empty) await b2.commit()
+            }
+          }
+        }
+        const batch = writeBatch(db)
+        snap.docs.forEach(d => batch.delete(d.ref))
+        await batch.commit()
+      }
+      await deleteDoc(doc(db, 'tenants', sid))
+      if (sekolah.slug) await deleteDoc(doc(db, 'slugIndex', sekolah.slug)).catch(() => {})
+      setSelesai('hard')
+      onSelesai(sid, 'hard')
+    } catch (e) {
+      setRalat('Ralat: ' + e.message)
+    } finally {
+      setSedang(false)
+    }
+  }
+
+  async function jalanSoftReset() {
+    setSedang(true); setRalat('')
+    try {
+      // Padam atlet
+      const atletSnap = await getDocs(collection(db, 'tenants', sid, 'atlet'))
+      if (!atletSnap.empty) {
+        const b = writeBatch(db)
+        atletSnap.docs.forEach(d => b.delete(d.ref))
+        await b.commit()
+      }
+
+      // Padam pendaftaran + heat dalam setiap kejohanan
+      const kejSnap = await getDocs(collection(db, 'tenants', sid, 'kejohanan'))
+      for (const kd of kejSnap.docs) {
+        for (const subCol of ['pendaftaran', 'heat']) {
+          const subSnap = await getDocs(collection(db, 'tenants', sid, 'kejohanan', kd.id, subCol))
+          if (subSnap.empty) continue
+          const b = writeBatch(db)
+          subSnap.docs.forEach(d => b.delete(d.ref))
+          await b.commit()
+        }
+        // Reset status kejohanan ke persediaan supaya boleh guna semula
+        await updateDoc(doc(db, 'tenants', sid, 'kejohanan', kd.id), {
+          statusKejohanan: 'persediaan',
+          isAktif: false,
+          updatedAt: serverTimestamp(),
+        }).catch(() => {})
+      }
+
+      setSelesai('soft')
+      onSelesai(sid, 'soft')
+    } catch (e) {
+      setRalat('Ralat: ' + e.message)
+    } finally {
+      setSedang(false)
+    }
+  }
+
+  function handleTeruskan() {
+    if (konfirmasi !== namaSekolah) return
+    if (mod === 'hard') jalanHardDelete()
+    else jalanSoftReset()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      onClick={e => e.target === e.currentTarget && !sedang && onTutup()}>
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+        <div className="bg-red-700 px-5 py-4 flex items-center justify-between">
+          <p className="text-sm font-bold text-white">Data & Reset — {namaSekolah}</p>
+          <button onClick={onTutup} disabled={sedang} className="text-white/50 hover:text-white">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {selesai ? (
+            <div className="text-center py-4 space-y-3">
+              <p className="text-3xl">{selesai === 'hard' ? '🗑️' : '♻️'}</p>
+              <p className="text-sm font-bold text-gray-800">
+                {selesai === 'hard' ? 'Hard Delete berjaya.' : 'Soft Reset berjaya.'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {selesai === 'hard'
+                  ? 'Semua data tenant telah dipadam. Akaun Firebase Auth masih perlu dipadam manual.'
+                  : 'Data murid, pendaftaran dan heat telah dipadam. Acara, kategori dan rekod dikekalkan.'}
+              </p>
+              <button onClick={onTutup} className="mt-2 px-5 py-2 bg-[#003399] text-white text-xs font-bold rounded-xl">Tutup</button>
+            </div>
+          ) : !mod ? (
+            <>
+              <p className="text-xs text-gray-500">Pilih jenis operasi untuk <strong>{namaSekolah}</strong>:</p>
+              <div className="space-y-3">
+                <button onClick={() => setMod('soft')}
+                  className="w-full text-left border-2 border-amber-200 bg-amber-50 rounded-xl px-4 py-3 hover:border-amber-400 transition-colors">
+                  <p className="text-sm font-bold text-amber-800">♻️ Soft Reset — Reset Data Murid</p>
+                  <p className="text-xs text-amber-700 mt-1">Padam: atlet, pendaftaran, heat/keputusan</p>
+                  <p className="text-xs text-green-700 mt-0.5">Simpan: acara, kategori, rekod, tetapan</p>
+                </button>
+                <button onClick={() => setMod('hard')}
+                  className="w-full text-left border-2 border-red-200 bg-red-50 rounded-xl px-4 py-3 hover:border-red-400 transition-colors">
+                  <p className="text-sm font-bold text-red-800">🗑️ Hard Delete — Padam Semua Data</p>
+                  <p className="text-xs text-red-600 mt-1">Padam SEMUA data tenant. Tidak boleh dibatalkan.</p>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={`border-2 rounded-xl px-4 py-3 ${mod === 'hard' ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+                <p className={`text-sm font-bold ${mod === 'hard' ? 'text-red-800' : 'text-amber-800'}`}>
+                  {mod === 'hard' ? '🗑️ Hard Delete' : '♻️ Soft Reset'}
+                </p>
+                <p className={`text-xs mt-1 ${mod === 'hard' ? 'text-red-600' : 'text-amber-700'}`}>
+                  {mod === 'hard'
+                    ? 'SEMUA data akan dipadam secara kekal.'
+                    : 'Atlet, pendaftaran dan heat akan dipadam. Acara/kategori/rekod dikekalkan.'}
+                </p>
+              </div>
+
+              {ralat && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{ralat}</p>}
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                  Taip nama sekolah untuk sahkan: <span className="text-red-600 font-mono">{namaSekolah}</span>
+                </label>
+                <input type="text" value={konfirmasi}
+                  onChange={e => setKonfirmasi(e.target.value)}
+                  placeholder={namaSekolah}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-red-400" />
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={() => { setMod(null); setKonfirmasi(''); setRalat('') }}
+                  disabled={sedang}
+                  className="flex-1 py-2.5 border border-gray-300 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50">
+                  Kembali
+                </button>
+                <button onClick={handleTeruskan}
+                  disabled={konfirmasi !== namaSekolah || sedang}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-colors disabled:opacity-40 ${
+                    mod === 'hard' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'
+                  }`}>
+                  {sedang
+                    ? <span className="flex items-center justify-center gap-2">
+                        <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        Sedang proses…
+                      </span>
+                    : mod === 'hard' ? 'Padam Semua' : 'Reset Data Murid'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const WARNA_STATUS = {
   active:    'bg-green-100 text-green-700',
   suspended: 'bg-red-100 text-red-700',
@@ -395,6 +582,7 @@ export default function SuperadminPanel() {
   const [tabAktif,           setTabAktif]            = useState('sekolah')
   const [modalTambah,        setModalTambah]         = useState(false)
   const [modalPerbaharui,    setModalPerbaharui]     = useState(null)
+  const [modalDataReset,     setModalDataReset]      = useState(null)
   const [muatTurunTindakan,  setMuatTurunTindakan]   = useState(null)
 
   async function muatSekolah() {
@@ -465,10 +653,25 @@ export default function SuperadminPanel() {
       } catch { /* bukan kritikal */ }
 
       // Padam subcollection utama (Firestore tidak auto-delete subcollection)
-      const subcols = ['kejohanan', 'atlet', 'sekolah', 'rekod', 'rekod_sejarah', 'users', 'login_attempts', 'tetapan', '_private']
+      const subcols = ['kejohanan', 'atlet', 'sekolah', 'rekod', 'rekod_sejarah', 'users', 'login_attempts', 'tetapan', '_private', 'kategori']
       for (const col of subcols) {
         try {
           const snap = await getDocs(collection(db, 'tenants', sid, col))
+          if (col === 'kejohanan') {
+            for (const kd of snap.docs) {
+              const subKej = ['acara', 'heat', 'pendaftaran', 'jadual', 'kategori', 'tetapan', 'pengesahan', 'medal_tally', 'jadual_khas']
+              for (const sk of subKej) {
+                try {
+                  const skSnap = await getDocs(collection(db, 'tenants', sid, 'kejohanan', kd.id, sk))
+                  if (!skSnap.empty) {
+                    const b2 = writeBatch(db)
+                    skSnap.docs.forEach(d => b2.delete(d.ref))
+                    await b2.commit()
+                  }
+                } catch (skErr) { console.warn(`Skip kejohanan/${kd.id}/${sk}:`, skErr?.message) }
+              }
+            }
+          }
           const batch = writeBatch(db)
           snap.docs.forEach(d => batch.delete(d.ref))
           if (snap.docs.length > 0) await batch.commit()
@@ -488,6 +691,13 @@ export default function SuperadminPanel() {
 
   function handlePerbaharuiBerjaya(id, kemaskini) {
     setSekolah(list => list.map(x => x.id === id ? { ...x, ...kemaskini } : x))
+  }
+
+  function handleDataResetSelesai(id, jenis) {
+    if (jenis === 'hard') {
+      setSekolah(list => list.filter(x => x.id !== id))
+    }
+    setModalDataReset(null)
   }
 
   const jumlahSekolah  = sekolah.length
@@ -686,6 +896,11 @@ export default function SuperadminPanel() {
                                     Aktifkan
                                   </button>
                                 )}
+                                <button onClick={() => setModalDataReset(s)}
+                                  className="text-[10px] font-bold text-purple-500 hover:text-white hover:bg-purple-600 px-2 py-1 rounded border border-purple-200 hover:border-purple-600 transition-colors"
+                                  title="Data & Reset">
+                                  Data
+                                </button>
                                 <button onClick={() => padamSekolah(s)}
                                   className="text-[10px] font-bold text-gray-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors"
                                   title="Padam sekolah">
@@ -835,6 +1050,14 @@ export default function SuperadminPanel() {
           sekolah={modalPerbaharui}
           onTutup={() => setModalPerbaharui(null)}
           onBerjaya={handlePerbaharuiBerjaya}
+        />
+      )}
+
+      {modalDataReset && (
+        <ModalDataReset
+          sekolah={modalDataReset}
+          onTutup={() => setModalDataReset(null)}
+          onSelesai={handleDataResetSelesai}
         />
       )}
     </div>

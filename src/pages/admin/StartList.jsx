@@ -294,7 +294,7 @@ function FasaBadge({ fasa }) {
 
 // ─── Modal: Tetapan Generate Heat ─────────────────────────────────────────────
 
-function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, schoolId = '' }) {
+function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, schoolId = '', atletBibMap = {} }) {
   const isPadang  = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass    = acara.jenisAcara === 'mass_start'
   const isRelay   = acara.jenisAcara === 'relay'
@@ -396,8 +396,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
             kodSekolah:   p.kodSekolah,
             lorong:       p.lorong ?? null,
             ahliPasukan:  (p.ahliPasukan || []).map(a => ({
-              noBib:      a.noBib      || '',
-              noKP:       a.noKP       || '',
+              noBib:      atletBibMap[a.noKP] || a.noBib || '',
               namaAtlet:  a.namaAtlet  || '',
               kategoriKod: a.kategoriKod || '',
             })),
@@ -406,8 +405,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
             rankDalamHeat: null,
           }) : ({
             // Individu: larian / padang / mass_start
-            noBib:       p.noBib,
-            noKP:        p.noKP       || '',
+            noBib:       atletBibMap[p.noKP] || p.noBib,
             namaAtlet:   p.namaAtlet,
             kodSekolah:  p.kodSekolah,
             kategoriKod: p.kategoriKod || '',
@@ -649,7 +647,7 @@ function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMa
 
 // ─── Helper: Jana heat untuk satu acara (boleh guna batch atau individual) ────
 
-async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap = {} }) {
+async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap = {}, atletBibMap = {} }) {
   const aceraKey = acara.aceraId || acara.id
   // Tapis peserta untuk acara ini
   const peserta = pesertaAll.filter(p => (p.acaraIds || []).includes(aceraKey))
@@ -713,8 +711,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
           kodSekolah:  pp.kodSekolah,
           lorong:      pp.lorong ?? null,
           ahliPasukan: (pp.ahliPasukan || []).map(a => ({
-            noBib:       a.noBib       || '',
-            noKP:        a.noKP        || '',
+            noBib:       atletBibMap[a.noKP] || a.noBib || '',
             namaAtlet:   a.namaAtlet   || '',
             kategoriKod: a.kategoriKod || '',
           })),
@@ -762,7 +759,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
       fasa: h.fasa, noHeat: h.noHeat, status: 'belum_mula',
       windSpeed: null, isWindLegal: null,
       peserta: h.peserta.map(pp => ({
-        noBib: pp.noBib, noKP: pp.noKP || '',
+        noBib: atletBibMap[pp.noKP] || pp.noBib,
         namaAtlet: pp.namaAtlet, kodSekolah: pp.kodSekolah,
         namaSekolah: namaSekolahMap[pp.kodSekolah] || pp.namaSekolah || pp.kodSekolah,
         kategoriKod: pp.kategoriKod || '',
@@ -859,7 +856,7 @@ function pilihFinalis(heatPhaseHeats, acara, isPadang) {
 
 // ─── Modal: Jana Semua Heat ───────────────────────────────────────────────────
 
-function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolahMap = {}, onClose, onDone, schoolId = '' }) {
+function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolahMap = {}, atletBibMap = {}, onClose, onDone, schoolId = '' }) {
   const [caraDraw,    setCaraDraw]    = useState('random')
   const [skipJikaAda, setSkip]       = useState(true)
   const [running,     setRunning]    = useState(false)
@@ -890,7 +887,7 @@ function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolah
       const acara = acaraAktif[i]
       const label = `${acara.namaAcara} Kat${katLabel(acara.kategoriKod, kategoriList)} ${acara.jantina}`
       try {
-        const result = await generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap })
+        const result = await generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap, atletBibMap })
         if (result.status === 'ok') {
           berjaya++
           log.push({ status:'ok', msg:`✓ ${label} — ${result.heatCount} heat, ${result.pesertaCount} peserta` })
@@ -1059,12 +1056,12 @@ function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolah
 
 // ─── Modal: Jana Final dari Heat ─────────────────────────────────────────────
 
-function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, sekolahMap = {}, acaraList = [], schoolId = '' }) {
+function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, sekolahMap = {}, acaraList = [], schoolId = '', atletBibMap = {} }) {
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
   const isRelay  = acara.jenisAcara === 'relay'
 
-  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf')
+  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf' || h.fasa === 'separuh_akhir')
   const fasaJana = acara.peringkat === 'saringan_qf' ? 'sukuKeSeparuh' : 'toFinal'
 
   const [finalis,        setFinalis]        = useState([])
@@ -1124,15 +1121,18 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   function buatEntryPeserta(p) {
     return isRelay ? ({
       kodSekolah:    p.kodSekolah,
-      ahliPasukan:   p.ahliPasukan || [],
+      ahliPasukan:   (p.ahliPasukan || []).map(a => ({
+        noBib:       atletBibMap[a.noKP] || a.noBib || '',
+        namaAtlet:   a.namaAtlet   || '',
+        kategoriKod: a.kategoriKod || '',
+      })),
       lorong:        p.lorong      ?? null,
       keputusan:     null,
       status:        'belum',
       rankDalamHeat: null,
       _dariHeat:     p.heatId      || null,
     }) : ({
-      noBib:         p.noBib,
-      noKP:          p.noKP        || '',
+      noBib:         p.noBib || '',
       namaAtlet:     p.namaAtlet,
       kodSekolah:    p.kodSekolah,
       namaSekolah:   p.namaSekolah || '',
@@ -1160,7 +1160,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       )
       const targetAcara = finalAcaraLinked || acara
       const targetKey   = targetAcara.aceraId || targetAcara.id
-      const fasaHeat    = fasaJana === 'sukuKeSeparuh' ? 'saringan_qf' : 'final'
+      const fasaHeat    = fasaJana === 'sukuKeSeparuh' ? 'separuh_akhir' : 'final'
       const jenisLorong = detectJenisLorong(acara)
 
       if (fasaJana === 'sukuKeSeparuh') {
@@ -1394,7 +1394,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
 
 // ─── Modal: Jana Heat Individu (dari Status Panel) ───────────────────────────
 
-function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '' }) {
+function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', atletBibMap = {} }) {
   const isPadang = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
 
@@ -1462,7 +1462,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '' }) 
           fasa: h.fasa, noHeat: h.noHeat, status: 'belum_mula',
           windSpeed: null, isWindLegal: null,
           peserta: h.peserta.map(p => ({
-            noBib: p.noBib, noKP: p.noKP || '',
+            noBib: atletBibMap[p.noKP] || p.noBib,
             namaAtlet: p.namaAtlet, kodSekolah: p.kodSekolah,
             kategoriKod: p.kategoriKod || '',
             lorong: p.lorong ?? null, giliran: p.giliran ?? null,
@@ -1616,6 +1616,7 @@ export default function StartList() {
   const [acaraList, setAcaraList]        = useState([])
   const [selectedAcara, setSelectedAcara]= useState(null)
   const [pesertaList, setPesertaList]    = useState([])  // dari pendaftaran
+  const [atletBibMap, setAtletBibMap]    = useState({})  // noKP → noBib (authoritative)
   const [heatList, setHeatList]          = useState([])  // heat sedia ada
   const [rekodAcara, setRekodAcara]      = useState({ D: null, N: null, K: null })
   const [loading, setLoading]            = useState(false)
@@ -1674,14 +1675,17 @@ export default function StartList() {
     getDocs(collection(db, 'tenants', schoolId, 'atlet'))
       .then(atletSnap => {
         const sklMap = {}
+        const bibMap = {}
         atletSnap.docs.forEach(d => {
           const a = d.data()
           if (a.kodSekolah && !sklMap[a.kodSekolah]) {
             sklMap[a.kodSekolah] = { kodSekolah: a.kodSekolah, namaSekolah: a.namaSekolah || a.kodSekolah, kategori: a.kategoriSekolah || '' }
           }
+          if (d.id && a.noBib) bibMap[d.id] = a.noBib
         })
         const sekolahList = Object.values(sklMap).sort((a, b) => a.kodSekolah.localeCompare(b.kodSekolah))
         setSekolahList(sekolahList)
+        setAtletBibMap(bibMap)
       })
       .catch(() => {})
   }, [schoolId])
@@ -2898,7 +2902,7 @@ export default function StartList() {
   // ── Derived: Heat → Final gate ────────────────────────────────────────────
   const isSukuAkhirAcara    = selectedAcara?.peringkat === 'saringan_qf'
   const isSeparuhAkhirAcara = selectedAcara?.peringkat === 'separuh_akhir'
-  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf')
+  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf' || h.fasa === 'separuh_akhir')
   // saringan_qf/separuh_akhir: final dijana di acara lain — guna finalDijanaKe sebagai flag dah jana
   const finalExists    = (isSukuAkhirAcara || isSeparuhAkhirAcara)
     ? !!(selectedAcara?.finalDijanaKe)
@@ -4041,6 +4045,7 @@ export default function StartList() {
           acara={quickJanaAcara}
           kejohananId={selectedKej}
           schoolId={schoolId}
+          atletBibMap={atletBibMap}
           onClose={() => setQuickJanaAcara(null)}
           onDone={() => { setHeatCountTick(t => t + 1); setQuickJanaAcara(null) }}
         />
@@ -4053,6 +4058,7 @@ export default function StartList() {
           acaraList={acaraList}
           kategoriList={kategoriList}
           namaSekolahMap={namaSekolahMap}
+          atletBibMap={atletBibMap}
           schoolId={schoolId}
           onClose={() => setModal(null)}
           onDone={fetchAcaraData}
@@ -4065,6 +4071,7 @@ export default function StartList() {
           onClose={() => setModal(null)}
           onGenerated={fetchAcaraData}
           sekolahMap={namaSekolahMap}
+          atletBibMap={atletBibMap}
           schoolId={schoolId}
         />
       )}
@@ -4088,6 +4095,7 @@ export default function StartList() {
           onGenerated={fetchAcaraData}
           sekolahMap={namaSekolahMap}
           acaraList={acaraList}
+          atletBibMap={atletBibMap}
           schoolId={schoolId}
         />
       )}

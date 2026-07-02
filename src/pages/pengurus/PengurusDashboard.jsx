@@ -320,8 +320,9 @@ function AtletModal({ mode, initial, schoolId, kodSekolah, sekolahData, existing
       if (!isEdit) payload.createdAt = serverTimestamp()
       await setDoc(doc(db, 'tenants', schoolId, 'atlet', finalNoKP), payload, { merge: isEdit })
 
-      // Sync namaAtlet dalam pendaftaran doc
-      if (isEdit && form.nama?.trim() && kejohananId) {
+      // Sync namaAtlet + noBib dalam pendaftaran doc
+      const bibChanged = isEdit && initial?.noBib !== finalBib
+      if (isEdit && kejohananId && (form.nama?.trim() || bibChanged)) {
         const pendSnap = await getDocs(
           collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran')
         )
@@ -329,7 +330,10 @@ function AtletModal({ mode, initial, schoolId, kodSekolah, sekolahData, existing
         let n = 0
         pendSnap.docs.forEach(d => {
           if (d.data().noKP === finalNoKP) {
-            batch2.update(d.ref, { namaAtlet: form.nama.trim(), updatedAt: serverTimestamp() })
+            const patch = { updatedAt: serverTimestamp() }
+            if (form.nama?.trim()) patch.namaAtlet = form.nama.trim()
+            if (bibChanged)        patch.noBib     = finalBib
+            batch2.update(d.ref, patch)
             n++
           }
         })
@@ -839,16 +843,17 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
   const atletLayak = atletSekolah.filter(a => {
     if (a.isAktif === false) return false
     if (sudahDaftar.includes(a.noKP)) return false
+    const pRecAtlet = pendaftaranList.find(p => p.noKP === a.noKP)
+    const overrideKat = pRecAtlet?.kategoriOverride || null
     if (isAcaraTerbuka) {
       const katTerbuka = acara.kategoriTerbuka || []
       if (katTerbuka.length === 0) return false
-      const katAtlet = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+      const katAtlet = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
       return katAtlet && katTerbuka.includes(katAtlet)
     }
     if (a.jantina !== acara.jantina) return false
-    const katKira = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-    const kat = katKira || a.kategoriKod
-    return kat === acara.kategoriKod
+    const katKira = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+    return katKira === acara.kategoriKod
   })
 
   const hadAcara = (() => {
@@ -1111,6 +1116,193 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
   )
 }
 
+// ─── Modal: Tukar Kategori Atlet ─────────────────────────────────────────────
+
+function TukarKategoriModal({ atlet, schoolId, kejohananId, tahunKej, kategoriList, myPendaftaran, onClose, onSaved }) {
+  const pRec = myPendaftaran.find(p => p.noKP === atlet.noKP)
+  const katSemasa = pRec?.kategoriOverride || kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
+  const acaraCount = (pRec?.acaraIds || []).length
+
+  // Kategori atas sahaja — ikut jantina, lebih tinggi dari semasa (umurHad lebih besar)
+  const katSemasakObj = kategoriList.find(k => (k.kod || k.id) === katSemasa)
+  const umurHadSemasa = Number(katSemasakObj?.umurHad || 0)
+  const katAtas = kategoriList.filter(k => {
+    if (!k.kod || !k.umurHad) return false
+    const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
+    if (lbl.includes('OPEN')) return false
+    if (atlet.jantina === 'L' && !lbl.startsWith('L')) return false
+    if (atlet.jantina === 'P' && !lbl.startsWith('P')) return false
+    return Number(k.umurHad) > umurHadSemasa
+  }).sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
+
+  const [pilihan, setPilihan] = useState('')
+  const [warnPadam, setWarnPadam] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function doSimpan() {
+    if (!pilihan) return setErr('Pilih kategori baru.')
+    setSaving(true)
+    try {
+      const pendRef = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', atlet.noKP)
+
+      if (pRec) {
+        // Padam semua pendaftaran acara lama, set override
+        await updateDoc(pendRef, {
+          kategoriOverride: pilihan,
+          kategoriKod: pilihan,
+          acaraIds: [],
+          updatedAt: serverTimestamp(),
+        })
+      } else {
+        // Belum ada rekod pendaftaran — cipta baru dengan override
+        await setDoc(pendRef, {
+          noKP: atlet.noKP,
+          namaAtlet: atlet.nama,
+          jantina: atlet.jantina,
+          tarikhLahir: atlet.tarikhLahir,
+          kodSekolah: atlet.kodSekolah,
+          kategoriKod: pilihan,
+          kategoriOverride: pilihan,
+          acaraIds: [],
+          isAktif: true,
+          isRelay: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      }
+      onSaved(); onClose()
+    } catch (e) { setErr(e.message) }
+    finally { setSaving(false) }
+  }
+
+  async function doRemoveOverride() {
+    setSaving(true)
+    try {
+      const pendRef = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', atlet.noKP)
+      if (pRec) {
+        const katAsal = kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
+        await updateDoc(pendRef, {
+          kategoriOverride: null,
+          kategoriKod: katAsal || null,
+          acaraIds: [],
+          updatedAt: serverTimestamp(),
+        })
+      }
+      onSaved(); onClose()
+    } catch (e) { setErr(e.message) }
+    finally { setSaving(false) }
+  }
+
+  function handleSimpan() {
+    if (acaraCount > 0) setWarnPadam(true)
+    else doSimpan()
+  }
+
+  const katAsal = kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
+  const adaOverride = !!pRec?.kategoriOverride
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-gray-800">Tukar Kategori Atlet</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <div className="bg-gray-50 rounded-xl px-4 py-3">
+            <p className="text-xs font-bold text-gray-800">{atlet.nama}</p>
+            <p className="text-[10px] font-mono text-gray-400">{atlet.noKP}</p>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[10px] text-gray-500">Kategori asal:</span>
+              <KategoriBadge kat={katAsal} kategoriList={kategoriList} />
+              {adaOverride && (
+                <>
+                  <span className="text-[10px] text-gray-400">→</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300">
+                    Override: {pRec.kategoriOverride}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {warnPadam ? (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-bold text-amber-800">Amaran — Pendaftaran Akan Dipadam</p>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Atlet ini mempunyai <strong>{acaraCount} pendaftaran acara</strong> sedia ada.
+                Tukar kategori akan <strong>memadamkan semua pendaftaran</strong> tersebut.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setWarnPadam(false)} disabled={saving}
+                  className="flex-1 px-3 py-2 text-xs font-bold border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-100">
+                  Batal
+                </button>
+                <button onClick={doSimpan} disabled={saving}
+                  className="flex-1 px-3 py-2 text-xs font-bold bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                  {saving ? 'Memproses…' : 'Teruskan & Padam'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {katAtas.length === 0 ? (
+                <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
+                  <p className="text-xs text-gray-500">Tiada kategori lebih tinggi tersedia.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Pilih Kategori Baru (ke atas sahaja)</p>
+                  {katAtas.map(k => {
+                    const kod = k.kod || k.id
+                    const label = k.label || k.nama || kod
+                    return (
+                      <button key={kod} type="button" onClick={() => setPilihan(kod)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
+                          pilihan === kod ? 'border-[#003399] bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded-full border-2 shrink-0 transition-colors ${pilihan === kod ? 'border-[#003399] bg-[#003399]' : 'border-gray-300'}`}>
+                            {pilihan === kod && <svg className="w-full h-full text-white p-0.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                          </div>
+                          <span className="text-xs font-bold text-gray-800">{label}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-400">Bwh {k.umurHad} tahun</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {adaOverride && (
+                <button onClick={() => { if (acaraCount > 0) setWarnPadam(true); else doRemoveOverride() }}
+                  disabled={saving}
+                  className="w-full px-3 py-2 text-xs font-bold border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50">
+                  Buang Override — Kembali ke {katAsal}
+                </button>
+              )}
+
+              {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{err}</p>}
+            </>
+          )}
+        </div>
+        {!warnPadam && (
+          <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg">Batal</button>
+            {katAtas.length > 0 && (
+              <button onClick={handleSimpan} disabled={saving || !pilihan}
+                className="px-5 py-2 text-xs font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-50">
+                {saving ? 'Menyimpan…' : 'Simpan Kategori'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Modal: Buang Atlet dari Acara ────────────────────────────────────────────
 
 function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, onSaved }) {
@@ -1159,14 +1351,15 @@ function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, 
 // ─── Tab 1: Urus Atlet ────────────────────────────────────────────────────────
 
 function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, kejohananId, myPendaftaran, onRefreshPend }) {
-  const [atletList,   setAtletList]   = useState([])
-  const [loading,     setLoading]     = useState(false)
-  const [filterJ,     setFilterJ]     = useState('semua')
-  const [search,      setSearch]      = useState('')
-  const [modal,       setModal]       = useState(null) // null | { type: 'add'|'edit', data? }
-  const [showImport,  setShowImport]  = useState(false)
-  const [toast,       setToast]       = useState('')
-  const [confirmDel,  setConfirmDel]  = useState(null)
+  const [atletList,      setAtletList]      = useState([])
+  const [loading,        setLoading]        = useState(false)
+  const [filterJ,        setFilterJ]        = useState('semua')
+  const [search,         setSearch]         = useState('')
+  const [modal,          setModal]          = useState(null) // null | { type: 'add'|'edit', data? }
+  const [showImport,     setShowImport]     = useState(false)
+  const [toast,          setToast]          = useState('')
+  const [confirmDel,     setConfirmDel]     = useState(null)
+  const [tukarKatAtlet,  setTukarKatAtlet]  = useState(null)
 
   function showToast(msg) {
     setToast(msg)
@@ -1268,8 +1461,10 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
               </thead>
               <tbody>
                 {filtered.map(a => {
-                  const katAuto = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-                  const katVal  = katAuto || a.kategoriKod || ''
+                  const katAuto    = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                  const pRec       = myPendaftaran.find(p => p.noKP === a.noKP)
+                  const override   = pRec?.kategoriOverride || null
+                  const katVal     = override || katAuto || a.kategoriKod || ''
                   return (
                     <tr key={a.noKP} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${!a.isAktif?'opacity-50':''}`}>
                       <td className="px-3 py-2.5">
@@ -1282,10 +1477,21 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
                       <td className="px-3 py-2.5 text-center"><JantinaBadge j={a.jantina} /></td>
                       <td className="px-3 py-2.5 text-gray-600">{a.tarikhLahir}</td>
                       <td className="px-3 py-2.5 text-center">
-                        {katVal ? <KategoriBadge kat={katVal} kategoriList={kategoriList} /> : <span className="text-[9px] text-gray-300">—</span>}
+                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                          {katVal ? <KategoriBadge kat={katVal} kategoriList={kategoriList} /> : <span className="text-[9px] text-gray-300">—</span>}
+                          {override && (
+                            <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 leading-none">↑OVR</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex justify-center gap-1">
+                          {kejohananId && (
+                            <button onClick={() => setTukarKatAtlet(a)}
+                              className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Tukar Kategori">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
+                            </button>
+                          )}
                           <button onClick={() => setModal({ type:'edit', data:a })}
                             className="p-1 text-gray-400 hover:text-[#003399] hover:bg-blue-50 rounded transition-colors" title="Edit">
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -1343,6 +1549,17 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
           kejohananId={kejohananId}
           onClose={() => setConfirmDel(null)}
           onSaved={() => { fetchAtlet(); onRefreshPend(); showToast('Atlet berjaya dipadam.') }} />
+      )}
+      {tukarKatAtlet && kejohananId && (
+        <TukarKategoriModal
+          atlet={tukarKatAtlet}
+          schoolId={schoolId}
+          kejohananId={kejohananId}
+          tahunKej={tahunKej}
+          kategoriList={kategoriList}
+          myPendaftaran={myPendaftaran}
+          onClose={() => setTukarKatAtlet(null)}
+          onSaved={() => { onRefreshPend(); showToast('Kategori atlet berjaya dikemas kini.') }} />
       )}
 
       {toast && (
@@ -1591,14 +1808,16 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                   const atletLayak  = atletSekolah.filter(a => {
                     if (a.isAktif === false) return false
                     if (sudahDaftar.includes(a.noKP)) return false
+                    const pRecAtlet = pendaftaranList.find(p => p.noKP === a.noKP)
+                    const overrideKat = pRecAtlet?.kategoriOverride || null
                     if (isAcaraTerbuka2) {
                       const katTerbuka = acara.kategoriTerbuka || []
                       if (katTerbuka.length === 0) return false
-                      const katAtlet = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                      const katAtlet = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                       return katAtlet && katTerbuka.includes(katAtlet)
                     }
                     if (a.jantina !== acara.jantina) return false
-                    const kat = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                    const kat = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                     return kat === acara.kategoriKod
                   })
                   const selSet   = inlineSelected[aceraId] || new Set()
@@ -1671,6 +1890,9 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
 
                         // Simpan terus — supaya atlet seterusnya nampak kiraan terkini
                         const pRec = pendLiveByKP[noKP]
+                        const pendSedia = pendaftaranList.find(p => p.noKP === noKP)
+                        const overrideKat = pendSedia?.kategoriOverride || null
+                        const katEfektif = overrideKat || kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
                         if (pRec) {
                           const acaraIds = [...new Set([...(pRec.acaraIds || []), aceraId])]
                           await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran', noKP), { acaraIds, updatedAt: serverTimestamp() })
@@ -1683,7 +1905,8 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                             jantina: atlet.jantina, tarikhLahir: atlet.tarikhLahir,
                             kodSekolah: atlet.kodSekolah,
                             namaSekolah: sklData.namaSekolah || atlet.kodSekolah,
-                            kategoriKod: kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList),
+                            kategoriKod: katEfektif,
+                            ...(overrideKat ? { kategoriOverride: overrideKat } : {}),
                             acaraIds: [aceraId], isAktif: true, isRelay: false,
                             createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
                           })
@@ -1839,6 +2062,190 @@ const PP_TABS = [
   { k: 'startlist', l: 'Pengesahan Pendaftaran',  icon: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> },
 ]
 
+// ─── Data Panduan (DEPRECATED — dipindah ke PanduanPP.jsx) ──────────────────
+
+const PANDUAN_STEPS = [
+  {
+    id: 'mulakan',
+    tajuk: 'Langkah 1 — Sebelum Bermula',
+    warna: 'blue',
+    langkah: [
+      { n: 1, teks: 'Pastikan anda telah log masuk dengan akaun Pengurus Pasukan (PP) yang betul.' },
+      { n: 2, teks: 'Semak nama sekolah anda di bahagian atas kiri panel — pastikan ia betul.' },
+      { n: 3, teks: 'Hubungi pentadbir jika tiada kejohanan aktif dipaparkan.' },
+    ],
+  },
+  {
+    id: 'tambah-atlet',
+    tajuk: 'Langkah 2 — Daftar Atlet Sekolah',
+    warna: 'indigo',
+    langkah: [
+      { n: 1, teks: 'Pergi ke tab "Atlet Saya".' },
+      { n: 2, teks: 'Klik butang "Tambah Atlet" untuk tambah seorang atlet. Isikan No. Kad Pengenalan — tarikh lahir dan jantina akan diisi secara automatik.' },
+      { n: 3, teks: 'Atau klik "Import Excel" untuk import ramai atlet sekaligus. Muat turun templat yang disediakan, isikan maklumat atlet, kemudian muat naik semula.' },
+      { n: 4, teks: 'Setiap atlet mesti mempunyai Nombor Badan (BIB) yang unik.' },
+      { n: 5, teks: 'Kategori atlet (contoh: L15, P12) akan dikira secara automatik berdasarkan tarikh lahir dan tahun kejohanan.' },
+    ],
+    nota: 'Tip: Import Excel lebih cepat jika atlet melebihi 10 orang.',
+  },
+  {
+    id: 'daftar-acara',
+    tajuk: 'Langkah 3 — Daftar Atlet ke Acara',
+    warna: 'green',
+    langkah: [
+      { n: 1, teks: 'Pergi ke tab "Daftar Acara".' },
+      { n: 2, teks: 'Senarai acara dipaparkan mengikut kategori. Klik pada mana-mana acara untuk kembangkan senarai peserta.' },
+      { n: 3, teks: 'Atlet yang layak (mengikut jantina dan kategori umur) akan dipaparkan di bawah. Pilih atlet dan klik "Daftar".' },
+      { n: 4, teks: 'Badge "PENUH" bermaksud had atlet sekolah ini untuk acara berkenaan telah dipenuhi.' },
+      { n: 5, teks: 'Untuk buang atlet dari acara, klik butang "Buang" pada nama atlet dalam senarai "Sudah Daftar".' },
+    ],
+    nota: 'Pendaftaran akan ditutup secara automatik apabila tarikh tutup tiba atau heat sudah dijana.',
+  },
+  {
+    id: 'tukar-kategori',
+    tajuk: 'Langkah 4 — Tukar Kategori Atlet (Naik Kategori)',
+    warna: 'amber',
+    langkah: [
+      { n: 1, teks: 'Pergi ke tab "Atlet Saya".' },
+      { n: 2, teks: 'Klik ikon ↕ (Tukar Kategori) pada baris atlet yang ingin dinaikkan kategori.' },
+      { n: 3, teks: 'Pilih kategori yang lebih tinggi sahaja (contoh: L15 → L17). Kategori asal tidak boleh dipilih semula.' },
+      { n: 4, teks: 'Jika atlet sudah ada pendaftaran acara, semua pendaftaran akan dipadam — anda perlu daftar semula ke acara kategori baru.' },
+      { n: 5, teks: 'Selepas override aktif, atlet hanya akan nampak dalam senarai layak untuk acara kategori baru sahaja.' },
+      { n: 6, teks: 'Untuk batalkan override, klik semula ↕ dan pilih "Buang Override — Kembali ke kategori asal".' },
+    ],
+    nota: 'Override kategori hanya berkuat kuasa untuk kejohanan semasa sahaja.',
+  },
+  {
+    id: 'semak-status',
+    tajuk: 'Langkah 5 — Semak & Analisa Pendaftaran',
+    warna: 'purple',
+    langkah: [
+      { n: 1, teks: 'Tab "Status" — semak senarai setiap atlet dan acara yang telah didaftarkan.' },
+      { n: 2, teks: 'Tab "Analisa" — paparan ringkasan mengikut kategori: acara mana yang sudah daftar dan mana yang belum.' },
+      { n: 3, teks: 'Pastikan semua acara yang dikehendaki sudah berstatus "Daftar" sebelum tarikh tutup pendaftaran.' },
+    ],
+  },
+  {
+    id: 'cetak',
+    tajuk: 'Langkah 6 — Cetak Senarai Pendaftaran',
+    warna: 'rose',
+    langkah: [
+      { n: 1, teks: 'Pergi ke tab "Cetak".' },
+      { n: 2, teks: '"Cetak Mengikut Atlet" — satu baris per atlet dengan semua acara yang didaftarkan.' },
+      { n: 3, teks: '"Cetak Mengikut Acara" — satu blok per acara dengan nama peserta.' },
+      { n: 4, teks: 'Fail PDF akan dimuat turun secara automatik ke peranti anda.' },
+    ],
+    nota: 'Sila serah salinan bercetak kepada Setiausaha Kejohanan sebelum tarikh tutup.',
+  },
+  {
+    id: 'pengesahan',
+    tajuk: 'Langkah 7 — Pengesahan Pendaftaran',
+    warna: 'teal',
+    langkah: [
+      { n: 1, teks: 'Tab "Pengesahan Pendaftaran" akan aktif setelah pentadbir menjana heat untuk acara anda.' },
+      { n: 2, teks: 'Semak nombor lorong atau urutan atlet anda dalam setiap heat.' },
+      { n: 3, teks: 'Klik "Sahkan Penyertaan" apabila semua maklumat telah disemak dan disahkan.' },
+      { n: 4, teks: 'Setelah disahkan, tiada perubahan boleh dibuat. Hubungi pentadbir jika ada ralat.' },
+    ],
+  },
+]
+
+const WARNA_MAP = {
+  blue:   { bg: 'bg-blue-50',   border: 'border-blue-200',  badge: 'bg-blue-600',   num: 'bg-blue-100 text-blue-700',   title: 'text-blue-900' },
+  indigo: { bg: 'bg-indigo-50', border: 'border-indigo-200',badge: 'bg-indigo-600', num: 'bg-indigo-100 text-indigo-700',title: 'text-indigo-900' },
+  green:  { bg: 'bg-green-50',  border: 'border-green-200', badge: 'bg-green-600',  num: 'bg-green-100 text-green-700', title: 'text-green-900' },
+  amber:  { bg: 'bg-amber-50',  border: 'border-amber-200', badge: 'bg-amber-500',  num: 'bg-amber-100 text-amber-700', title: 'text-amber-900' },
+  purple: { bg: 'bg-purple-50', border: 'border-purple-200',badge: 'bg-purple-600', num: 'bg-purple-100 text-purple-700',title: 'text-purple-900' },
+  rose:   { bg: 'bg-rose-50',   border: 'border-rose-200',  badge: 'bg-rose-600',   num: 'bg-rose-100 text-rose-700',   title: 'text-rose-900' },
+  teal:   { bg: 'bg-teal-50',   border: 'border-teal-200',  badge: 'bg-teal-600',   num: 'bg-teal-100 text-teal-700',   title: 'text-teal-900' },
+}
+
+// ─── Tab: Panduan ─────────────────────────────────────────────────────────────
+
+function TabPanduan({ onGoTab }) {
+  const [buka, setBuka] = useState(PANDUAN_STEPS[0].id)
+  const TAB_MAP = {
+    'tambah-atlet':   'atlet',
+    'daftar-acara':   'daftar',
+    'tukar-kategori': 'atlet',
+    'cetak':          'cetak',
+    'pengesahan':     'startlist',
+  }
+
+  return (
+    <div className="space-y-3 w-full max-w-3xl">
+      <div className="bg-[#003399] rounded-xl px-5 py-4 text-white">
+        <p className="text-sm font-black">Panduan Pengurus Pasukan</p>
+        <p className="text-[11px] text-blue-200 mt-0.5">Ikut langkah-langkah berikut untuk mendaftarkan atlet sekolah anda.</p>
+      </div>
+
+      {PANDUAN_STEPS.map((step, idx) => {
+        const w      = WARNA_MAP[step.warna] || WARNA_MAP.blue
+        const isOpen = buka === step.id
+        const dest   = TAB_MAP[step.id] || null
+        return (
+          <div key={step.id} className={`rounded-xl border overflow-hidden ${w.border}`}>
+            <button
+              onClick={() => setBuka(isOpen ? '' : step.id)}
+              className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${isOpen ? w.bg : 'bg-white hover:bg-gray-50/60'}`}>
+              <div className="flex items-center gap-3">
+                <span className={`w-6 h-6 rounded-full text-[10px] font-black text-white flex items-center justify-center shrink-0 ${w.badge}`}>
+                  {idx + 1}
+                </span>
+                <span className={`text-xs font-bold ${isOpen ? w.title : 'text-gray-700'}`}>{step.tajuk}</span>
+              </div>
+              <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {isOpen && (
+              <div className={`px-4 pb-4 pt-2 ${w.bg} border-t ${w.border}`}>
+                <ol className="space-y-2.5 mt-1">
+                  {step.langkah.map(l => (
+                    <li key={l.n} className="flex items-start gap-2.5">
+                      <span className={`w-5 h-5 rounded-full text-[9px] font-black flex items-center justify-center shrink-0 mt-0.5 ${w.num}`}>
+                        {l.n}
+                      </span>
+                      <p className="text-xs text-gray-700 leading-relaxed">{l.teks}</p>
+                    </li>
+                  ))}
+                </ol>
+                {step.nota && (
+                  <div className="mt-3 flex items-start gap-2 bg-white/70 border border-white rounded-lg px-3 py-2">
+                    <svg className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-[10px] text-gray-500 leading-relaxed">{step.nota}</p>
+                  </div>
+                )}
+                {dest && (
+                  <button onClick={() => onGoTab(dest)}
+                    className={`mt-3 flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-white rounded-lg ${w.badge} hover:opacity-90 transition-opacity`}>
+                    Pergi ke tab berkaitan
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 flex items-start gap-2">
+        <svg className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+        </svg>
+        <p className="text-[10px] text-gray-500 leading-relaxed">
+          Untuk sebarang pertanyaan atau bantuan teknikal, sila hubungi <strong>Setiausaha Kejohanan</strong> atau pentadbir sistem.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default function PengurusDashboard() {
   const { userData } = useAuth()
 
@@ -1934,7 +2341,11 @@ export default function PengurusDashboard() {
         const homeSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
         if (homeSnap.exists()) {
           const hd = homeSnap.data()
-          setLogos({ kiri: hd.logoKiri || null, kanan: hd.logoKanan || null, kej: hd.logoKejohanan || null })
+          setLogos({
+            kiri:  hd.logoKiriBase64       || null,
+            kanan: hd.logoKananBase64      || null,
+            kej:   hd.logoKejohananBase64  || null,
+          })
         }
       } catch { /* abaikan */ }
       finally { setLogosLoaded(true) }
@@ -1999,7 +2410,7 @@ export default function PengurusDashboard() {
         .filter(p => (p.acaraIds || []).includes(aid))
         .map(p => {
           const atlet = atletSekolah.find(x => x.noKP === p.noKP)
-          return { ...p, namaAtlet: atlet?.nama || p.noKP, noBib: p.noBib || atlet?.noBib || '—' }
+          return { ...p, namaAtlet: atlet?.nama || p.noKP, noBib: atlet?.noBib || p.noBib || '—' }
         })
     })
     return map
@@ -2251,8 +2662,8 @@ export default function PengurusDashboard() {
         .forEach(a => {
           const pRec     = myPendaftaran.find(p => p.noKP === a.noKP)
           const acaraIds = pRec?.acaraIds || []
-          const noBib    = pRec?.noBib || a.noBib || '—'
-          const kat      = pRec?.kategoriKod || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList) || '—'
+          const noBib    = a.noBib || pRec?.noBib || '—'
+          const kat      = pRec?.kategoriOverride || pRec?.kategoriKod || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList) || '—'
           const acNama   = acaraIds.map(id => acaraMap[id]?.namaAcara || id).join(', ') || '—'
           rows.push([bil++, noBib, a.nama, a.noKP, a.jantina, kat, acNama])
         })
@@ -2594,7 +3005,7 @@ export default function PengurusDashboard() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-4xl">
+    <div className="p-4 sm:p-6 space-y-4 w-full">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -2617,8 +3028,8 @@ export default function PengurusDashboard() {
         </div>
       )}
 
-      {/* Tab Bar — 6 tab setara KOAM */}
-      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl overflow-x-auto w-fit max-w-full">
+      {/* Tab Bar */}
+      <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-xl w-full">
         {PP_TABS.map(t => {
           const isActive = activeTab === t.k
           let tabCls = isActive
