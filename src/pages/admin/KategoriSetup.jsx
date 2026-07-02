@@ -802,7 +802,7 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
                   const aceraKey  = a.aceraId || a.id
                   const n         = heatCountMap[aceraKey] || 0
                   const peserta   = pesertaMap[aceraKey] || 0
-                  const isQF      = a.peringkat === 'suku_akhir'
+                  const isQF      = a.peringkat === 'saringan_qf'
                   const isSF      = a.peringkat === 'separuh_akhir'
                   const belumHeat = n === 0
 

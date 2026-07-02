@@ -18,6 +18,7 @@ const KategoriSetup      = lazy(() => import('./pages/admin/KategoriSetup'))
 const AcaraSetup         = lazy(() => import('./pages/admin/AcaraSetup'))
 const PendaftaranSetup   = lazy(() => import('./pages/admin/PendaftaranSetup'))
 const StartListSetup     = lazy(() => import('./pages/admin/StartListSetup'))
+const StartList          = lazy(() => import('./pages/admin/StartList'))
 const InputKeputusan     = lazy(() => import('./pages/admin/InputKeputusan'))
 const MedalTallySetup   = lazy(() => import('./pages/admin/MedalTallySetup'))
 const LaporanCetakan     = lazy(() => import('./pages/admin/LaporanCetakan'))
@@ -36,7 +37,7 @@ const PencatatHome       = lazy(() => import('./pages/pencatat/PencatatHome'))
 const PencatatInputKej   = lazy(() => import('./pages/pencatat/PencatatDashboard'))
 const PencatatInput      = lazy(() => import('./pages/pencatat/InputKeputusan'))
 const PencatatCetakanHadiah = lazy(() => import('./pages/pencatat/CetakanHadiah'))
-const PencatatStartList  = lazy(() => import('./pages/admin/StartListSetup'))
+const PencatatStartList  = lazy(() => import('./pages/admin/StartList'))
 const PencatatRekod      = lazy(() => import('./pages/admin/Rekod'))
 const PencatatCetakAcara = lazy(() => import('./pages/admin/CetakAcara'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
@@ -228,7 +229,7 @@ function AppRoutes() {
         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/admin/kejohanan/:kejId" element={<AdminRoute><KejohananDetail /></AdminRoute>} />
         <Route path="/admin/kejohanan/:kejId/pendaftaran" element={<AdminRoute><PendaftaranSetup /></AdminRoute>} />
-        <Route path="/admin/kejohanan/:kejId/startlist" element={<AdminRoute><StartListSetup /></AdminRoute>} />
+        <Route path="/admin/kejohanan/:kejId/startlist" element={<AdminRoute><StartList /></AdminRoute>} />
         <Route path="/admin/kejohanan/:kejId/kategori" element={<AdminRoute><KategoriSetup /></AdminRoute>} />
         <Route path="/admin/kejohanan/:kejId/acara" element={<AdminRoute><AcaraSetup /></AdminRoute>} />
         <Route path="/admin/kejohanan/:kejId/keputusan" element={<AdminRoute><InputKeputusan /></AdminRoute>} />

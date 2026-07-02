@@ -151,7 +151,9 @@ export function buatStartListPDFUnified({
     ? new Date(jadual.tarikhAcara + 'T00:00:00').toLocaleDateString('ms-MY',
         { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     : '—'
-  const peringkatLabel = acara.peringkat === 'saringan' ? 'Saringan'
+  const peringkatLabel = acara.peringkat === 'saringan_qf' ? 'Saringan / QF'
+    : acara.peringkat === 'saringan_sf' ? 'Saringan / SF'
+    : acara.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
     : acara.parentAcaraId ? `Final (← #${acara.parentAcaraId})`
     : 'Final'
 
@@ -178,8 +180,8 @@ export function buatStartListPDFUnified({
     )
     const jumlahHeat = jumlahHeatTotal ?? heats.filter(h => h.fasa !== 'final').length
     const fasaStr = heat.fasa === 'final'          ? 'FINAL'
-                  : heat.fasa === 'saringan'       ? 'SARINGAN'
-                  : heat.fasa === 'suku_akhir'    ? `SUKU AKHIR ${heat.noHeat}/${jumlahHeat}`
+                  : heat.fasa === 'saringan_qf'   ? `SARINGAN/QF ${heat.noHeat}/${jumlahHeat}`
+                  : heat.fasa === 'saringan_sf'   ? `SARINGAN/SF ${heat.noHeat}/${jumlahHeat}`
                   : heat.fasa === 'separuh_akhir' ? `SEPARUH AKHIR ${heat.noHeat}/${jumlahHeat}`
                   : `HEAT ${heat.noHeat}/${jumlahHeat}`
 

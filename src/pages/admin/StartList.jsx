@@ -51,8 +51,8 @@ let LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }        // heat  — lorong
 const FASA_LABEL = {
   heat:          'Heat / Saringan',
   final:         'Final',
-  saringan:      'Saringan',
-  suku_akhir:    'Suku Akhir',
+  saringan_qf:   'Saringan / QF',
+  saringan_sf:   'Saringan / SF',
   separuh_akhir: 'Separuh Akhir',
   terus_final:   'Terus Final',
 }
@@ -162,9 +162,9 @@ function assignGiliran(peserta) {
 
 function buatHeatId(aceraId, fasa, noHeat) {
   const fasaKod = fasa === 'final'          ? 'F'
-                : fasa === 'suku_akhir'    ? 'QF'
+                : fasa === 'saringan_qf'   ? 'QF'
                 : fasa === 'separuh_akhir' ? 'SF'
-                : fasa === 'saringan'       ? 'S' : 'H'
+                : fasa === 'saringan_sf'   ? 'S' : 'H'
   return `${aceraId}-${fasaKod}${noHeat}`
 }
 
@@ -284,8 +284,8 @@ function FasaBadge({ fasa }) {
   const colors = {
     heat:          'bg-blue-100 text-blue-700',
     final:         'bg-purple-100 text-purple-700',
-    saringan:      'bg-orange-100 text-orange-700',
-    suku_akhir:    'bg-teal-100 text-teal-700',
+    saringan_qf:   'bg-blue-100 text-blue-700',
+    saringan_sf:   'bg-cyan-100 text-cyan-700',
     separuh_akhir: 'bg-indigo-100 text-indigo-700',
     terus_final:   'bg-green-100 text-green-700',
   }
@@ -1064,8 +1064,8 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   const isMass   = acara.jenisAcara === 'mass_start'
   const isRelay  = acara.jenisAcara === 'relay'
 
-  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan' || h.fasa === 'suku_akhir')
-  const fasaJana = acara.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
+  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf')
+  const fasaJana = acara.peringkat === 'saringan_qf' ? 'sukuKeSeparuh' : 'toFinal'
 
   const [finalis,        setFinalis]        = useState([])
   const [finalSetup,     setFinalSetup]     = useState(null)
@@ -1160,7 +1160,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       )
       const targetAcara = finalAcaraLinked || acara
       const targetKey   = targetAcara.aceraId || targetAcara.id
-      const fasaHeat    = fasaJana === 'sukuKeSeparuh' ? 'suku_akhir' : 'final'
+      const fasaHeat    = fasaJana === 'sukuKeSeparuh' ? 'saringan_qf' : 'final'
       const jenisLorong = detectJenisLorong(acara)
 
       if (fasaJana === 'sukuKeSeparuh') {
@@ -2161,7 +2161,7 @@ export default function StartList() {
         const katLbl = katLabel(a.kategoriKod, kategoriList)
         const masa   = a.jadual?.masaMula || '—'
         const lokasi = a.jadual?.lokasi   || '—'
-        const peringkatLabel = a.peringkat === 'saringan' ? 'Saringan'
+        const peringkatLabel = ['saringan_qf','saringan_sf'].includes(a.peringkat) ? 'Saringan'
           : a.parentAcaraId ? `Final (← Acara #${a.parentAcaraId})`
           : 'Terus Final'
 
@@ -2214,7 +2214,7 @@ export default function StartList() {
           pdf.setFont('helvetica', 'bold')
           pdf.setFontSize(8)
           pdf.setTextColor(0, 51, 153)
-          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
+          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan_qf' ? 'SARINGAN/QF' : heat.fasa === 'saringan_sf' ? 'SARINGAN/SF' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
           pdf.text(fasaStr, M + 3, curY + 4.5)
           pdf.setTextColor(0, 0, 0)
           curY += 7
@@ -2312,7 +2312,7 @@ export default function StartList() {
     return {
       ...h,
       heatId: docId,
-      fasa: h.fasa || (h.peringkat === 'final' ? 'final' : h.peringkat === 'saringan' ? 'saringan' : 'heat'),
+      fasa: h.fasa || (h.peringkat === 'final' ? 'final' : ['saringan_qf','saringan_sf'].includes(h.peringkat) ? h.peringkat : 'heat'),
       peserta: (h.peserta || []).map(p => ({
         ...p,
         noBib:      String(p.noBib      ?? ''),
@@ -2446,7 +2446,9 @@ export default function StartList() {
       const tarikhLabel = jadual.tarikhAcara
         ? new Date(jadual.tarikhAcara + 'T00:00:00').toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
         : '—'
-      const peringkatLabel = acara.peringkat === 'saringan' ? 'Saringan'
+      const peringkatLabel = acara.peringkat === 'saringan_qf' ? 'Saringan/QF'
+        : acara.peringkat === 'saringan_sf' ? 'Saringan/SF'
+        : acara.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
         : acara.parentAcaraId ? `Final (← #${acara.parentAcaraId})`
         : 'Terus Final'
 
@@ -2507,7 +2509,7 @@ export default function StartList() {
         pdf.rect(M, curY, W - M * 2, 6.5, 'F')
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8)
         pdf.setTextColor(0, 51, 153)
-        const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
+        const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan_qf' ? 'SARINGAN/QF' : heat.fasa === 'saringan_sf' ? 'SARINGAN/SF' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
         pdf.text(fasaStr, M + 3, curY + 4.5)
         pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7)
         pdf.text(`${pesertaHeat.length} peserta`, W - M - 3, curY + 4.5, { align: 'right' })
@@ -2688,7 +2690,7 @@ export default function StartList() {
         const katLbl = katLabel(a.kategoriKod, kategoriList)
         const masa   = a.jadual?.masaMula || '—'
         const lokasi = a.jadual?.lokasi   || '—'
-        const peringkatLabel = a.peringkat === 'saringan' ? 'Saringan'
+        const peringkatLabel = ['saringan_qf','saringan_sf'].includes(a.peringkat) ? 'Saringan'
           : a.parentAcaraId ? `Final (← #${a.parentAcaraId})`
           : 'Terus Final'
 
@@ -2714,7 +2716,7 @@ export default function StartList() {
           pdf.setFillColor(230, 235, 255)
           pdf.rect(M, curY, W - M * 2, 6.5, 'F')
           pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(0, 51, 153)
-          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
+          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan_qf' ? 'SARINGAN/QF' : heat.fasa === 'saringan_sf' ? 'SARINGAN/SF' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
           pdf.text(fasaStr, M + 3, curY + 4.5)
           pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7)
           pdf.text(`${pesertaHeat.length} peserta`, W - M - 3, curY + 4.5, { align: 'right' })
@@ -2805,7 +2807,7 @@ export default function StartList() {
         const katLbl = katLabel(a.kategoriKod, kategoriList)
         const masa   = a.jadual?.masaMula || '—'
         const lokasi = a.jadual?.lokasi   || '—'
-        const peringkatLabel = a.peringkat === 'saringan' ? 'Saringan'
+        const peringkatLabel = ['saringan_qf','saringan_sf'].includes(a.peringkat) ? 'Saringan'
           : a.parentAcaraId ? `Final (← #${a.parentAcaraId})`
           : 'Terus Final'
 
@@ -2829,7 +2831,7 @@ export default function StartList() {
           pdf.setFillColor(230, 235, 255)
           pdf.rect(M, curY, W - M * 2, 6.5, 'F')
           pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(0, 51, 153)
-          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan' ? 'SARINGAN' : heat.fasa === 'suku_akhir' ? 'SUKU AKHIR' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
+          const fasaStr = heat.fasa === 'final' ? 'FINAL' : heat.fasa === 'saringan_qf' ? 'SARINGAN/QF' : heat.fasa === 'saringan_sf' ? 'SARINGAN/SF' : heat.fasa === 'separuh_akhir' ? 'SEPARUH AKHIR' : `HEAT ${heat.noHeat}`
           pdf.text(fasaStr, M + 3, curY + 4.5)
           pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7)
           pdf.text(`${pesertaHeat.length} peserta`, W - M - 3, curY + 4.5, { align: 'right' })
@@ -2894,10 +2896,10 @@ export default function StartList() {
   const isRelay  = selectedAcara?.jenisAcara === 'relay'
 
   // ── Derived: Heat → Final gate ────────────────────────────────────────────
-  const isSukuAkhirAcara    = selectedAcara?.peringkat === 'suku_akhir'
+  const isSukuAkhirAcara    = selectedAcara?.peringkat === 'saringan_qf'
   const isSeparuhAkhirAcara = selectedAcara?.peringkat === 'separuh_akhir'
-  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan' || h.fasa === 'suku_akhir')
-  // suku_akhir/separuh_akhir: final dijana di acara lain — guna finalDijanaKe sebagai flag dah jana
+  const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf')
+  // saringan_qf/separuh_akhir: final dijana di acara lain — guna finalDijanaKe sebagai flag dah jana
   const finalExists    = (isSukuAkhirAcara || isSeparuhAkhirAcara)
     ? !!(selectedAcara?.finalDijanaKe)
     : heatList.some(h => h.fasa === 'final')
@@ -2907,7 +2909,7 @@ export default function StartList() {
 
   // ── Derived: Jana Final dari final acara view ──────────────────────────────
   const isFinalAcara        = !!(selectedAcara?.parentAcaraId)
-  const sarPhaseHeats       = saringanHeats.filter(h => h.fasa === 'heat' || h.fasa === 'saringan' || h.fasa === 'suku_akhir')
+  const sarPhaseHeats       = saringanHeats.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf')
   const sarAllRasmi         = sarPhaseHeats.length > 0 &&
     sarPhaseHeats.every(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
   const canJanaFinalFromFinal = canEdit && isFinalAcara && heatList.length === 0 && sarAllRasmi
@@ -3304,7 +3306,7 @@ export default function StartList() {
 
                       // Peringkat badge
                       let pBadge
-                      if (a.peringkat === 'saringan') {
+                      if (['saringan_qf','saringan_sf'].includes(a.peringkat)) {
                         pBadge = <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">SARINGAN</span>
                       } else if (a.parentAcaraId) {
                         pBadge = <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">FINAL</span>
@@ -3467,7 +3469,7 @@ export default function StartList() {
                               const heat = heatCountMap[aid] || 0
                               const peserta = pesertaCountMap[aid] || 0
                               const masa = jadualMap[aid]?.masaMula || '—'
-                              const peringkatBadge = a.peringkat === 'saringan'
+                              const peringkatBadge = ['saringan_qf','saringan_sf'].includes(a.peringkat)
                                 ? <span className="ml-1 text-[8px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Saringan</span>
                                 : a.parentAcaraId
                                 ? <span className="ml-1 text-[8px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">Final</span>
@@ -3662,8 +3664,12 @@ export default function StartList() {
 
                 // Peringkat badge
                 let peringkatBadge
-                if (a.peringkat === 'saringan') {
-                  peringkatBadge = <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">SARINGAN</span>
+                if (a.peringkat === 'saringan_qf') {
+                  peringkatBadge = <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 shrink-0">QF</span>
+                } else if (a.peringkat === 'saringan_sf') {
+                  peringkatBadge = <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700 shrink-0">SF</span>
+                } else if (a.peringkat === 'separuh_akhir') {
+                  peringkatBadge = <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 shrink-0">SF</span>
                 } else if (a.parentAcaraId) {
                   peringkatBadge = <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 shrink-0">FINAL</span>
                 } else {
@@ -3756,27 +3762,27 @@ export default function StartList() {
                           Paparan Sahaja
                         </span>
                       )}
-                      {/* Cetak Semua Heat */}
-                      {heatList.length > 0 && (
-                        <button
-                          onClick={cetakSemuaHeat}
+                      {/* Cetak Semua Heat — tunjuk bila ada heat */}
+                      {canEdit && heatList.length > 0 && (
+                        <button onClick={cetakSemuaHeat}
                           disabled={cetakLoading || cetakHeatId !== null}
                           className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold border border-[#003399] text-[#003399] rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                           {cetakLoading ? 'Mencetak…' : 'Cetak Semua Heat'}
                         </button>
                       )}
-                      {/* Jana/Reset — admin sahaja */}
+                      {/* Reset — admin, ada heat */}
                       {canEdit && heatList.length > 0 && (
                         <button onClick={handlePadamSemuaHeat}
                           className="px-3 py-2 text-[10px] font-bold border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors">
                           Reset
                         </button>
                       )}
-                      {canEdit && pesertaList.length > 0 && (
-                        <button
-                          onClick={() => setModal({ type: 'generate' })}
-                          className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] transition-colors">
+                      {/* Jana Heat — sentiasa nampak untuk admin, disabled bila tiada peserta */}
+                      {canEdit && (
+                        <button onClick={() => setModal({ type: 'generate' })}
+                          disabled={pesertaList.length === 0}
+                          className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                           {heatList.length > 0 ? 'Jana Semula' : 'Jana Heat'}
                         </button>
@@ -3904,45 +3910,45 @@ export default function StartList() {
                   )
                   return (
                     <div key={heat.heatId} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                      {/* Heat header */}
+                      {/* Heat header — sama layout KOAM */}
                       <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2 flex-wrap">
                           <FasaBadge fasa={heat.fasa} />
-                          <span className="text-xs font-bold text-gray-700">{FASA_LABEL[heat.fasa]||heat.fasa} {heat.noHeat}</span>
+                          <span className="text-xs font-bold text-gray-700">
+                            {heat.fasa === 'final' ? 'Final'
+                              : heat.fasa === 'saringan_qf' ? `Heat / Saringan QF ${heat.noHeat}`
+                              : heat.fasa === 'saringan_sf' ? `Heat / Saringan SF ${heat.noHeat}`
+                              : heat.fasa === 'separuh_akhir' ? `Separuh Akhir ${heat.noHeat}`
+                              : `Heat / Saringan ${heat.noHeat}`}
+                          </span>
+                          <span className="text-[9px] text-gray-400">· {sortedPeserta.length} {isRelay ? 'pasukan' : 'atlet'}</span>
                           <StatusBadge status={heat.status} />
-                          <span className="text-[9px] font-mono text-gray-400">{heat.heatId}</span>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Badge kiraan cetak */}
                           {(heat.bilanganCetak || 0) > 0 ? (
                             <span className="flex items-center gap-1 text-[9px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                              ✓ {heat.bilanganCetak}× — {formatTarikhCetak(heat.tarikhCetak) || '—'}
+                              ✓ {heat.bilanganCetak}× dicetak
                             </span>
                           ) : (
-                            <span className="text-[9px] text-gray-400">○ Belum dicetak</span>
+                            <span className="text-[9px] text-gray-400">Belum dicetak</span>
                           )}
                           {/* Reset kiraan — superadmin & admin */}
                           {['superadmin', 'admin'].includes(userRole) && (heat.bilanganCetak || 0) > 0 && (
-                            <button
-                              onClick={() => resetKiraanHeat(heat)}
-                              title="Reset kiraan cetak"
-                              className="text-[10px] text-gray-400 hover:text-red-500 transition-colors font-bold">
-                              ↺
-                            </button>
+                            <button onClick={() => resetKiraanHeat(heat)} title="Reset kiraan cetak"
+                              className="text-[10px] text-gray-400 hover:text-red-500 transition-colors font-bold">↺</button>
                           )}
                           {/* Cetak heat ini */}
-                          <button
-                            onClick={() => cetakSatuHeat(heat)}
+                          <button onClick={() => cetakSatuHeat(heat)}
                             disabled={cetakHeatId === heat.heatId || cetakLoading}
-                            className="flex items-center gap-1 px-2.5 py-1 text-[9px] font-bold border border-[#003399] text-[#003399] rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
+                            className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold border border-[#003399] text-[#003399] rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                             {cetakHeatId === heat.heatId ? 'Mencetak…' : 'Cetak'}
                           </button>
                           {/* Edit lorong */}
                           {canEdit && (
-                            <button
-                              onClick={() => setModal({ type: 'editlorong', heat })}
-                              className="text-[10px] font-semibold text-[#003399] hover:underline">
+                            <button onClick={() => setModal({ type: 'editlorong', heat })}
+                              className="px-3 py-1.5 text-[10px] font-bold border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
                               Edit {isPadang||isMass?'Giliran':'Lorong'}
                             </button>
                           )}

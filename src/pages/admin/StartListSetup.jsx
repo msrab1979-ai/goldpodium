@@ -61,8 +61,8 @@ let LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }
 const FASA_LABEL = {
   heat:          'Heat',
   final:         'Final',
-  saringan:      'Saringan',
-  suku_akhir:    'Suku Akhir',
+  saringan_qf:   'Saringan / QF',
+  saringan_sf:   'Saringan / SF',
   separuh_akhir: 'Separuh Akhir',
   terus_final:   'Terus Final',
 }
@@ -136,7 +136,7 @@ function katLabel(kod, kategoriList = []) {
 function FasaBadge({ fasa }) {
   const colors = {
     heat: 'bg-blue-100 text-blue-700', final: 'bg-purple-100 text-purple-700',
-    saringan: 'bg-orange-100 text-orange-700', suku_akhir: 'bg-teal-100 text-teal-700',
+    saringan_qf: 'bg-blue-100 text-blue-700', saringan_sf: 'bg-cyan-100 text-cyan-700',
     separuh_akhir: 'bg-indigo-100 text-indigo-700', terus_final: 'bg-green-100 text-green-700',
   }
   return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colors[fasa]||'bg-gray-100 text-gray-500'}`}>{FASA_LABEL[fasa]||fasa}</span>
@@ -691,7 +691,7 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
   const aceraKey = acara.aceraId || acara.id
 
   // Peringkat acara — tentukan butang jana finalis yang perlu dipapar
-  const isQF = acara.peringkat === 'suku_akhir'
+  const isQF = acara.peringkat === 'saringan_qf'
   const isSF = acara.peringkat === 'separuh_akhir'
   const showJanaQFtoSF    = isQF  // QF → SF
   const showJanaSFtoFinal = isSF  // SF → Final
@@ -1145,7 +1145,7 @@ export default function StartListSetup() {
                           const heatCnt = heatCountMap[aid] || 0
                           const pCnt    = pesertaCountMap[aid] || 0
                           const isSelected = selectedAcara?.id === a.id
-                          const isQF    = a.peringkat === 'suku_akhir'
+                          const isQF    = a.peringkat === 'saringan_qf'
                           const isSF    = a.peringkat === 'separuh_akhir'
                           const isFinal = a.peringkat === 'akhir' || a.peringkat === 'final'
                           const isChild = !!a.parentAcaraId

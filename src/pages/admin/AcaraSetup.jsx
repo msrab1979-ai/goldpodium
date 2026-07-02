@@ -248,9 +248,9 @@ function HariHeader({ hIdx, tarikh, hariLabel, count, onTukar }) {
 
 function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved, onCancel }) {
   const kejohananId = kejId // backward compat alias
-  const peringkatMode0 = acara.peringkat === 'saringan'       ? 'saringan'
-    : acara.peringkat === 'suku_akhir'    ? 'suku_akhir'
-    : acara.peringkat === 'separuh_akhir' ? 'separuh_akhir'
+  const peringkatMode0 = acara.peringkat === 'saringan_qf'    ? 'saringan_qf'
+    : acara.peringkat === 'saringan_sf'    ? 'saringan_sf'
+    : acara.peringkat === 'separuh_akhir'  ? 'separuh_akhir'
     : acara.parentAcaraId ? 'final_p' : 'akhir'
 
   const [form, setForm] = useState({
@@ -288,21 +288,22 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     : form.jantina
   const namaFull    = `${form.namaAcaraPendek} ${kelas}`.trim()
   const isPadang    = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
-  const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
+  const PERINGKAT_DENGAN_HEAT = ['saringan_qf', 'saringan_sf', 'separuh_akhir']
   const peringkat   = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
   const parentId    = ['final_p', 'separuh_akhir'].includes(form.peringkatMode) ? form.parentAcaraId.trim() : ''
 
-  // Parent yang layak — filter ikut peringkat + kategori + jantina
-  // SF mesti pilih QF (suku_akhir) | Final mesti pilih SF (separuh_akhir) atau Saringan
+  // saringan_qf  → parent SF (separuh_akhir)
+  // saringan_sf  → parent Final (akhir) terus
+  // separuh_akhir (SF) — parent mesti saringan_qf
+  // final_p (Final)    — parent mesti separuh_akhir atau saringan_sf
   const PARENT_PERINGKAT = {
-    separuh_akhir: ['suku_akhir', 'saringan'],
-    final_p:       ['separuh_akhir', 'saringan'],
+    separuh_akhir: ['saringan_qf'],
+    final_p:       ['separuh_akhir', 'saringan_sf'],
   }
   const saringanList = acaraList.filter(a => {
     if (String(a.noAcara) === String(acara.noAcara)) return false
     const allowed = PARENT_PERINGKAT[form.peringkatMode] || []
     if (!allowed.includes(a.peringkat)) return false
-    // filter kategori + jantina — sama dahulukan, tapi jangan buang jika tiada
     if (form.kategoriKod && a.kategoriKod && a.kategoriKod !== 'TERBUKA') {
       if (a.kategoriKod !== form.kategoriKod) return false
     }
@@ -312,7 +313,6 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     return true
   })
 
-  // Semak sama ada final sudah wujud untuk saringan ini
   const thisNo = String(acara.noAcara || acara.aceraId || acara.id)
   const existingFinal = acaraList.find(a => String(a.parentAcaraId) === thisNo)
 
@@ -321,11 +321,11 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     return allNos.length ? String(Math.max(...allNos) + 1) : ''
   }
 
-  // next peringkat dalam chain: saringan→akhir, suku_akhir→separuh_akhir, separuh_akhir→akhir
-  const NEXT_PERINGKAT = { saringan: 'akhir', suku_akhir: 'separuh_akhir', separuh_akhir: 'akhir' }
-  const NEXT_LABEL     = { saringan: 'Final', suku_akhir: 'Separuh Akhir', separuh_akhir: 'Final' }
+  // next dalam chain: saringan_qf→separuh_akhir, saringan_sf→akhir, separuh_akhir→akhir
+  const NEXT_PERINGKAT = { saringan_qf: 'separuh_akhir', saringan_sf: 'akhir', separuh_akhir: 'akhir' }
+  const NEXT_LABEL     = { saringan_qf: 'Separuh Akhir (SF)', saringan_sf: 'Final', separuh_akhir: 'Final' }
   const adaNextPanel   = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode)
-  const nextAdaHeat    = form.peringkatMode === 'suku_akhir' // SF ada heat, Final tiada
+  const nextAdaHeat    = form.peringkatMode === 'saringan_qf' // SF ada heat, Final tiada
 
   async function createNextAcara(thisId) {
     if (!withFinal || !finalNo.trim() || !adaNextPanel) return
@@ -358,7 +358,9 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     if (!form.namaAcaraPendek.trim()) return setErr('Nama wajib')
     if (!form.kategoriKod) return setErr('Kategori wajib')
     if (form.peringkatMode === 'separuh_akhir' && !form.parentAcaraId)
-      return setErr('Pilih acara sebelum (QF)')
+      return setErr('Pilih acara QF sebelum SF')
+    if (form.peringkatMode === 'final_p' && !form.parentAcaraId)
+      return setErr('Pilih acara SF atau Saringan/SF sebelum Final')
     setSaving(true)
     try {
       const aPath = acaraColPath(schoolId, kejId)
@@ -455,23 +457,18 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
         </td>
         {/* Peringkat */}
         <td className="px-1.5 py-1.5">
-          {peringkatMode0 === 'saringan' ? (
-            <span className="text-[10px] text-gray-400 px-1">Saringan</span>
-          ) : (
-            <select value={form.peringkatMode} onChange={e => { set('peringkatMode', e.target.value); set('parentAcaraId', '') }} className={ic}>
-              <option value="akhir">Terus Final</option>
-              <option value="suku_akhir">Suku Akhir (QF)</option>
-              <option value="separuh_akhir">Separuh Akhir (SF)</option>
-              <option value="final_p">Final ←</option>
-            </select>
-          )}
-          {/* Pilih acara sebelum — untuk SF dan Final sahaja (QF = acara pertama, tiada parent) */}
+          <select value={form.peringkatMode} onChange={e => { set('peringkatMode', e.target.value); set('parentAcaraId', '') }} className={ic}>
+            <option value="saringan_qf">Saringan / QF</option>
+            <option value="saringan_sf">Saringan / SF</option>
+            <option value="final_p">Final</option>
+            <option value="akhir">Terus Final</option>
+          </select>
           {['separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
             saringanList.length === 0
               ? <p className="text-[10px] text-red-500 mt-1 bg-red-50 border border-red-200 rounded px-2 py-1">
                   {form.peringkatMode === 'separuh_akhir'
-                    ? '⚠ Tiada QF/Saringan untuk kategori ini. Bina dahulu.'
-                    : '⚠ Tiada SF/Saringan untuk kategori ini. Bina dahulu.'}
+                    ? '⚠ Tiada Saringan/QF untuk kategori ini. Bina dahulu.'
+                    : '⚠ Tiada SF atau Saringan/SF untuk kategori ini. Bina dahulu.'}
                 </p>
               : <select value={form.parentAcaraId} onChange={e => set('parentAcaraId', e.target.value)}
                   className={ic + ' mt-1 text-[10px]'}>
@@ -633,7 +630,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     jenisAcara:        lastA?.jenisAcara  || 'lorong',
     lokasi:            lastA?.lokasi      || 'Trek Utama',
     hadAtletPerSekolah: lastA?.hadAtletPerSekolah || 2,
-    peringkatMode:     'akhir',   // 'akhir' | 'saringan' | 'final_p'
+    peringkatMode:     'saringan_qf',
     parentAcaraId:     '',
     isIndividu:        lastA?.isIndividu ?? (lastA?.jenisAcara !== 'relay'),
   })
@@ -670,15 +667,17 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     : form.jantina
   const namaFull     = `${form.namaAcaraPendek} ${kelas}`.trim()
   const isPadang     = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
-  const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
+  const PERINGKAT_DENGAN_HEAT = ['saringan_qf', 'saringan_sf', 'separuh_akhir']
   const peringkat    = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode) ? form.peringkatMode : 'akhir'
   const parentId     = ['final_p', 'separuh_akhir'].includes(form.peringkatMode) ? form.parentAcaraId.trim() : ''
 
-  // Parent yang layak — filter ikut peringkat + kategori + jantina
-  // SF mesti pilih QF (suku_akhir) | Final mesti pilih SF (separuh_akhir) atau Saringan
+  // saringan_qf  → jana SF (separuh_akhir)
+  // saringan_sf  → jana Final (akhir) terus
+  // separuh_akhir (SF) — parent mesti saringan_qf
+  // final_p (Final)    — parent mesti separuh_akhir atau saringan_sf
   const PARENT_PERINGKAT = {
-    separuh_akhir: ['suku_akhir', 'saringan'],
-    final_p:       ['separuh_akhir', 'saringan'],
+    separuh_akhir: ['saringan_qf'],
+    final_p:       ['separuh_akhir', 'saringan_sf'],
   }
   const saringanList = acaraList.filter(a => {
     const allowed = PARENT_PERINGKAT[form.peringkatMode] || []
@@ -692,11 +691,11 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     return true
   })
 
-  // next acara dalam chain
-  const NEXT_PERINGKAT = { saringan: 'akhir', suku_akhir: 'separuh_akhir', separuh_akhir: 'akhir' }
-  const NEXT_LABEL     = { saringan: 'Final', suku_akhir: 'Separuh Akhir', separuh_akhir: 'Final' }
+  // next dalam chain: saringan_qf→separuh_akhir, saringan_sf→akhir, separuh_akhir→akhir
+  const NEXT_PERINGKAT = { saringan_qf: 'separuh_akhir', saringan_sf: 'akhir', separuh_akhir: 'akhir' }
+  const NEXT_LABEL     = { saringan_qf: 'Separuh Akhir (SF)', saringan_sf: 'Final', separuh_akhir: 'Final' }
   const adaNextPanel   = PERINGKAT_DENGAN_HEAT.includes(form.peringkatMode)
-  const nextAdaHeat    = form.peringkatMode === 'suku_akhir'
+  const nextAdaHeat    = form.peringkatMode === 'saringan_qf'
 
   // ── Tambah Acara Seterusnya Serentak ─────────────────────────────────────────
   const [withFinal,    setWithFinal]    = useState(false)
@@ -752,7 +751,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     )
 
     // Jika QF → SF, dan toggle Final juga ON — bina Final dengan parentAcaraId = SF
-    if (form.peringkatMode === 'suku_akhir' && withFinal2 && finalNo2.trim()) {
+    if (form.peringkatMode === 'saringan_qf' && withFinal2 && finalNo2.trim()) {
       const finalId = finalNo2.trim()
       await setDoc(doc(db, aPath, finalId),
         buildAcaraDoc(finalId, 'akhir', sfId, false, finalTarikh2, finalMasa2)
@@ -795,7 +794,9 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     if (!form.namaAcaraPendek.trim()) return setErr('Nama acara wajib')
     if (!form.kategoriKod)            return setErr('Kategori wajib')
     if (form.peringkatMode === 'separuh_akhir' && !form.parentAcaraId)
-      return setErr('Pilih acara sebelum (QF)')
+      return setErr('Pilih acara QF sebelum SF')
+    if (form.peringkatMode === 'final_p' && !form.parentAcaraId)
+      return setErr('Pilih acara SF atau Saringan/SF sebelum Final')
     setSaving(true)
     try {
       const aPath  = acaraColPath(schoolId, kejId)
@@ -958,10 +959,10 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
         {/* Peringkat */}
         <td className="px-1.5 py-1.5">
           <select value={form.peringkatMode} onChange={e => { set('peringkatMode', e.target.value); set('parentAcaraId', '') }} className={ic}>
+            <option value="saringan_qf">Saringan / QF</option>
+            <option value="saringan_sf">Saringan / SF</option>
+            <option value="final_p">Final</option>
             <option value="akhir">Terus Final</option>
-            <option value="suku_akhir">Suku Akhir (QF)</option>
-            <option value="separuh_akhir">Separuh Akhir (SF)</option>
-            <option value="final_p">Final ←</option>
           </select>
           {/* Pilih acara sebelum — untuk SF dan Final sahaja (QF = acara pertama, tiada parent) */}
           {['separuh_akhir', 'final_p'].includes(form.peringkatMode) && (
@@ -1087,7 +1088,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
               )}
             </div>
             {/* Toggle Final (hanya untuk QF, selepas SF toggle ON) */}
-            {form.peringkatMode === 'suku_akhir' && withFinal && (
+            {form.peringkatMode === 'saringan_qf' && withFinal && (
               <div className="flex items-center gap-3 flex-wrap pl-2 border-l-2 border-purple-300">
                 <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <button type="button" onClick={() => {
@@ -1728,7 +1729,7 @@ function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategori
     ? (selectedKat?.label || (selectedKat?.umurHad ? `${form.jantina} Bwh ${selectedKat.umurHad}` : `${form.jantina} ${form.kategoriKod}`))
     : form.jantina
   const namaAcaraFull = `${form.namaAcaraPendek} ${kelas}`.trim()
-  const PERINGKAT_DENGAN_HEAT = ['saringan', 'suku_akhir', 'separuh_akhir']
+  const PERINGKAT_DENGAN_HEAT = ['saringan_qf', 'saringan_sf', 'separuh_akhir']
   const adaHeat       = PERINGKAT_DENGAN_HEAT.includes(form.peringkat)
   const isPadang      = ['padang_lompat', 'padang_balin'].includes(form.jenisAcara)
   const isLorong      = ['lorong', 'relay'].includes(form.jenisAcara)
@@ -1912,21 +1913,19 @@ function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategori
             <p className="text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Peringkat <span className="text-red-400">*</span></p>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { v:'akhir',         l:'Terus Final',   d:'Final sahaja, tiada heat saringan' },
-                { v:'saringan',      l:'Saringan',      d:'Heat saringan — final dibuat berasingan' },
-                { v:'akhir_p',       l:'Final',         d:'Final selepas saringan (ada No Acara Saringan)' },
-                { v:'suku_akhir',    l:'Suku Akhir',    d:'Heat suku akhir (QF) — ada heat, bukan final' },
-                { v:'separuh_akhir', l:'Separuh Akhir', d:'Heat separuh akhir (SF) — ada heat, bukan final' },
+                { v:'saringan_qf',   l:'Saringan / QF',      d:'Heat saringan — finalis dijana ke SF' },
+                { v:'saringan_sf',   l:'Saringan / SF',       d:'Heat saringan — finalis dijana terus ke Final' },
+                { v:'separuh_akhir', l:'Separuh Akhir (SF)',  d:'Heat SF — parent mesti Saringan/QF' },
+                { v:'final_p',       l:'Final',               d:'Final selepas SF atau Saringan/SF' },
+                { v:'akhir',         l:'Terus Final',         d:'Final sahaja, tiada heat saringan' },
               ].map(o => (
                 <button key={o.v} type="button"
                   onClick={() => {
-                    const val = o.v === 'akhir_p' ? 'akhir' : o.v
-                    const isParent = o.v === 'akhir_p'
-                    set('peringkat', val)
-                    if (!isParent) set('parentAcaraId', '')
+                    set('peringkat', ['final_p'].includes(o.v) ? 'akhir' : o.v)
+                    if (!['separuh_akhir', 'final_p'].includes(o.v)) set('parentAcaraId', '')
                   }}
                   className={`p-2.5 rounded-xl border text-left transition-all ${
-                    (o.v === 'akhir_p'
+                    (o.v === 'final_p'
                       ? form.peringkat === 'akhir' && form.parentAcaraId
                       : form.peringkat === o.v && !form.parentAcaraId)
                       ? 'border-[#003399] bg-blue-50'
@@ -2314,13 +2313,9 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
   const [saving,     setSaving]     = useState(false)
   const [htSaving,   setHtSaving]   = useState(null)
 
-  // Peringkat — guna field `peringkat` terus dari Firestore:
-  //   'saringan' → Saringan
-  //   'akhir' + parentAcaraId → Final (perlawanan akhir linked ke saringan)
-  //   'akhir' + tiada parentAcaraId → Akhir (standalone, tiada final)
   function getPeringkat(a) {
-    if (a.peringkat === 'saringan')       return 'saringan'
-    if (a.peringkat === 'suku_akhir')    return 'suku_akhir'
+    if (a.peringkat === 'saringan_qf')   return 'saringan_qf'
+    if (a.peringkat === 'saringan_sf')   return 'saringan_sf'
     if (a.peringkat === 'separuh_akhir') return 'separuh_akhir'
     if (a.parentAcaraId)                  return 'final'
     return 'akhir'
@@ -2377,8 +2372,8 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
   }
 
   const JENIS_SHORT = { lorong:'Lorong', mass_start:'Mass Start', padang_lompat:'Lompat', padang_balin:'Balin', relay:'Relay' }
-  const P_BADGE     = { saringan:'bg-blue-100 text-blue-700', final:'bg-amber-100 text-amber-700', akhir:'bg-green-100 text-green-700', suku_akhir:'bg-teal-100 text-teal-700', separuh_akhir:'bg-indigo-100 text-indigo-700' }
-  const P_LABEL     = { saringan:'Saringan', final:'Final', akhir:'Akhir', suku_akhir:'Suku Akhir', separuh_akhir:'Separuh Akhir' }
+  const P_BADGE     = { saringan_qf:'bg-blue-100 text-blue-700', saringan_sf:'bg-cyan-100 text-cyan-700', separuh_akhir:'bg-indigo-100 text-indigo-700', akhir:'bg-green-100 text-green-700', final:'bg-amber-100 text-amber-700' }
+  const P_LABEL     = { saringan_qf:'Saringan/QF', saringan_sf:'Saringan/SF', separuh_akhir:'Separuh Akhir', akhir:'Final', final:'Final' }
 
   // ── Cetak PDF ───────────────────────────────────────────────────────────────
   function cetakPDF() {
@@ -2418,9 +2413,9 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
     pdf.text(`Dicetak: ${tarikh}  •  ${masa}`, mL, 38)
 
     // Summary stats bar
-    const saringanCount = acaraList.filter(a => a.peringkat === 'saringan').length
+    const saringanCount = acaraList.filter(a => ['saringan_qf','saringan_sf'].includes(a.peringkat)).length
     const finalCount    = acaraList.filter(a => a.parentAcaraId).length
-    const akhirCount    = acaraList.filter(a => a.peringkat !== 'saringan' && !a.parentAcaraId).length
+    const akhirCount    = acaraList.filter(a => !['saringan_qf','saringan_sf','separuh_akhir'].includes(a.peringkat) && !a.parentAcaraId).length
     const statsRow = [
       `Jumlah Acara: ${acaraList.length}`,
       `Saringan: ${saringanCount}`,
@@ -2549,7 +2544,7 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
           { l:'Jumlah Acara',    v: acaraList.length,                              c:'text-[#003399]', bg:'bg-blue-50' },
           { l:'Lelaki',          v: acaraList.filter(a=>a.jantina==='L').length,   c:'text-blue-600',  bg:'bg-blue-50' },
           { l:'Perempuan',       v: acaraList.filter(a=>a.jantina==='P').length,   c:'text-pink-600',  bg:'bg-pink-50' },
-          { l:'Saringan',        v: acaraList.filter(a=>a.peringkat==='saringan').length, c:'text-blue-600',  bg:'bg-blue-50' },
+          { l:'Saringan',        v: acaraList.filter(a=>['saringan_qf','saringan_sf'].includes(a.peringkat)).length, c:'text-blue-600',  bg:'bg-blue-50' },
         ].map(s => (
           <div key={s.l} className={`${s.bg} rounded-xl px-3 py-2.5 text-center`}>
             <p className={`text-xl font-black ${s.c}`}>{s.v}</p>
@@ -2558,8 +2553,15 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
         ))}
       </div>
 
-      {/* Toolbar: Cetak PDF */}
-      <div className="flex justify-end">
+      {/* Toolbar: Cetak PDF + Padam Semua */}
+      <div className="flex justify-between items-center">
+        <button onClick={() => setPamadSemua(true)} disabled={acaraList.length === 0}
+          className="flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 border border-red-200 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+          Padam Semua Acara
+        </button>
         <button onClick={cetakPDF}
           className="flex items-center gap-2 px-4 py-2 bg-[#003399] text-white text-xs font-bold rounded-lg hover:bg-[#002288] shadow-sm transition-colors">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -2568,6 +2570,32 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
           Cetak PDF
         </button>
       </div>
+
+      {/* Modal Padam Semua Acara */}
+      {pamadSemua && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </div>
+            <h3 className="text-sm font-bold text-gray-800 text-center mb-1">Padam Semua Acara?</h3>
+            <p className="text-xs text-gray-500 text-center mb-1">{acaraList.length} acara akan dipadam.</p>
+            <p className="text-xs text-red-500 text-center font-semibold mb-5">Tindakan ini tidak boleh dibatalkan.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setPamadSemua(false)} disabled={pamadLoading}
+                className="flex-1 py-2 text-xs font-bold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50">
+                Batal
+              </button>
+              <button onClick={handlePamadSemua} disabled={pamadLoading}
+                className="flex-1 py-2 text-xs font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50">
+                {pamadLoading ? 'Memadamkan…' : 'Ya, Padam Semua'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 items-center">
@@ -2581,7 +2609,7 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
         </div>
 
         <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] bg-white">
-          {[['semua','Semua'],['saringan','Saringan'],['suku_akhir','Suku Akhir'],['separuh_akhir','Separuh Akhir'],['akhir','Akhir'],['final','Final']].map(([v,l]) => (
+          {[['semua','Semua'],['saringan_qf','Saringan/QF'],['saringan_sf','Saringan/SF'],['separuh_akhir','Separuh Akhir'],['akhir','Akhir'],['final','Final']].map(([v,l]) => (
             <button key={v} onClick={() => setFPeringkat(v)}
               className={`px-3 py-1.5 font-bold transition-colors border-r border-gray-100 last:border-r-0 ${fPeringkat===v?'bg-[#003399] text-white':'text-gray-500 hover:bg-gray-50'}`}>
               {l}
@@ -2969,6 +2997,8 @@ export default function AcaraSetup() {
   const [loading, setLoading]             = useState(false)
   const [modal, setModal]                 = useState(null)
   const [delTarget, setDelTarget]         = useState(null)
+  const [pamadSemua, setPamadSemua]       = useState(false)
+  const [pamadLoading, setPamadLoading]   = useState(false)
 
   // Filters
   const [filterJenis, setFilterJenis]     = useState('semua')
@@ -3096,6 +3126,24 @@ export default function AcaraSetup() {
   }
 
   // ── Ubah No Acara — copy ke doc baru, delete lama ───────────────────────────
+  async function handlePamadSemua() {
+    if (!schoolId || !kejId) return
+    setPamadLoading(true)
+    try {
+      const aPath = acaraColPath(schoolId, kejId)
+      const snap  = await getDocs(collection(db, aPath))
+      const batch = writeBatch(db)
+      snap.docs.forEach(d => batch.delete(d.ref))
+      await batch.commit()
+      setPamadSemua(false)
+      fetchAcara()
+    } catch (e) {
+      alert('Ralat padam: ' + e.message)
+    } finally {
+      setPamadLoading(false)
+    }
+  }
+
   async function handleRenameNo(oldNo) {
     const newNo  = renameVal.trim()
     const aPath  = acaraColPath(schoolId, kejId)
@@ -3169,11 +3217,20 @@ export default function AcaraSetup() {
           </div>
           <p className="text-xs text-gray-400 mt-0.5 ml-6">{namaKej}</p>
         </div>
-        <button onClick={() => setModal({ mode: 'add' })}
-          className="flex items-center gap-1.5 px-4 py-2 bg-[#003399] text-white text-sm font-bold rounded-xl hover:bg-[#002277] shadow-sm">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-          Tambah Acara
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setPamadSemua(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 shadow-sm">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            Padam Semua ({acaraList.length})
+          </button>
+          <button onClick={() => setModal({ mode: 'add' })}
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#003399] text-white text-sm font-bold rounded-xl hover:bg-[#002277] shadow-sm">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Tambah Acara
+          </button>
+        </div>
       </div>
 
       {/* Stats bar */}
@@ -3266,6 +3323,43 @@ export default function AcaraSetup() {
 
       {selectedKej && activeTab === 'setup' && (
         <>
+          {/* Padam Semua Acara */}
+          <div className="flex justify-end mb-2">
+            <button onClick={() => setPamadSemua(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors shadow-sm">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Padam Semua Acara ({acaraList.length})
+            </button>
+          </div>
+
+          {/* Modal Padam Semua */}
+          {pamadSemua && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </div>
+                <h3 className="text-sm font-bold text-gray-800 text-center mb-1">Padam Semua Acara?</h3>
+                <p className="text-xs text-gray-500 text-center mb-1">{acaraList.length} acara akan dipadam.</p>
+                <p className="text-xs text-red-500 text-center font-semibold mb-5">Tindakan ini tidak boleh dibatalkan.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setPamadSemua(false)} disabled={pamadLoading}
+                    className="flex-1 py-2 text-xs font-bold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50">
+                    Batal
+                  </button>
+                  <button onClick={handlePamadSemua} disabled={pamadLoading}
+                    className="flex-1 py-2 text-xs font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50">
+                    {pamadLoading ? 'Memadamkan…' : 'Ya, Padam Semua'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
@@ -3336,8 +3430,8 @@ export default function AcaraSetup() {
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm py-12 text-center text-sm text-gray-400">Memuatkan…</div>
           )}
           {viewMode === 'hari' && !loading && (() => {
-            const P_BADGE = { saringan:'bg-blue-100 text-blue-700', final:'bg-amber-100 text-amber-700', akhir:'bg-green-100 text-green-700', suku_akhir:'bg-teal-100 text-teal-700', separuh_akhir:'bg-indigo-100 text-indigo-700' }
-            const P_LABEL = { saringan:'Saringan', final:'Final', akhir:'Akhir', suku_akhir:'Suku Akhir', separuh_akhir:'Separuh Akhir' }
+            const P_BADGE = { saringan_qf:'bg-blue-100 text-blue-700', saringan_sf:'bg-cyan-100 text-cyan-700', separuh_akhir:'bg-indigo-100 text-indigo-700', akhir:'bg-green-100 text-green-700', final:'bg-amber-100 text-amber-700' }
+            const P_LABEL = { saringan_qf:'Saringan/QF', saringan_sf:'Saringan/SF', separuh_akhir:'Separuh Akhir', akhir:'Final', final:'Final' }
             // Map parentAcaraId → noAcara (untuk badge → Final: #xxx pada baris saringan)
             const finalMap = {}
             acaraList.forEach(a => {
@@ -3468,7 +3562,7 @@ export default function AcaraSetup() {
                                     {a.parentAcaraId && (
                                       <p className="text-[9px] text-purple-600 font-semibold">Final ← #{a.parentAcaraId}</p>
                                     )}
-                                    {a.peringkat === 'saringan' && finalMap[String(a.noAcara)] && (
+                                    {['saringan_qf','saringan_sf'].includes(a.peringkat) && finalMap[String(a.noAcara)] && (
                                       <p className="text-[9px] text-purple-500 font-semibold">→ Final: #{finalMap[String(a.noAcara)]}</p>
                                     )}
                                   </td>

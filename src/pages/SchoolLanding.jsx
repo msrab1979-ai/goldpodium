@@ -394,10 +394,10 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
   const peringkatRaw = (acara.peringkat || '').toLowerCase()
   const namaRaw      = (acara.namaAcara || '').toLowerCase()
   const peringkatLabel = (() => {
-    if (peringkatRaw.includes('saringan') || namaRaw.includes('saringan')) return 'Saringan'
-    if (peringkatRaw.includes('akhir') || namaRaw.includes('akhir'))       return 'Akhir'
-    if (peringkatRaw.includes('final') || namaRaw.includes('final'))       return 'Final'
-    if (peringkatRaw.includes('separuh'))                                   return 'S/Akhir'
+    if (peringkatRaw === 'saringan_qf') return 'Saringan/QF'
+    if (peringkatRaw === 'saringan_sf') return 'Saringan/SF'
+    if (peringkatRaw === 'separuh_akhir') return 'Separuh Akhir'
+    if (peringkatRaw === 'akhir') return 'Final'
     return ''
   })()
 
@@ -1070,8 +1070,8 @@ export default function SchoolLanding() {
         const tableBody = items
           .sort((a, b) => (a.masa || '99:99').localeCompare(b.masa || '99:99') || (Number(a.noAcara) || 999) - (Number(b.noAcara) || 999))
           .map(a => {
-            const peringkatLabel = a.peringkat === 'saringan' ? 'Saringan'
-              : a.peringkat === 'suku_akhir'    ? 'Suku Akhir'
+            const peringkatLabel = a.peringkat === 'saringan_qf' ? 'Saringan/QF'
+              : a.peringkat === 'saringan_sf'   ? 'Saringan/SF'
               : a.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
               : a.peringkat === 'final'         ? 'Final'
               : a.parentAcaraId ? 'Final' : 'Terus Final'
@@ -1538,10 +1538,10 @@ export default function SchoolLanding() {
                               </p>
                             </div>
                             <div className="flex items-center gap-2 shrink-0 ml-2">
-                              {a.peringkat === 'saringan' && (
+                              {['saringan_qf','saringan_sf'].includes(a.peringkat) && (
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">Saringan</span>
                               )}
-                              {a.parentAcaraId && a.peringkat !== 'saringan' && (
+                              {a.parentAcaraId && !['saringan_qf','saringan_sf'].includes(a.peringkat) && (
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200">Final</span>
                               )}
                               <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">KEPUTUSAN</span>

@@ -196,8 +196,8 @@ function AcaraRow({ acara, isLast, nowMs, onClick }) {
     : { text: 'Belum', cls: 'bg-gray-100 text-gray-400' }
 
   const peringkat = acara.peringkat || ''
-  const jenisBadge = peringkat === 'saringan' || peringkat === 'suku_akhir' || peringkat === 'separuh_akhir'
-    ? { text: peringkat === 'saringan' ? 'Saringan' : peringkat === 'suku_akhir' ? 'Suku Akhir' : 'Separuh Akhir', cls: 'bg-blue-50 text-blue-600 border border-blue-100' }
+  const jenisBadge = ['saringan_qf','saringan_sf','separuh_akhir'].includes(peringkat)
+    ? { text: peringkat === 'saringan_qf' ? 'Saringan/QF' : peringkat === 'saringan_sf' ? 'Saringan/SF' : 'Separuh Akhir', cls: 'bg-blue-50 text-blue-600 border border-blue-100' }
     : peringkat === 'final'
     ? { text: 'Final', cls: 'bg-amber-50 text-amber-600 border border-amber-100' }
     : { text: 'Terus Final', cls: 'bg-purple-50 text-purple-500 border border-purple-100' }
@@ -266,7 +266,7 @@ function AccordionSection({ title, count, open, onToggle, children }) {
 
 function HeatTabBar({ heats, selectedHeat, onSelect }) {
   if (!heats || heats.length <= 1) return null
-  const hasSaringan = heats.some(h => h.fasa === 'heat' || h.fasa === 'saringan')
+  const hasSaringan = heats.some(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf')
   return (
     <div className="flex gap-1.5 overflow-x-auto py-0.5">
       {heats.map(h => {
@@ -1449,7 +1449,7 @@ export default function PencatatInputKeputusan() {
         1: Number(mp[1] ?? mp['1'] ?? 5), 2: Number(mp[2] ?? mp['2'] ?? 3),
         3: Number(mp[3] ?? mp['3'] ?? 2), 4: Number(mp[4] ?? mp['4'] ?? 1),
       }
-      const isSaringanLocal = ['saringan', 'suku_akhir', 'separuh_akhir'].includes(acara.peringkat || '')
+      const isSaringanLocal = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
       const grantMedal = !isSaringanLocal && (
         ['final', 'terus_final'].includes(selectedHeat.fasa) || heats.length === 1
       )
@@ -1487,7 +1487,7 @@ export default function PencatatInputKeputusan() {
         1: Number(mp[1] ?? mp['1'] ?? 5), 2: Number(mp[2] ?? mp['2'] ?? 3),
         3: Number(mp[3] ?? mp['3'] ?? 2), 4: Number(mp[4] ?? mp['4'] ?? 1),
       }
-      const isSaringanAcara = ['saringan', 'suku_akhir', 'separuh_akhir'].includes(selectedAcara.peringkat || '')
+      const isSaringanAcara = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(selectedAcara.peringkat || '')
       const isRelayAcara    = selectedAcara.jenisAcara === 'relay'
       const kpSemua         = keputusanSemua
       const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([k, v]) => !k.startsWith('_') && v !== undefined))
@@ -1578,10 +1578,10 @@ export default function PencatatInputKeputusan() {
   }, [selectedAcara, heats])
 
   const isSaringanAcara = selectedAcara
-    ? ['saringan', 'suku_akhir', 'separuh_akhir'].includes(selectedAcara.peringkat)
+    ? ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(selectedAcara.peringkat)
     : false
 
-  const fasaJana = selectedAcara?.peringkat === 'suku_akhir' ? 'sukuKeSeparuh' : 'toFinal'
+  const fasaJana = selectedAcara?.peringkat === 'saringan_qf' ? 'sukuKeSeparuh' : 'toFinal'
 
   const allHeatsDone = heats.length > 0 && heats.every(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
 

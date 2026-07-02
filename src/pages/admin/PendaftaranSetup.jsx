@@ -796,7 +796,7 @@ function TabDaftarAcara({ schoolId, kejId, tahunKej, kategoriList }) {
                           {kat && <span className="text-[9px] text-gray-400">{kat.label || kat.nama}</span>}
                           {ac.peringkat && (
                             <span className="text-[9px] bg-gray-100 text-gray-500 px-1 rounded">
-                              {ac.peringkat === 'akhir' ? 'Akhir' : ac.peringkat === 'saringan' ? 'Saringan' : ac.peringkat}
+                              {ac.peringkat === 'akhir' ? 'Final' : ac.peringkat === 'saringan_qf' ? 'Saringan/QF' : ac.peringkat === 'saringan_sf' ? 'Saringan/SF' : ac.peringkat === 'separuh_akhir' ? 'Separuh Akhir' : ac.peringkat}
                             </span>
                           )}
                           {ac.tarikhAcara && (

@@ -1078,7 +1078,7 @@ export default function BukuKejohanan() {
           sortedHeats.forEach(heat => {
             const isFinal = ['final', 'terus_final'].includes(heat.fasa) || heat.peringkat === 'final'
             const heatLabel = isFinal ? 'FINAL'
-              : heat.fasa === 'suku_akhir'    ? `SUKU AKHIR ${heat.noHeat || ''}`.trim()
+              : heat.fasa === 'saringan_qf'   ? `SARINGAN/QF ${heat.noHeat || ''}`.trim()
               : heat.fasa === 'separuh_akhir' ? `SEPARUH AKHIR ${heat.noHeat || ''}`.trim()
               : `HEAT ${heat.noHeat || ''}`.trim()
 

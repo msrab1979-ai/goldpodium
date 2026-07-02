@@ -2425,7 +2425,8 @@ export default function PengurusDashboard() {
 
     const heatLabel = h => {
       if (h.fasa === 'final') return 'Final'
-      if (h.fasa === 'saringan') return 'Saringan'
+      if (h.fasa === 'saringan_qf') return 'Saringan/QF'
+      if (h.fasa === 'saringan_sf') return 'Saringan/SF'
       return `Heat ${h.noHeat}`
     }
 

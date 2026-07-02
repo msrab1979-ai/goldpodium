@@ -322,7 +322,8 @@ function cetakBorangTeknikal({ acara, allHeatsList, namaKej, cfg }) {
   if (heatsWithPeserta.length === 0) return
 
   const fasaLabel = (fasa) => {
-    if (fasa === 'saringan')    return 'Saringan'
+    if (fasa === 'saringan_qf') return 'Saringan/QF'
+    if (fasa === 'saringan_sf') return 'Saringan/SF'
     if (fasa === 'final')       return 'Final'
     if (fasa === 'terus_final') return 'Terus Final'
     return fasa || ''
@@ -788,12 +789,12 @@ export default function CetakAcara() {
                   </div>
                 </div>
 
-                {!finalHeat && selectedAcara?.peringkat === 'saringan' && (
+                {!finalHeat && ['saringan_qf','saringan_sf'].includes(selectedAcara?.peringkat) && (
                   <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mt-3">
                     ⚠️ Ini acara <strong>saringan</strong> — keputusan belum ada. Pilih acara <strong>final</strong> dari senarai untuk cetak.
                   </p>
                 )}
-                {!finalHeat && selectedAcara?.peringkat !== 'saringan' && (
+                {!finalHeat && !['saringan_qf','saringan_sf'].includes(selectedAcara?.peringkat) && (
                   <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mt-3">
                     ⚠️ Tiada keputusan lagi untuk acara ini. Pencatat perlu hantar keputusan dahulu.
                   </p>

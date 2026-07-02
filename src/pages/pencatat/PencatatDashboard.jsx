@@ -346,9 +346,9 @@ function HeatKeputusan({ heat }) {
   const isMass   = heat.jenisAcara === 'mass_start'
 
   const fasaLabel = heat.fasa === 'final' ? 'Final'
-    : heat.fasa === 'saringan' || heat.fasa === 'heat' ? `Heat ${heat.noHeat || ''}`
     : heat.fasa === 'terus_final' ? 'Terus Final'
-    : heat.fasa || `Heat ${heat.noHeat || ''}`
+    : heat.fasa === 'separuh_akhir' ? `Separuh Akhir ${heat.noHeat || ''}`
+    : `Heat ${heat.noHeat || ''}`
 
   // Bina senarai peserta dari heat.peserta[]
   let rows = []

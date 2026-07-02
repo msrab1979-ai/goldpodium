@@ -543,7 +543,7 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
   const isSaringanAcara = (() => {
     const p = (acara.peringkat  || '').toLowerCase()
     const n = (acara.namaAcara  || '').toLowerCase()
-    return ['saringan', 'suku_akhir', 'separuh_akhir'].includes(p) || n.includes('saringan')
+    return ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(p)
   })()
 
   // Tunjuk heat yang ada keputusan ('diterima' = baru, 'tidak_rasmi'/'rasmi' = data lama)
@@ -933,10 +933,10 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
   const peringkatRaw = (acara.peringkat || '').toLowerCase()
   const namaRaw      = (acara.namaAcara  || '').toLowerCase()
   const peringkatLabel = (() => {
-    if (peringkatRaw.includes('saringan') || namaRaw.includes('saringan')) return 'Saringan'
-    if (peringkatRaw.includes('akhir') || namaRaw.includes('akhir'))       return 'Akhir'
-    if (peringkatRaw.includes('final') || namaRaw.includes('final'))       return 'Final'
-    if (peringkatRaw.includes('separuh'))                                   return 'S/Akhir'
+    if (peringkatRaw === 'saringan_qf') return 'Saringan/QF'
+    if (peringkatRaw === 'saringan_sf') return 'Saringan/SF'
+    if (peringkatRaw === 'separuh_akhir') return 'Separuh Akhir'
+    if (peringkatRaw === 'akhir') return 'Final'
     return peringkat || '—'
   })()
   const peringkat = acara.peringkat || ''
@@ -1791,7 +1791,8 @@ export default function Home() {
             item.masaMula || '—',
             item.acara.namaAcara || item.acara.namaAcaraPendek || '—',
             kelasLabel,
-            item.acara.peringkat === 'saringan' ? 'Saringan'
+            ['saringan_qf','saringan_sf'].includes(item.acara.peringkat) ? 'Saringan'
+              : item.acara.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
               : item.acara.parentAcaraId ? 'Final'
               : item.acara.peringkat === 'akhir' ? 'Terus Final' : '—',
             item.lokasi || '—',
@@ -2528,7 +2529,7 @@ export default function Home() {
                               </div>
                               <div className="flex items-center gap-2 shrink-0 ml-2">
                                 {(() => {
-                                  const isSar = item.acara.peringkat === 'saringan'
+                                  const isSar = ['saringan_qf','saringan_sf'].includes(item.acara.peringkat)
                                   const isFin = !isSar && item.acara.parentAcaraId
                                   if (isSar) return (
                                     <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
