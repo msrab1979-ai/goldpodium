@@ -259,10 +259,11 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         const tuntutanRef = rekodP(primaryKey + '_tuntutan')
         const newPrestasi = Number(p.keputusan)
 
-        // Semak rekod sedia ada — dari rekodRef (aktif) atau tuntutanRef (aktif/tuntutan)
+        // Semak rekod sedia ada — dari rekodRef (aktif) atau tuntutanRef (pending)
+        // Exclude tuntutan dari heat yang sama supaya tidak compare dengan diri sendiri
         const rekodSedia = rekodSnap.exists() && rekodSnap.data().statusRekod === 'aktif'
           ? rekodSnap.data()
-          : tuntutanSnap.exists() && tuntutanSnap.data().catatanKhas?.includes?.(heatDoc.id) !== true
+          : tuntutanSnap.exists() && tuntutanSnap.data().heatId !== heatDoc.id
             ? tuntutanSnap.data()
             : null
 
@@ -325,9 +326,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
             jantina:      acaraDoc.jantina,
             kategoriKod:  acaraDoc.kategoriKod,
             peringkat:    peringkatKej,
-            // noKP TIDAK disimpan dalam rekod — public-readable collection
-            // atletId digunakan sebagai ref jika perlu lookup (sama nilai tapi tidak IC)
-            atletId:      p.noKP    || '',
+            // noKP TIDAK disimpan — public-readable collection (PDPA)
+            // atletId guna noBib sebagai ref (bukan IC)
+            atletId:      p.noBib   || '',
             namaAtlet:    p.namaAtlet  || '',
             kodSekolah:   p.kodSekolah || '',
             namaSekolah:  getNamaSekolah(p),

@@ -627,7 +627,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
           const flagged = ['DQ', 'DNS', 'DNF'].includes(kp.status)
           const isCarian = carianBib && (p.noBib || '').toUpperCase().includes(carianBib)
           const usedByOthers = new Set(
-            peserta.filter((_, i) => i !== idx).map(pp => keputusan[pp.noBib || i]?.kedudukan).filter(v => v !== '' && v != null)
+            peserta.filter((_, i) => i !== idx).map(pp => keputusan[pp.noBib]?.kedudukan).filter(v => v !== '' && v != null)
           )
           const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset'
             : flagged ? 'bg-red-50'
@@ -1379,6 +1379,13 @@ export default function PencatatInputKeputusan() {
         if (isPadangLocal) return Number(b.keputusan) - Number(a.keputusan)
         const diff = Number(a.keputusan) - Number(b.keputusan)
         if (diff !== 0) return diff
+        // Tiebreak 1: masaSebenar (photocell) — selaras dengan postRasmi
+        const aHT = Number(a.masaSebenar) || null
+        const bHT = Number(b.masaSebenar) || null
+        if (aHT !== null && bHT !== null) return aHT - bHT
+        if (aHT !== null) return -1
+        if (bHT !== null) return 1
+        // Tiebreak 2: kedudukan manual pencatat
         const aK = Number(a.kedudukan) || null
         const bK = Number(b.kedudukan) || null
         if (aK !== null && bK !== null) return aK - bK
@@ -1666,7 +1673,7 @@ export default function PencatatInputKeputusan() {
             : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
           await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
             heatId, aceraId: nextAcaraId, noHeat, fasa: fasaHeat,
-            statusKeputusan: 'belum', peserta, createdAt: serverTimestamp(),
+            statusKeputusan: 'belum_mula', peserta, createdAt: serverTimestamp(),
           })
         }))
 
@@ -1681,7 +1688,7 @@ export default function PencatatInputKeputusan() {
           : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
         await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
           heatId, aceraId: nextAcaraId, noHeat: 1, fasa: fasaHeat,
-          statusKeputusan: 'belum', peserta, createdAt: serverTimestamp(),
+          statusKeputusan: 'belum_mula', peserta, createdAt: serverTimestamp(),
         })
       }
 
