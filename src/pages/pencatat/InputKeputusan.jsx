@@ -19,7 +19,8 @@ import {
   collection, getDocs, getDoc, doc, updateDoc, setDoc,
   query, where, orderBy, serverTimestamp, onSnapshot, runTransaction,
 } from 'firebase/firestore'
-import { selectFinalists, assignLorong, getFinalistSetup } from '../../utils/finalistUtils'
+import { selectFinalists, getFinalistSetup, serpentineSeed } from '../../utils/finalistUtils'
+import { assignLorongFinal, detectJenisLorong, WA_LORONG_KUMPULAN_DEFAULT, deserializeKumpulan } from '../../utils/startListPdfUtils'
 import { runPostRasmi } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -1015,11 +1016,13 @@ export default function PencatatInputKeputusan() {
   }, [])
 
   // Data
-  const [kejData,    setKejData]    = useState(null)
-  const [acaraList,  setAcaraList]  = useState([])
-  const [finalSetup, setFinalSetup] = useState(null)
-  const [sekolahMap, setSekolahMap] = useState({})
-  const [loading,    setLoading]    = useState(true)
+  const [kejData,       setKejData]       = useState(null)
+  const [acaraList,     setAcaraList]     = useState([])
+  const [finalSetup,    setFinalSetup]    = useState(null)
+  const [sekolahMap,    setSekolahMap]    = useState({})
+  const [loading,       setLoading]       = useState(true)
+  const [lorongKumpulan, setLorongKumpulan] = useState(WA_LORONG_KUMPULAN_DEFAULT)
+  const [bilHeatSF,      setBilHeatSF]     = useState(2)
 
   // Accordion open state — key = kategoriKod
   const [accordionOpen, setAccordionOpen] = useState({})
@@ -1070,6 +1073,17 @@ export default function PencatatInputKeputusan() {
 
         getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'tetapan', 'finalSetup'))
           .then(s => { if (s.exists()) setFinalSetup(s.data()) }).catch(() => {})
+
+        getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'waConfig'))
+          .then(s => {
+            if (!s.exists()) return
+            const d = s.data()
+            if (d.lorongKumpulan) {
+              const parsed = deserializeKumpulan(d.lorongKumpulan)
+              if (parsed) setLorongKumpulan({ ...WA_LORONG_KUMPULAN_DEFAULT, ...parsed })
+            }
+            if (d.bilHeatSukuAkhir) setBilHeatSF(Number(d.bilHeatSukuAkhir) || 2)
+          }).catch(() => {})
 
         // Load sekolah map
         getDocs(collection(db, 'tenants', schoolId, 'sekolah')).then(snap => {
@@ -1614,29 +1628,64 @@ export default function PencatatInputKeputusan() {
     if (!schoolId || !kejId || !selectedAcara || !finalistList.length) return
     setJanaFinalLoading(true)
     try {
-      const thisNo = String(selectedAcara.noAcara || selectedAcara.aceraId || selectedAcara.id)
+      const thisNo    = String(selectedAcara.noAcara || selectedAcara.aceraId || selectedAcara.id)
       const nextAcara = acaraList.find(a =>
         String(a.parentAcaraId) === thisNo ||
         String(a.parentAcaraId) === String(selectedAcara.aceraId || selectedAcara.id)
       )
       if (!nextAcara) { alert('Tiada acara seterusnya dikaitkan. Setup parentAcaraId dalam AcaraSetup.'); return }
 
-      const nextAcaraId = nextAcara.aceraId || nextAcara.id
+      const nextAcaraId  = nextAcara.aceraId || nextAcara.id
+      const fasaHeat     = nextAcara.peringkat === 'akhir' ? 'final' : nextAcara.peringkat
+      const jenisLorong  = detectJenisLorong(selectedAcara)
+      const isPadang     = ['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara)
+      const isMass       = selectedAcara.jenisAcara === 'mass_start'
 
+      // Padam heat lama untuk acara seterusnya
       const oldHeats = await getDocs(query(
         collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'),
         where('aceraId', '==', nextAcaraId)
       ))
       await Promise.all(oldHeats.docs.map(d => d.ref.delete()))
 
-      const withLorong = assignLorong(finalistList, nextAcara)
-      const fasaHeat = nextAcara.peringkat === 'akhir' ? 'final' : nextAcara.peringkat
-      const heatId = `heat_${fasaHeat}_${Date.now()}`
-      await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
-        heatId, aceraId: nextAcaraId, noHeat: 1, fasa: fasaHeat, peringkat: fasaHeat,
-        statusKeputusan: 'belum', peserta: withLorong, createdAt: serverTimestamp(),
-      })
+      if (fasaJana === 'sukuKeSeparuh') {
+        // ── QF → SF: serpentine seeding ke bilHeatSF heat ────────────────────
+        const finalisByRank = [...finalistList].sort((a, b) =>
+          isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
+        )
+        const heatGroups = serpentineSeed(finalisByRank, bilHeatSF)
 
+        await Promise.all(heatGroups.map(async (kumpulan, idx) => {
+          const noHeat  = idx + 1
+          const heatId  = `heat_${fasaHeat}_${noHeat}_${Date.now()}`
+          const sorted  = [...kumpulan].sort((a, b) =>
+            isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
+          )
+          const peserta = isPadang || isMass
+            ? kumpulan
+            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
+          await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
+            heatId, aceraId: nextAcaraId, noHeat, fasa: fasaHeat,
+            statusKeputusan: 'belum', peserta, createdAt: serverTimestamp(),
+          })
+        }))
+
+      } else {
+        // ── SF/QF → Final: 1 heat dengan assignLorongFinal WA ────────────────
+        const heatId = `heat_${fasaHeat}_${Date.now()}`
+        const sorted = [...finalistList].sort((a, b) =>
+          isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
+        )
+        const peserta = isPadang || isMass
+          ? finalistList
+          : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
+        await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
+          heatId, aceraId: nextAcaraId, noHeat: 1, fasa: fasaHeat,
+          statusKeputusan: 'belum', peserta, createdAt: serverTimestamp(),
+        })
+      }
+
+      // Mark saringan dengan finalDijanaKe
       await Promise.all(heats.map(h =>
         updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', h.heatId), {
           finalDijanaKe: nextAcara.noAcara || nextAcaraId,
@@ -1644,8 +1693,8 @@ export default function PencatatInputKeputusan() {
       ))
 
       setHeats(prev => prev.map(h => ({ ...h, finalDijanaKe: nextAcara.noAcara || nextAcaraId })))
-      const label = fasaHeat === 'final' ? 'Final' : fasaHeat === 'separuh_akhir' ? 'Separuh Akhir' : 'Acara seterusnya'
-      alert(`${label} berjaya dijana! (${withLorong.length} finalis)`)
+      const label = fasaHeat === 'final' ? 'Final' : fasaHeat === 'separuh_akhir' ? `${bilHeatSF} Heat Separuh Akhir` : 'Acara seterusnya'
+      alert(`${label} berjaya dijana! (${finalistList.length} finalis)`)
     } catch (e) {
       alert('Ralat jana: ' + e.message)
     } finally {
