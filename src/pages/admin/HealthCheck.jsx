@@ -269,27 +269,37 @@ export default function HealthCheck() {
       const tuntSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'rekod'), where('kejohananId', '==', kejId)))
       if (tuntSnap.empty) { setPulihDone({ ok: true, heat: 0, nota: 'Tiada rekod_tuntutan dijumpai.' }); setPulihRunning(false); return }
 
+      // Bina map atletId (noKP) → noBib dari atlet collection
+      const atletSnap2 = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+      const atletIdToBib = {}
+      atletSnap2.docs.forEach(d => { if (d.id && d.data().noBib) atletIdToBib[d.id] = d.data().noBib })
+
       // Group tuntutan by acaraId+heatId
+      // rekod_tuntutan simpan atletId (nilai noKP) bukan field noKP terus
       const tuntByHeat = {}
       for (const tDoc of tuntSnap.docs) {
         const t = tDoc.data()
-        if (!t.acaraId || !t.heatId || !t.noKP) continue
+        if (!t.acaraId || !t.heatId || !t.atletId) continue
         const key = `${t.acaraId}__${t.heatId}`
         if (!tuntByHeat[key]) tuntByHeat[key] = []
-        tuntByHeat[key].push({ noKP: t.noKP, peringkat: t.peringkat || 'D' })
+        const noBib = atletIdToBib[t.atletId] || ''
+        tuntByHeat[key].push({ atletId: t.atletId, noBib, peringkat: t.peringkat || 'D' })
       }
 
       let heatDikemas = 0
       for (const [key, tuntList] of Object.entries(tuntByHeat)) {
         const [acaraId, heatId] = key.split('__')
-        const hRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId)
         const hSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraId)))
         const hDoc = hSnap.docs.find(d => d.id === heatId)
         if (!hDoc) continue
         const peserta = hDoc.data().peserta || []
+        const hRef = hDoc.ref
         let ada = false
         const newPeserta = peserta.map(p => {
-          const match = tuntList.find(t => t.noKP === p.noKP)
+          // Match by noBib (data baru) — fallback ke namaAtlet+kodSekolah jika noBib kosong
+          const match = tuntList.find(t =>
+            (t.noBib && p.noBib && t.noBib === p.noBib)
+          )
           if (match) { ada = true; return { ...p, pecahRekod: match.peringkat } }
           return p
         })
@@ -558,44 +568,55 @@ export default function HealthCheck() {
       await updateDoc(rekodRef, patch)
       setBrkLog(l => [...l, `✓ Rekod dikemaskini`])
 
-      // 3. Kemaskini mata_olahragawan jika noKP berubah
-      const noKPLama = brkPilihan.noKP
-      const noKPBaru = brkForm.noKP.trim()
+      // 3. Kemaskini mata_olahragawan
+      // rekod simpan atletId (noKP value); mata_olahragawan baru guna noBib sebagai doc ID
+      // Lookup noBib dari atlet collection menggunakan atletId
+      const atletIdLama = brkPilihan.atletId || ''
+      const atletIdBaru = brkForm.noKP.trim() // field noKP dalam form = atletId (noKP value)
       const acaraId  = brkSenarai?.acara?.id
       const mataKejId = brkPilihan.kejohananId || (await getKejId())
-      if (acaraId && noKPLama && noKPBaru !== noKPLama) {
-        const mataRefLama = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${noKPLama}_${mataKejId}`)
+
+      async function resolveMataMataId(atletId) {
+        if (!atletId) return ''
+        // Cuba dapatkan noBib dari atlet collection (data baru guna noBib sebagai doc ID)
+        const atletDoc = await getDoc(doc(db, 'tenants', schoolId, 'atlet', atletId)).catch(() => null)
+        return (atletDoc?.exists() && atletDoc.data().noBib) ? atletDoc.data().noBib : atletId
+      }
+
+      if (acaraId && atletIdLama && atletIdBaru !== atletIdLama) {
+        const mataIdLama = await resolveMataMataId(atletIdLama)
+        const mataRefLama = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${mataIdLama}_${mataKejId}`)
         const mataSnapLama = await getDoc(mataRefLama)
         if (mataSnapLama.exists()) {
-          const fieldKey = `rekod_${acaraId}`
-          await updateDoc(mataRefLama, { [fieldKey]: deleteField() })
-          setBrkLog(l => [...l, `✓ Rekod dibuang dari mata_olahragawan ${noKPLama}`])
+          await updateDoc(mataRefLama, { [`rekod_${acaraId}`]: deleteField() })
+          setBrkLog(l => [...l, `✓ Rekod dibuang dari mata_olahragawan ${mataIdLama}`])
         }
-        if (noKPBaru) {
-          const mataRefBaru = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${noKPBaru}_${mataKejId}`)
+        if (atletIdBaru) {
+          const mataIdBaru = await resolveMataMataId(atletIdBaru)
+          const mataRefBaru = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${mataIdBaru}_${mataKejId}`)
           await setDoc(mataRefBaru, {
             [`rekod_${acaraId}`]: {
               acaraId,
-              namaAcara:  brkPilihan.namaAcara,
-              kategoriKod: brkPilihan.kategoriKod,
-              jantina:    brkPilihan.jantina,
-              peringkat:  brkPilihan.peringkat,
+              namaAcara:    brkPilihan.namaAcara,
+              kategoriKod:  brkPilihan.kategoriKod,
+              jantina:      brkPilihan.jantina,
+              peringkat:    brkPilihan.peringkat,
               prestasiBaru: Number(brkForm.prestasi),
               prestasiLama: brkForm.prestasiLama !== '' ? Number(brkForm.prestasiLama) : null,
             }
           }, { merge: true })
-          setBrkLog(l => [...l, `✓ Rekod ditambah ke mata_olahragawan ${noKPBaru}`])
+          setBrkLog(l => [...l, `✓ Rekod ditambah ke mata_olahragawan ${mataIdBaru}`])
         }
-      } else if (acaraId && noKPBaru) {
-        // Kemaskini nilai dalam mata_olahragawan (noKP sama, prestasi mungkin berubah)
-        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${noKPBaru}_${mataKejId}`)
+      } else if (acaraId && atletIdBaru) {
+        const mataId = await resolveMataMataId(atletIdBaru)
+        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', mataKejId, 'mata_olahragawan', `${mataId}_${mataKejId}`)
         const mataSnap = await getDoc(mataRef)
         if (mataSnap.exists() && mataSnap.data()[`rekod_${acaraId}`]) {
           await updateDoc(mataRef, {
             [`rekod_${acaraId}.prestasiBaru`]: Number(brkForm.prestasi),
             [`rekod_${acaraId}.prestasiLama`]: brkForm.prestasiLama !== '' ? Number(brkForm.prestasiLama) : null,
           })
-          setBrkLog(l => [...l, `✓ mata_olahragawan ${noKPBaru} dikemaskini`])
+          setBrkLog(l => [...l, `✓ mata_olahragawan ${mataId} dikemaskini`])
         }
       }
 
@@ -633,15 +654,17 @@ export default function HealthCheck() {
       }
       await deleteDoc(rekodRef)
 
-      // Buang dari mata_olahragawan
-      const noKP   = brkPilihan.noKP
-      const acaraId = brkSenarai?.acara?.id
+      // Buang dari mata_olahragawan — rekod simpan atletId (noKP value), doc ID guna noBib (data baru)
+      const atletIdPadam = brkPilihan.atletId || ''
+      const acaraIdPadam = brkSenarai?.acara?.id
       const padamKejId = brkPilihan.kejohananId || (await getKejId())
-      if (noKP && acaraId) {
-        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', padamKejId, 'mata_olahragawan', `${noKP}_${padamKejId}`)
+      if (atletIdPadam && acaraIdPadam) {
+        const atletDocP = await getDoc(doc(db, 'tenants', schoolId, 'atlet', atletIdPadam)).catch(() => null)
+        const mataIdP = (atletDocP?.exists() && atletDocP.data().noBib) ? atletDocP.data().noBib : atletIdPadam
+        const mataRef = doc(db, 'tenants', schoolId, 'kejohanan', padamKejId, 'mata_olahragawan', `${mataIdP}_${padamKejId}`)
         const mataSnap = await getDoc(mataRef)
         if (mataSnap.exists()) {
-          await updateDoc(mataRef, { [`rekod_${acaraId}`]: deleteField() })
+          await updateDoc(mataRef, { [`rekod_${acaraIdPadam}`]: deleteField() })
           setBrkLog(l => [...l, `✓ Rekod dibuang dari mata_olahragawan`])
         }
       }
@@ -885,7 +908,6 @@ export default function HealthCheck() {
       setProgress('Menyemak integriti heat...')
 
       const heatNoBibKosong = []
-      const heatNoKPKosong  = []
       const heatLorongDup   = []
       const acaraSatuPeserta = []
 
@@ -913,10 +935,6 @@ export default function HealthCheck() {
             // noBib kosong dalam heat
             if (!p.noBib && acara.jenisAcara !== 'relay') {
               heatNoBibKosong.push(`${label} | ${p.namaAtlet || '—'}`)
-            }
-            // noKP kosong dalam heat
-            if (!p.noKP && acara.jenisAcara !== 'relay') {
-              heatNoKPKosong.push(`${label} | ${p.namaAtlet || '—'}`)
             }
             // Lorong duplikat
             if (p.lorong != null) {
@@ -982,12 +1000,6 @@ export default function HealthCheck() {
           status: heatNoBibKosong.length === 0 ? 'ok' : 'error',
           count: heatNoBibKosong.length,
           details: heatNoBibKosong,
-        },
-        {
-          label: 'Tiada noKP kosong dalam heat',
-          status: heatNoKPKosong.length === 0 ? 'ok' : 'error',
-          count: heatNoKPKosong.length,
-          details: heatNoKPKosong,
         },
         {
           label: 'Tiada lorong berganda dalam heat',
