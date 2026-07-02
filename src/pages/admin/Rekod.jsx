@@ -28,12 +28,13 @@ import autoTable from 'jspdf-autotable'
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const PERINGKAT_META = {
+  S: { label: 'Sekolah',     cls: 'bg-green-100 text-green-800 border-green-300' },
   D: { label: 'Daerah',      cls: 'bg-gray-100 text-gray-700 border-gray-300' },
   N: { label: 'Negeri',      cls: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   K: { label: 'Kebangsaan',  cls: 'bg-red-100 text-red-800 border-red-300' },
 }
 
-const PERINGKAT_LABEL = { D: 'DAERAH', N: 'NEGERI', K: 'KEBANGSAAN' }
+const PERINGKAT_LABEL = { S: 'SEKOLAH', D: 'DAERAH', N: 'NEGERI', K: 'KEBANGSAAN' }
 
 const STATUS_META = {
   aktif:    { label: 'Aktif',    cls: 'bg-green-100 text-green-700' },
@@ -92,7 +93,7 @@ function validateImportRow(r) {
   if (!na)                          errors.push('namaAcara kosong')
   if (!['L','P'].includes(jt))      errors.push('jantina mesti L atau P')
   if (!kk)                          errors.push('kategoriKod kosong')
-  if (!['D','N','K'].includes(pp))  errors.push('peringkat mesti D / N / K')
+  if (!['S','D','N','K'].includes(pp))  errors.push('peringkat mesti S / D / N / K')
   if (!pr || isNaN(Number(pr)) || Number(pr) <= 0) errors.push('prestasi tidak sah')
   if (!['s','m'].includes(un))      errors.push('unit mesti s atau m')
 
@@ -138,7 +139,7 @@ function downloadTemplate(acaraList) {
   const rujukan = [
     ['KOLUM','NILAI SAH','NOTA'],
     ['jantina','L, P','L = Lelaki, P = Perempuan'],
-    ['peringkat','D, N, K','D = Daerah, N = Negeri, K = Kebangsaan'],
+    ['peringkat','S, D, N, K','S = Sekolah, D = Daerah, N = Negeri, K = Kebangsaan'],
     ['unit','s, m','s = masa (saat), m = jarak (meter)'],
     ['jenisRekod','elektronik, manual',''],
     ['isWindLegal','TRUE, FALSE','Angin ≤ 2.0 m/s = TRUE'],
@@ -200,7 +201,7 @@ function cetakRekodPDF(rekodList, kategoriList, selectedPeringkat) {
     pdf.setTextColor(255, 255, 255)
     pdf.setFontSize(13)
     pdf.setFont('helvetica', 'bold')
-    pdf.text('REKOD OLAHRAGA MSSD KEMAMAN', pageW / 2, 11, { align: 'center' })
+    pdf.text('REKOD OLAHRAGA', pageW / 2, 11, { align: 'center' })
     pdf.setFontSize(9)
     pdf.setFont('helvetica', 'normal')
     pdf.text(`Peringkat: ${PERINGKAT_LABEL[prg]}`, pageW / 2, 19, { align: 'center' })
@@ -272,7 +273,7 @@ function cetakRekodPDF(rekodList, kategoriList, selectedPeringkat) {
     pdf.setFontSize(6)
     pdf.setTextColor(150)
     pdf.text('* Rekod manual   |   Angin > 2.0 m/s tidak layak sebagai rekod rasmi (WA Rule)', 10, pageH - 6)
-    pdf.text(`Sistem KOAM — mssdkemaman-olahraga.web.app`, pageW - 10, pageH - 6, { align: 'right' })
+    pdf.text(`Sistem Gold Podium — goldpodium.web.app`, pageW - 10, pageH - 6, { align: 'right' })
     pdf.setTextColor(0)
   })
 
@@ -559,7 +560,7 @@ function CetakModal({ rekodList, kategoriList, onClose }) {
 
   function handleCetak() {
     if (sel.length === 0) return
-    const ordered = ['D','N','K'].filter(p => sel.includes(p))
+    const ordered = ['S','D','N','K'].filter(p => sel.includes(p))
     cetakRekodPDF(rekodList, kategoriList, ordered)
   }
 
@@ -578,7 +579,7 @@ function CetakModal({ rekodList, kategoriList, onClose }) {
           <div>
             <p className="text-xs font-bold text-gray-600 mb-3 uppercase tracking-wide">Pilih Peringkat:</p>
             <div className="space-y-2">
-              {[['D','Daerah'],['N','Negeri'],['K','Kebangsaan']].map(([p, label]) => {
+              {[['S','Sekolah'],['D','Daerah'],['N','Negeri'],['K','Kebangsaan']].map(([p, label]) => {
                 const count = rekodList.filter(r => r.peringkat === p).length
                 return (
                   <label key={p} className={`flex items-center gap-3 cursor-pointer p-3 rounded-xl border transition-all ${
@@ -775,6 +776,7 @@ function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved, school
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Peringkat</label>
               <select className={inputCls} value={form.peringkat} onChange={e => set('peringkat', e.target.value)}>
+                <option value="S">Sekolah</option>
                 <option value="D">Daerah</option>
                 <option value="N">Negeri</option>
                 <option value="K">Kebangsaan</option>
@@ -1950,7 +1952,7 @@ export default function Rekod() {
         <div className="space-y-4">
           {/* Peringkat pills */}
           <div className="flex gap-2 flex-wrap">
-            {['D', 'N', 'K'].map(p => {
+            {['S', 'D', 'N', 'K'].map(p => {
               const m = PERINGKAT_META[p]
               return (
                 <button key={p} onClick={() => setSelPeringkat(p)}
@@ -2400,7 +2402,7 @@ export default function Rekod() {
           <div className="flex items-center gap-2 flex-wrap">
             {/* Peringkat pills */}
             <div className="flex gap-1">
-              {['D','N','K'].map(p => (
+              {['S','D','N','K'].map(p => (
                 <button key={p} onClick={() => setSemakPeringkat(p)}
                   className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${
                     semakPeringkat === p
@@ -2907,7 +2909,7 @@ export default function Rekod() {
       {/* Nota */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-[10px] text-blue-700 space-y-0.5">
         <p className="font-bold">Nota Sistem Rekod:</p>
-        <p>· D = Rekod Daerah &nbsp;·&nbsp; N = Rekod Negeri &nbsp;·&nbsp; K = Rekod Kebangsaan</p>
+        <p>· S = Rekod Sekolah &nbsp;·&nbsp; D = Rekod Daerah &nbsp;·&nbsp; N = Rekod Negeri &nbsp;·&nbsp; K = Rekod Kebangsaan</p>
         <p>· Rekod manual ada tanda asterisk (*). Rekod elektronik lebih dipercayai.</p>
         <p>· Angin &gt; 2.0 m/s — prestasi TIDAK layak sebagai rekod rasmi (WA Rule).</p>
         <p>· Sahkan tuntutan selepas semak angin, kelayakan atlet, dan timing system.</p>

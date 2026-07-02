@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PERINGKAT_OPTIONS = [
+  { value: 'sekolah',    label: 'Sekolah' },
   { value: 'daerah',     label: 'Daerah' },
   { value: 'negeri',     label: 'Negeri' },
   { value: 'kebangsaan', label: 'Kebangsaan' },
@@ -43,6 +44,7 @@ const STATUS_META = {
 }
 
 const PERINGKAT_META = {
+  sekolah:    { label: 'Sekolah',    cls: 'bg-green-100 text-green-800' },
   daerah:     { label: 'Daerah',     cls: 'bg-gray-100 text-gray-700' },
   negeri:     { label: 'Negeri',     cls: 'bg-indigo-100 text-indigo-800' },
   kebangsaan: { label: 'Kebangsaan', cls: 'bg-red-100 text-red-800' },
@@ -779,8 +781,8 @@ export default function KejohananSetup() {
         <div className="flex flex-col items-end gap-1">
           <button
             onClick={() => setModal({ mode: 'add', data: { ...EMPTY_FORM } })}
-            disabled={!!aktifKejohanan}
-            title={aktifKejohanan ? `Tamatkan "${aktifKejohanan.namaKejohanan}" dahulu sebelum daftar kejohanan baru.` : ''}
+            disabled={kejohananList.length >= 1}
+            title={kejohananList.length >= 1 ? 'Had 1 kejohanan — padam atau hubungi superadmin untuk reset.' : ''}
             className="flex items-center gap-2 px-4 py-2 bg-[#003399] text-white text-xs font-semibold rounded hover:bg-[#002277] disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
@@ -788,9 +790,9 @@ export default function KejohananSetup() {
             </svg>
             Daftar Kejohanan
           </button>
-          {aktifKejohanan && (
+          {kejohananList.length >= 1 && (
             <p className="text-[10px] text-amber-700 font-semibold">
-              Tamatkan kejohanan aktif dahulu untuk daftar baru.
+              Had 1 kejohanan dicapai. Hubungi superadmin untuk reset.
             </p>
           )}
         </div>

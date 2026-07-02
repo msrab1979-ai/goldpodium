@@ -179,7 +179,7 @@ export default function BukuKejohanan() {
       const kejId   = kejDoc.id
       const kej     = kejDoc.data()
       const namaKej = cfg.tajukUtama || kej.namaKejohanan || 'Kejohanan Olahraga'
-      const peringkatKej = { daerah: 'D', negeri: 'N', kebangsaan: 'K' }[kej.peringkat] || 'D'
+      const peringkatKej = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }[kej.peringkat] || 'D'
 
       // 3. Sekolah (derive dari atlet)
       setProgress('Memuatkan senarai sekolah…')
@@ -475,7 +475,7 @@ export default function BukuKejohanan() {
     const tarikhTamat = kej.tarikhTamat || cfg.tarikhTamat || ''
     const tempat      = cfg.tempatKejohanan || kej.lokasi  || ''
 
-    const PERINGKAT_LABEL = { D: 'Peringkat Daerah', N: 'Peringkat Negeri', K: 'Peringkat Kebangsaan' }
+    const PERINGKAT_LABEL = { S: 'Peringkat Sekolah', D: 'Peringkat Daerah', N: 'Peringkat Negeri', K: 'Peringkat Kebangsaan' }
 
     // ── Helper: header halaman (untuk halaman 2+) ──
     function hdrHalaman(tajuk, sub) {
@@ -669,7 +669,7 @@ export default function BukuKejohanan() {
     pdf.setFontSize(7)
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(180, 200, 255)
-    pdf.text('Dijana oleh Sistem Pengurusan Kejohanan Olahraga MSSD Kemaman (KOAM)', W / 2, 286, { align: 'center' })
+    pdf.text('Dijana oleh Sistem Gold Podium — goldpodium.web.app', W / 2, 286, { align: 'center' })
     pdf.text(new Date().toLocaleDateString('ms-MY'), W / 2, 292, { align: 'center' })
     }
 
@@ -1145,7 +1145,7 @@ export default function BukuKejohanan() {
               pdf.setFont('helvetica', 'bold')
               pdf.setTextColor(180, 100, 0)
               pdf.text(
-                `🏆 REKOD BARU ${pecahRekodAtlet.pecahRekod === 'N' ? 'NEGERI' : pecahRekodAtlet.pecahRekod === 'K' ? 'KEBANGSAAN' : 'DAERAH'}: ${pecahRekodAtlet.namaAtlet || pecahRekodAtlet.kodSekolah} — ${fmtPrestasi(pecahRekodAtlet.keputusan, acara.jenisAcara)}`,
+                `🏆 REKOD BARU ${{ S: 'SEKOLAH', N: 'NEGERI', K: 'KEBANGSAAN', D: 'DAERAH' }[pecahRekodAtlet.pecahRekod] || 'DAERAH'}: ${pecahRekodAtlet.namaAtlet || pecahRekodAtlet.kodSekolah} — ${fmtPrestasi(pecahRekodAtlet.keputusan, acara.jenisAcara)}`,
                 M + 2, y + 3.5
               )
               pdf.setTextColor(0, 0, 0)
@@ -1179,7 +1179,7 @@ export default function BukuKejohanan() {
         ...Object.keys(rekodByKat).filter(k => !katList.find(kl => kl.kod === k)),
       ]
 
-      const PERINGKAT = { D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
+      const PERINGKAT = { S: 'Sekolah', D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
 
       katKeys2.forEach(katKod => {
         if (y > 245) { pdf.addPage(); hdrHalaman('Rekod Semasa', ''); y = 16 }

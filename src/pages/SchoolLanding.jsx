@@ -8,6 +8,8 @@ import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
 import { hashPin } from '../utils/hashPin'
 import { usePWATitle } from '../hooks/usePWATitle'
+import { selectFinalists } from '../utils/finalistUtils'
+import { cariRekodUntukAcara } from '../utils/rekodUtils'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -168,9 +170,137 @@ function LupaPinModal({ schoolId, onClose }) {
   )
 }
 
+// ─── RekodModal ───────────────────────────────────────────────────────────────
+
+const PERINGKAT_LABEL_M = { D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
+
+function rekodKeyHome(namaAcara, jantina, kategoriKod, peringkat) {
+  return [namaAcara, jantina, kategoriKod, peringkat]
+    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+}
+
+function fmtP(val, isPadangM) {
+  if (val == null || val === '') return '—'
+  let n = Number(val); if (isNaN(n) || n === 0) return '—'
+  if (!isPadangM) {
+    if (n > 0 && n < 10) {
+      const m = Math.floor(n)
+      const s = Math.round((n - m) * 100)
+      return `${m}:${String(s).padStart(2, '0')}.00`
+    }
+    if (n >= 60) { const m = Math.floor(n / 60); return `${m}:${(n % 60).toFixed(2).padStart(5, '0')}` }
+    return n.toFixed(2) + 's'
+  }
+  return n.toFixed(2) + 'm'
+}
+
+function RekodModal({ peserta, acara, schoolId, onClose }) {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const peringkat = peserta.pecahRekod
+  const isPadangM = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
+
+  useEffect(() => {
+    const rekodNama = acara.namaAcaraPendek || acara.namaAcara
+    const rKey = rekodKeyHome(rekodNama, acara.jantina, acara.kategoriKod, peringkat)
+    Promise.all([
+      getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey + '_tuntutan')),
+      getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey)),
+    ]).then(([tSnap, aSnap]) => {
+      setData({
+        tuntutan:  tSnap.exists() ? tSnap.data() : null,
+        rekodAsal: aSnap.exists() ? aSnap.data() : null,
+      })
+    }).catch(() => setData(null)).finally(() => setLoading(false))
+  }, []) // eslint-disable-line
+
+  useEffect(() => {
+    const fn = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', fn)
+    return () => window.removeEventListener('keydown', fn)
+  }, [onClose])
+
+  const t = data?.tuntutan
+  const r = data?.rekodAsal
+  const prestasiLama = t != null ? (t.prestasiLama ?? null) : (r?.prestasiLama != null ? Number(r.prestasiLama) : null)
+  const tahunLama    = t != null ? (t.tahunLama ?? null)    : (r?.tahunLama ?? null)
+  const namaLama     = t != null ? (t.namaLama ?? null)     : (r?.namaLama ?? null)
+  const lokasiLama   = t != null ? (t.lokasiLama ?? null)   : (r?.lokasiLama ?? null)
+  const delta = (() => {
+    if (!t?.prestasi || !prestasiLama) return null
+    const diff = Math.abs(Number(t.prestasi) - prestasiLama)
+    return isPadangM ? `+${diff.toFixed(2)}m` : `-${diff.toFixed(2)}s`
+  })()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white w-full max-w-xs rounded-xl shadow-2xl overflow-hidden">
+        <div className="bg-[#003399] px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-[9px] text-white/50 uppercase tracking-widest">RBK — Rekod Baru Kejohanan</p>
+            <p className="text-sm font-black text-white leading-tight">{acara.namaAcara || '—'}</p>
+          </div>
+          <button onClick={onClose} className="text-white/50 hover:text-white">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          {loading ? (
+            <div className="flex items-center gap-2 py-4">
+              <div className="w-4 h-4 border-2 border-[#003399] border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs text-gray-400">Memuatkan…</p>
+            </div>
+          ) : !data ? (
+            <p className="text-xs text-gray-400 py-4 text-center">Data rekod tidak dijumpai.</p>
+          ) : (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest mb-1">Rekod Baru</p>
+                <p className="text-2xl font-black text-amber-700 font-mono">{fmtP(t?.prestasi ?? peserta.keputusan, isPadangM)}</p>
+                <p className="text-xs font-semibold text-gray-800 mt-1">{t?.namaAtlet || peserta.namaAtlet || '—'}</p>
+                <p className="text-[10px] text-gray-500">{t?.namaSekolah || peserta.namaSekolah || peserta.kodSekolah || '—'}</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-300 text-amber-700">
+                    {PERINGKAT_LABEL_M[peringkat] || peringkat}
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border border-green-300 text-green-700 bg-green-50">
+                    ✓ Disahkan
+                  </span>
+                  {delta && <span className="text-[9px] font-bold text-green-600">{delta}</span>}
+                </div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                  {prestasiLama ? 'Rekod Lama' : 'Tiada Rekod Sebelum Ini'}
+                </p>
+                {prestasiLama ? (
+                  <>
+                    <p className="text-xl font-black text-gray-600 font-mono">{fmtP(prestasiLama, isPadangM)}</p>
+                    {tahunLama  && <p className="text-[10px] text-gray-400">Tahun: {tahunLama}</p>}
+                    {namaLama   && <p className="text-xs text-gray-600 mt-0.5">{namaLama}</p>}
+                    {lokasiLama && <p className="text-[10px] text-gray-400">{lokasiLama}</p>}
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">Rekod pertama untuk acara ini.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── KeputusanExpanded ────────────────────────────────────────────────────────
 
-function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup }) {
+function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, rekodDNK, schoolId }) {
+  const [rekodModal, setRekodModal] = useState(null)
+
   if (isLoading) return (
     <div className="flex items-center gap-2 px-4 py-4">
       <div className="w-4 h-4 border-2 border-[#003399] border-t-transparent rounded-full animate-spin" />
@@ -184,18 +314,22 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup }) 
   const isRelay  = acara.jenisAcara === 'relay'
   const isLompatTinggi = /lompat tinggi/i.test(acara.namaAcara || '')
 
-  const heatsAda    = heats.filter(h => ['rasmi', 'diterima', 'tidak_rasmi'].includes(h.statusKeputusan))
-  const finalHeats  = heatsAda.filter(h => ['final', 'terus_final'].includes(h.fasa) || h.peringkat === 'final')
+  const heatsAda      = heats.filter(h => ['rasmi', 'diterima', 'tidak_rasmi'].includes(h.statusKeputusan))
+  const finalHeats    = heatsAda.filter(h => ['final', 'terus_final'].includes(h.fasa) || h.peringkat === 'final')
   const saringanHeats = heatsAda.filter(h => !['final', 'terus_final'].includes(h.fasa) && h.peringkat !== 'final')
-  const showingFinal = finalHeats.length > 0
-  const displayHeats = showingFinal ? finalHeats : heatsAda
+  const showingFinal  = finalHeats.length > 0
+  const displayHeats  = showingFinal ? finalHeats : heatsAda
 
   const isSaringanAcara = (() => {
     const p = (acara.peringkat || '').toLowerCase()
-    const n = (acara.namaAcara || '').toLowerCase()
-    return ['saringan', 'suku_akhir', 'separuh_akhir'].includes(p) || n.includes('saringan')
+    return ['saringan_qf', 'saringan_sf', 'suku_akhir', 'separuh_akhir'].includes(p)
   })()
   const showCatatanCol = (isSaringanAcara || (isRelay && saringanHeats.length > 0)) && !showingFinal
+
+  // Finalist Q/q
+  const _finalistRaw = showCatatanCol ? selectFinalists(heats, acara, finalSetup) : []
+  const finalistBibs = new Set(_finalistRaw.map(f => isRelay ? f.kodSekolah : f.noBib))
+  const finalistQMap = new Map(_finalistRaw.map(f => [isRelay ? f.kodSekolah : f.noBib, f.qualifyType || 'q']))
 
   // Tunjuk start list jika belum ada keputusan
   if (displayHeats.length === 0) {
@@ -274,21 +408,23 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup }) 
               {!isRelay && <th className="px-1.5 py-1.5 text-center w-9">BIB</th>}
               <th className="px-2 py-1.5 text-left">{isRelay ? 'Pasukan' : 'Nama Atlet'}</th>
               {!isRelay && <th className="hidden sm:table-cell px-3 py-1.5 text-left">Sekolah</th>}
-              <th className="px-2 py-1.5 text-right">{isPadang ? 'Jarak' : 'Masa Rasmi'}</th>
+              <th className="px-2 py-1.5 text-right">{isPadang ? 'Jarak' : 'Masa'}</th>
               {showCatatanCol && <th className="px-1.5 py-1.5 text-center w-8">Q</th>}
             </tr>
           </thead>
           <tbody>
             {heatPeserta.map((p, idx) => {
-              const flagged = ['DNS', 'DNF', 'DQ'].includes(p.status)
-              const _ked    = (p.kedudukan === 'undefined' || p.kedudukan === '') ? null : p.kedudukan
-              const _rank   = (p.rankDalamHeat === 'undefined' || p.rankDalamHeat === '') ? null : p.rankDalamHeat
-              const kddk    = isLompatTinggi ? _ked : (_ked || _rank)
+              const flagged    = ['DNS', 'DNF', 'DQ'].includes(p.status)
+              const _ked       = (p.kedudukan === 'undefined' || p.kedudukan === '') ? null : p.kedudukan
+              const _rank      = (p.rankDalamHeat === 'undefined' || p.rankDalamHeat === '') ? null : p.rankDalamHeat
+              const kddk       = isLompatTinggi ? _ked : (_ked || _rank)
               const hasilBundar = isPadang ? fmtJarak(p.keputusan) : fmtMasa(p.keputusan)
-              const medal   = isFinalHeat && (kddk === 1 ? '🥇' : kddk === 2 ? '🥈' : kddk === 3 ? '🥉' : null)
-              const namaSkl = p.namaSekolah || sekolahMap?.[p.kodSekolah] || p.kodSekolah || '—'
+              const medal      = isFinalHeat && (kddk === 1 ? '🥇' : kddk === 2 ? '🥈' : kddk === 3 ? '🥉' : null)
+              const namaSkl    = p.namaSekolah || sekolahMap?.[p.kodSekolah] || p.kodSekolah || '—'
+              const layakFinal = showCatatanCol && !flagged && finalistBibs.has(isRelay ? p.kodSekolah : p.noBib)
               return (
                 <tr key={idx} className={`border-t border-gray-50 ${
+                  layakFinal ? 'bg-blue-50/30' :
                   flagged    ? 'bg-red-50/30' :
                   kddk === 1 ? 'bg-amber-50/40' :
                   idx % 2 === 1 ? 'bg-gray-50/20' : ''
@@ -305,11 +441,14 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup }) 
                     {isRelay
                       ? <div className="flex items-center gap-1.5">
                           <p className="font-semibold text-gray-800">{namaSkl}</p>
-                          {p.pecahRekod && (
-                            <span className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-white tracking-wide">RBK</span>
+                          {p.pecahRekod && schoolId && (
+                            <button onClick={e => { e.stopPropagation(); setRekodModal(p) }}
+                              className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-400 hover:bg-amber-500 text-white tracking-wide transition-colors"
+                              title="Klik untuk lihat rekod dipecahkan">RBK</button>
                           )}
                           {p.samaiRekod && (
-                            <span className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-teal-500 text-white tracking-wide">MRKL</span>
+                            <span className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-teal-500 text-white tracking-wide"
+                              title="Menyamai Rekod Kejohanan Lepas">MRKL</span>
                           )}
                         </div>
                       : <div>
@@ -318,11 +457,14 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup }) 
                               {p.namaAtlet || '—'}
                               {flagged && <span className="ml-1 no-underline text-red-500 font-bold"> {p.status}</span>}
                             </p>
-                            {p.pecahRekod && (
-                              <span className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-white tracking-wide">RBK</span>
+                            {p.pecahRekod && schoolId && (
+                              <button onClick={e => { e.stopPropagation(); setRekodModal(p) }}
+                                className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-400 hover:bg-amber-500 text-white tracking-wide transition-colors"
+                                title="Klik untuk lihat rekod dipecahkan">RBK</button>
                             )}
                             {p.samaiRekod && (
-                              <span className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-teal-500 text-white tracking-wide">MRKL</span>
+                              <span className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded bg-teal-500 text-white tracking-wide"
+                                title="Menyamai Rekod Kejohanan Lepas">MRKL</span>
                             )}
                           </div>
                           <p className="sm:hidden text-[9px] text-gray-400 mt-0.5 truncate">{namaSkl}</p>
@@ -335,7 +477,18 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup }) 
                   <td className={`px-2 py-2 text-right font-mono font-bold text-[11px] ${flagged ? 'text-red-400' : 'text-gray-800'}`}>
                     {flagged ? p.status : (hasilBundar || '—')}
                   </td>
-                  {showCatatanCol && <td className="px-1.5 py-2 text-center" />}
+                  {showCatatanCol && (
+                    <td className="px-1.5 py-2 text-center">
+                      {layakFinal && (() => {
+                        const qt = finalistQMap.get(isRelay ? p.kodSekolah : p.noBib) || 'q'
+                        return (
+                          <span className={`inline-block text-[9px] font-black px-1.5 py-0.5 rounded text-white tracking-wide ${qt === 'Q' ? 'bg-green-600' : 'bg-sky-500'}`}>
+                            {qt}
+                          </span>
+                        )
+                      })()}
+                    </td>
+                  )}
                 </tr>
               )
             })}
@@ -379,13 +532,48 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup }) 
         <span className="text-[9px] font-black tracking-widest uppercase text-teal-600">Keputusan</span>
       </div>
       {renderContent()}
+
+      {/* Rekod D/N/K strip */}
+      {rekodDNK && (rekodDNK.S || rekodDNK.D || rekodDNK.N || rekodDNK.K) && (() => {
+        const LABEL = { S: 'Sekolah', D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
+        const rows  = ['S', 'D', 'N', 'K'].map(p => ({ p, r: rekodDNK[p] })).filter(x => x.r)
+        if (!rows.length) return null
+        return (
+          <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/40">
+            <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Rekod</p>
+            <div className="space-y-1">
+              {rows.map(({ p, r }) => (
+                <div key={p} className="flex items-center gap-2 text-[10px] min-w-0">
+                  <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded bg-gray-200 text-gray-500 leading-none">
+                    {LABEL[p]}
+                  </span>
+                  <span className="font-mono font-bold text-[#003399]">
+                    {formatPrestasiRekod(r.prestasi, r.unit)}
+                  </span>
+                  <span className="text-gray-600 truncate">{r.namaAtlet || r.namaSekolah || '—'}</span>
+                  <span className="shrink-0 text-gray-400 text-[9px]">{tahunRekod(r.tarikhRekod)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {rekodModal && (
+        <RekodModal
+          peserta={rekodModal}
+          acara={acara}
+          schoolId={schoolId}
+          onClose={() => setRekodModal(null)}
+        />
+      )}
     </div>
   )
 }
 
 // ─── AcaraTableRow ────────────────────────────────────────────────────────────
 
-function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMap, kategoriMap }) {
+function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMap, kategoriMap, finalSetup, rekodDNK, schoolId }) {
   const { acara, masaMula } = item
   const noAcara      = acara.noAcara || acara.id || '—'
   const status       = acara.statusAcara || 'akan_datang'
@@ -443,7 +631,7 @@ function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMa
       {isExpanded && (
         <tr>
           <td colSpan={7} className="bg-gray-50 border-b border-gray-200 p-0">
-            <KeputusanExpanded heats={heats} acara={acara} sekolahMap={sekolahMap} isLoading={isLoading} />
+            <KeputusanExpanded heats={heats} acara={acara} sekolahMap={sekolahMap} isLoading={isLoading} finalSetup={finalSetup} rekodDNK={rekodDNK} schoolId={schoolId} />
           </td>
         </tr>
       )}
@@ -829,6 +1017,8 @@ export default function SchoolLanding() {
   const [expandedAcara,  setExpandedAcara]  = useState(new Set())
   const [heatCache,      setHeatCache]      = useState({})
   const [heatLoading,    setHeatLoading]    = useState(new Set())
+  const [rekodCache,     setRekodCache]     = useState({})
+  const [finalSetup,     setFinalSetup]     = useState(null)
   const [sekolahMap,     setSekolahMap]     = useState({})
   const [kategoriMap,    setKategoriMap]    = useState({})
   const [filterKombo,    setFilterKombo]    = useState('semua')
@@ -904,9 +1094,12 @@ export default function SchoolLanding() {
     return () => unsub()
   }, [schoolId])
 
-  // ── Load sekolah map + kategori sekali ──
+  // ── Load sekolah map + kategori + finalSetup sekali ──
   useEffect(() => {
     if (!schoolId) return
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup'))
+      .then(s => { if (s.exists()) setFinalSetup(s.data()) })
+      .catch(() => {})
     getDocs(collection(db, 'tenants', schoolId, 'sekolah'))
       .then(snap => {
         const m = {}
@@ -977,6 +1170,12 @@ export default function SchoolLanding() {
         .filter(h => (h.aceraId || h.acaraId) === key)
         .sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0))
       setHeatCache(prev => ({ ...prev, [key]: heatsAcara }))
+      // Load rekod D/N/K untuk acara ini
+      if (!rekodCache[key]) {
+        cariRekodUntukAcara(schoolId, a).then(dnk => {
+          setRekodCache(prev => ({ ...prev, [key]: dnk }))
+        }).catch(() => {})
+      }
     } catch { setHeatCache(prev => ({ ...prev, [key]: [] })) }
     finally { setHeatLoading(prev => { const n = new Set(prev); n.delete(key); return n }) }
   }
@@ -1470,6 +1669,9 @@ export default function SchoolLanding() {
                                       isLoading={heatLoading.has(a.id)}
                                       sekolahMap={sekolahMap}
                                       kategoriMap={kategoriMap}
+                                      finalSetup={finalSetup}
+                                      rekodDNK={rekodCache[a.id]}
+                                      schoolId={schoolId}
                                     />
                                   ))}
                               </tbody>
@@ -1553,7 +1755,7 @@ export default function SchoolLanding() {
                           </button>
                           {isExp && (
                             <div className="border-t border-gray-100">
-                              <KeputusanExpanded heats={heatCache[a.id]} acara={a} sekolahMap={sekolahMap} isLoading={heatLoading.has(a.id)} />
+                              <KeputusanExpanded heats={heatCache[a.id]} acara={a} sekolahMap={sekolahMap} isLoading={heatLoading.has(a.id)} finalSetup={finalSetup} rekodDNK={rekodCache[a.id]} schoolId={schoolId} />
                             </div>
                           )}
                         </div>
@@ -1575,7 +1777,7 @@ export default function SchoolLanding() {
                   </div>
                 ) : (
                   (() => {
-                    const PERINGKAT_LIST = [{ id: 'D', label: 'Daerah' }, { id: 'N', label: 'Negeri' }, { id: 'K', label: 'Kebangsaan' }]
+                    const PERINGKAT_LIST = [{ id: 'S', label: 'Sekolah' }, { id: 'D', label: 'Daerah' }, { id: 'N', label: 'Negeri' }, { id: 'K', label: 'Kebangsaan' }]
                     const rekodByP = rekodAll.filter(r => r.peringkat?.trim().toUpperCase() === activePeringkatRekod)
                     const groupKeys = [...new Set(rekodByP.map(r => {
                       const j = r.jantina?.trim().toUpperCase() || ''

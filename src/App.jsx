@@ -59,6 +59,7 @@ const PengurusLogin      = lazy(() => import('./pages/pengurus/PengurusLogin'))
 const PengurusDashboard  = lazy(() => import('./pages/pengurus/PengurusDashboard'))
 const BukuKongsiPP       = lazy(() => import('./pages/pengurus/BukuKongsiPP'))
 const SijilPencapaianPP  = lazy(() => import('./pages/pengurus/SijilPencapaianPP'))
+const SijilPenyertaanPP  = lazy(() => import('./pages/pengurus/SijilPenyertaanPP'))
 const PengurusLayout     = lazy(() => import('./pages/pengurus/PengurusLayout'))
 
 // ── Spinner ringkas semasa lazy load ─────────────────────────────────────────
@@ -290,10 +291,11 @@ function AppRoutes() {
           <RequirePengurus>
             <PengurusLayout>
               <Routes>
-                <Route path="dashboard"        element={<PengurusDashboard />} />
-                <Route path="buku-kongsi"      element={<BukuKongsiPP />} />
-                <Route path="sijil-pencapaian" element={<SijilPencapaianPP />} />
-                <Route path="*"                element={<NavigateToPengurusDashboard />} />
+                <Route path="dashboard"         element={<PengurusDashboard />} />
+                <Route path="buku-kongsi"       element={<BukuKongsiPP />} />
+                <Route path="sijil-penyertaan"  element={<SijilPenyertaanPP />} />
+                <Route path="sijil-pencapaian"  element={<SijilPencapaianPP />} />
+                <Route path="*"                 element={<NavigateToPengurusDashboard />} />
               </Routes>
             </PengurusLayout>
           </RequirePengurus>

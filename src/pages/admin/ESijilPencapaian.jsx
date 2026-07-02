@@ -24,7 +24,7 @@ const FIELDS = [
   { key: 'nama',      label: 'Nama Atlet',     color: '#2563eb', dummy: 'NOR AINA BINTI ALI' },
   { key: 'kedudukan', label: 'Kedudukan',      color: '#9333ea', dummy: 'JOHAN' },
   { key: 'acara',     label: 'Acara',          color: '#ea580c', dummy: '( REJAM LEMBING - PEREMPUAN 15 TAHUN )' },
-  { key: 'kejohanan', label: 'Nama Kejohanan', color: '#16a34a', dummy: 'KEJOHANAN OLAHRAGA MSSD KEMAMAN TAHUN 2026' },
+  { key: 'kejohanan', label: 'Nama Kejohanan', color: '#16a34a', dummy: 'KEJOHANAN OLAHRAGA ANTARA MURID 2026' },
   { key: 'tarikh',    label: 'Tarikh',         color: '#dc2626', dummy: '21 hingga 25 Jun 2026' },
   { key: 'tempat',    label: 'Tempat',         color: '#92400e', dummy: 'SMK Sultan Ismail' },
 ]
@@ -287,7 +287,7 @@ export default function ESijilPencapaian() {
       } catch {}
     }
     load()
-  }, [])
+  }, [schoolId])
 
   // ── Tempat handler (dinamik) ─────────────────────────────────────────────
   function setTempatBaris(i, val) {

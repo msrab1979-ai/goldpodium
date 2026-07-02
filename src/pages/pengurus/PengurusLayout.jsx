@@ -15,6 +15,8 @@
 import { useState } from 'react'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useLesen } from '../../hooks/useLesen'
+import LesenTamat from '../LesenTamat'
 
 // ─── Nav items — guna fungsi supaya slug boleh dimasukkan dalam path ─────────
 
@@ -29,8 +31,9 @@ function buildNavItems(slug) {
     {
       section: 'SIJIL & DOKUMEN',
       items: [
-        { label: 'Buku Kongsi',      path: `/${slug}/pengurus/buku-kongsi`,     icon: 'book' },
-        { label: 'Sijil Pencapaian', path: `/${slug}/pengurus/sijil-pencapaian`,icon: 'sijil' },
+        { label: 'Sijil Penyertaan', path: `/${slug}/pengurus/sijil-penyertaan`, icon: 'sijil' },
+        { label: 'Sijil Pencapaian', path: `/${slug}/pengurus/sijil-pencapaian`, icon: 'medal' },
+        { label: 'Buku Kongsi',      path: `/${slug}/pengurus/buku-kongsi`,      icon: 'book'  },
       ],
     },
   ]
@@ -81,6 +84,11 @@ const Icons = {
   book: (
     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+    </svg>
+  ),
+  medal: (
+    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <circle cx="12" cy="14" r="5" /><path strokeLinecap="round" strokeLinejoin="round" d="M8.21 4.368l-3.02 5.232M15.79 4.368l3.02 5.232M12 9V4m0 0H9m3 0h3" />
     </svg>
   ),
 }
@@ -165,13 +173,18 @@ export default function PengurusLayout({ children }) {
   const { userData, logout } = useAuth()
   const navigate = useNavigate()
   const { slug } = useParams()
+  const schoolId = userData?.schoolId || ''
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const lesen = useLesen(schoolId)
 
   async function handleLogout() {
     await logout()
-    // Redirect ke login sekolah yang betul berdasarkan slug dalam URL
     const dest = slug ? `/${slug}` : '/'
     navigate(dest, { replace: true })
+  }
+
+  if (!lesen.loading && lesen.expired) {
+    return <LesenTamat lessenTamat={lesen.lessenTamat} onLogout={handleLogout} />
   }
 
   return (

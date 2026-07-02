@@ -26,13 +26,20 @@ const NAV = [
     ],
   },
   {
-    label: 'Cetakan & Sijil',
+    label: 'Cetakan',
     items: [
-      { label: 'Buku Kejohanan', icon: '📖', path: '/admin/buku-kejohanan' },
-      { label: 'Cetak Acara',    icon: '🖨️', path: '/admin/cetak-acara' },
-      { label: 'Cetak Keputusan',icon: '📄', path: '/admin/cetak-keputusan' },
-      { label: 'E-Sijil',        icon: '🎓', path: '/admin/esijil' },
-      { label: 'Muat Turun Sijil',icon: '⬇️', path: '/admin/muat-turun-sijil' },
+      { label: 'Buku Kejohanan',  icon: '📖', path: '/admin/buku-kejohanan' },
+      { label: 'Cetak Acara',     icon: '🖨️', path: '/admin/cetak-acara' },
+      { label: 'Cetak Keputusan', icon: '📄', path: '/admin/cetak-keputusan' },
+    ],
+  },
+  {
+    label: 'Sijil',
+    items: [
+      { label: 'Sijil Penyertaan',        icon: '🎓', path: '/admin/esijil' },
+      { label: 'Setup Sijil Pencapaian',  icon: '🏆', path: '/admin/esijil-pencapaian' },
+      { label: 'Kongsi Buku',             icon: '📚', path: '/admin/buku-kongsi' },
+      { label: 'Muat Turun Sijil',        icon: '⬇️', path: '/admin/muat-turun-sijil' },
     ],
   },
   {

@@ -11,7 +11,7 @@
  *   schoolId          — tenant ID (WAJIB untuk GP multi-tenant)
  *   mataPingat        — { 1: 5, 2: 3, 3: 2, 4: 1 }  (dari kejohanan doc)
  *   bilanganKedudukan — bilangan kedudukan yang dapat medal_tally (default 8)
- *   peringkatKej      — 'D' | 'N' | 'K'  (peringkat kejohanan)
+ *   peringkatKej      — 'S' | 'D' | 'N' | 'K'  (peringkat kejohanan)
  *   grantMedal        — boolean (adakah heat ini layak bagi medal)
  *   isRelay           — boolean
  *   onPesertaPatch    — callback(pesertaPatched) untuk update UI state (optional)

@@ -28,7 +28,7 @@ export function rekodKey(namaAcara, jantina, kategoriKod, peringkat) {
  *
  * @param {string} schoolId - ID tenant (GP multi-tenant)
  * @param {{ namaAcara: string, jantina: string, kategoriKod: string }} acara
- * @returns {Promise<{ D: object|null, N: object|null, K: object|null }>}
+ * @returns {Promise<{ S: object|null, D: object|null, N: object|null, K: object|null }>}
  */
 export async function cariRekodUntukAcara(schoolId, acara) {
   const { namaAcara, namaAcaraPendek, jantina, kategoriKod } = acara
@@ -52,13 +52,14 @@ export async function cariRekodUntukAcara(schoolId, acara) {
     return found ? found.data() : null
   }
 
-  const [D, N, K] = await Promise.all([
+  const [S, D, N, K] = await Promise.all([
+    cariSatu('S'),
     cariSatu('D'),
     cariSatu('N'),
     cariSatu('K'),
   ])
 
-  return { D, N, K }
+  return { S, D, N, K }
 }
 
 /**

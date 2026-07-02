@@ -14,7 +14,7 @@ import { useState, useEffect } from 'react'
 import {
   collection, getDocs, doc, getDoc, query, where,
 } from 'firebase/firestore'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import JSZip from 'jszip'
@@ -53,6 +53,7 @@ export default function SijilPencapaianPP() {
   const { userData, userRole } = useAuth()
   const schoolId = userData?.schoolId || ''
   const navigate    = useNavigate()
+  const { slug }    = useParams()
   const kodSekolah  = userData?.kodSekolah  || ''
   const namaSekolah = userData?.namaSekolah || kodSekolah
 
@@ -84,7 +85,7 @@ export default function SijilPencapaianPP() {
       // ── Guard: toggle OFF + PP → redirect ke dashboard ──────────────────
       const isAktif = cfg.aktif === undefined ? true : !!cfg.aktif
       if (!isAktif && userRole === 'pengurus_pasukan') {
-        navigate('/dashboard', { replace: true })
+        navigate(`/${slug}/pengurus/dashboard`, { replace: true })
         return
       }
 

@@ -37,6 +37,10 @@ const JENIS_LABEL = {
 
 // ─── Helpers masa ─────────────────────────────────────────────────────────────
 
+function fmtJam(d) {
+  return d.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+}
+
 function parseMasaInput(raw) {
   if (raw === '' || raw == null) return ''
   const s = String(raw).trim().replace(/:/g, '.')
@@ -997,8 +1001,9 @@ export default function PencatatInputKeputusan() {
   const { slug, kejId } = useParams()
   const schoolId     = userData?.schoolId || ''
 
-  const bolehEdit = ['teacher', 'pencatat', 'pengurus_teknik', 'urusetia', 'admin', 'superadmin'].includes(userData?.role)
+  const bolehEdit = ['pencatat', 'pengurus_teknik', 'urusetia', 'admin', 'superadmin'].includes(userData?.role)
 
+  const [sistemTutup, setSistemTutup] = useState(false)
   const [step, setStep]         = useState('home')
   const [search, setSearch]     = useState('')
   const [now, setNow]           = useState(Date.now())
@@ -1018,6 +1023,7 @@ export default function PencatatInputKeputusan() {
 
   // Accordion open state — key = kategoriKod
   const [accordionOpen, setAccordionOpen] = useState({})
+  const [filterTab, setFilterTab] = useState('semua')
 
   // Selection
   const [selectedAcara, setSelectedAcara] = useState(null)
@@ -1039,6 +1045,17 @@ export default function PencatatInputKeputusan() {
   const [keputusanSemua, setKeputusanSemua] = useState({})
 
   const heatListenerRef = useRef(null)
+
+  // ── Pantau sistemTutup secara realtime ──────────────────────────────────────
+  useEffect(() => {
+    if (!schoolId) return
+    const unsub = onSnapshot(
+      doc(db, 'tenants', schoolId, 'tetapan', 'home'),
+      snap => { if (snap.exists()) setSistemTutup(!!snap.data().sistemTutup) },
+      () => {}
+    )
+    return () => unsub()
+  }, [schoolId])
 
   // ── Load data ───────────────────────────────────────────────────────────────
 
@@ -1375,6 +1392,7 @@ export default function PencatatInputKeputusan() {
 
   async function handleSave() {
     if (!schoolId || !kejId || !selectedAcara || !selectedHeat || !bolehEdit) return
+    if (sistemTutup) { alert('Sistem ditutup — input keputusan dihalang.'); return }
     setSaving(true); setSaved(false)
     try {
       const heatRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId)
@@ -1411,6 +1429,7 @@ export default function PencatatInputKeputusan() {
 
   async function handleHantar() {
     if (!schoolId || !kejId || !selectedAcara || !selectedHeat || !bolehEdit) return
+    if (sistemTutup) { alert('Sistem ditutup — input keputusan dihalang.'); return }
     setSaving(true); setSaved(false)
     try {
       const heatRef  = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId)
@@ -1442,7 +1461,7 @@ export default function PencatatInputKeputusan() {
       await updateDoc(acaraRef, { statusAcara: 'ada_keputusan', updatedAt: serverTimestamp() }).catch(() => {})
 
       const kej = kejData || {}
-      const PKOD = { daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
       const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
       const mp = kej.mataPingat || {}
       const mataPingat = {
@@ -1475,12 +1494,13 @@ export default function PencatatInputKeputusan() {
 
   async function handleSaveSemuaPeserta({ danHantar = false } = {}) {
     if (!schoolId || !kejId || !selectedAcara || heats.length === 0 || !bolehEdit) return
+    if (sistemTutup) { alert('Sistem ditutup — input keputusan dihalang.'); return }
     setSaving(true); setSaved(false)
     try {
       const jenisAcara = selectedAcara.jenisAcara
       const isPadang   = ['padang_lompat', 'padang_balin'].includes(jenisAcara)
       const kej = kejData || {}
-      const PKOD = { daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
       const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
       const mp = kej.mataPingat || {}
       const mataPingat = {
@@ -1665,69 +1685,144 @@ export default function PencatatInputKeputusan() {
     return map
   }, [acaraFiltered])
 
+  // Kiraan progress keseluruhan
+  const filterCounts = useMemo(() => {
+    let rasmi = 0, draf = 0, belum = 0
+    acaraList.forEach(a => {
+      const t = a._totalHeat || 0
+      const r = a._rasmiHeat || 0
+      const d = a._drafHeat  || 0
+      if (t > 0 && r === t) rasmi++
+      else if (d > 0) draf++
+      else belum++
+    })
+    return { rasmi, draf, belum, semua: acaraList.length }
+  }, [acaraList])
+
+  // Kiraan per hari untuk filter pills
+  const hariFilterCounts = useMemo(() => {
+    let rasmi = 0, draf = 0, belum = 0
+    acaraHariIni.forEach(a => {
+      const t = a._totalHeat || 0
+      const r = a._rasmiHeat || 0
+      const d = a._drafHeat  || 0
+      if (t > 0 && r === t) rasmi++
+      else if (d > 0) draf++
+      else belum++
+    })
+    return { rasmi, draf, belum, semua: acaraHariIni.length }
+  }, [acaraHariIni])
+
+  // Acara selepas filter tab
+  const acaraHariFiltered = useMemo(() => {
+    if (filterTab === 'rasmi') return acaraHariIni.filter(a => (a._rasmiHeat || 0) === (a._totalHeat || 0) && (a._totalHeat || 0) > 0)
+    if (filterTab === 'draf')  return acaraHariIni.filter(a => (a._drafHeat  || 0) > 0 && (a._rasmiHeat || 0) < (a._totalHeat || 0))
+    if (filterTab === 'belum') return acaraHariIni.filter(a => (a._rasmiHeat || 0) === 0 && (a._drafHeat || 0) === 0)
+    return acaraHariIni
+  }, [acaraHariIni, filterTab])
+
   const namaKej = kejData?.namaKejohanan || 'Kejohanan'
   const isRasmi = ['rasmi', 'diterima'].includes(selectedHeat?.statusKeputusan)
+  const isDalamBantahan = selectedHeat?.statusKeputusan === 'dalam_bantahan'
+  const bolehInputSekarang = bolehEdit && !isRasmi && !sistemTutup
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="w-full pb-12">
 
-      {/* Header */}
-      <header className="bg-[#003399] text-white px-4 py-3.5 shadow-lg sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          {step === 'input' && (
-            <button onClick={goBack} className="text-white/60 hover:text-white p-1 -ml-1 rounded-lg hover:bg-white/10 transition-colors">
+      {/* Top Bar — gaya KOAM: putih, sticky */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+        <div className="flex items-center gap-2 px-4 py-3">
+          {step !== 'home' && (
+            <button onClick={goBack} className="p-2 -ml-2 text-gray-400 hover:text-gray-700 transition-colors">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </button>
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-[9px] text-white/50 uppercase tracking-widest">Pencatat · Gold Podium</p>
-            <p className="text-sm font-bold leading-tight truncate">
-              {step === 'input' && selectedAcara
-                ? `#${selectedAcara.noAcara ?? '—'} · ${selectedAcara.namaAcara || '—'}`
-                : namaKej}
-            </p>
+            {step === 'home' && (
+              <p className="text-sm font-bold text-gray-800">Input Keputusan</p>
+            )}
+            {step === 'input' && (
+              <div>
+                <p className="text-sm font-bold text-gray-800 truncate">
+                  {selectedAcara?.noAcara ? `No.${selectedAcara.noAcara} · ` : ''}{selectedAcara?.namaAcara || '—'}
+                </p>
+                <p className="text-[10px] text-gray-400">
+                  {heatsLoading ? 'Memuatkan…'
+                    : selectedHeat
+                    ? `Heat ${selectedHeat.noHeat ?? ''}${isRasmi ? ' · 🔒 Rasmi' : isDalamBantahan ? ' · ⚠️ Bantahan' : ''}`
+                    : heats.length === 0 ? 'Tiada heat' : 'Pilih heat di bawah'}
+                </p>
+              </div>
+            )}
           </div>
-          <button onClick={() => navigate(`/${slug}/pencatat/input-keputusan`)}
-            className="text-white/50 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-          </button>
+          {/* Jam live */}
+          <span className="text-[10px] font-mono text-gray-400 shrink-0">{fmtJam(new Date(now))}</span>
+          {/* Butang Draf shortcut — step input sahaja */}
+          {step === 'input' && bolehInputSekarang && (
+            <button onClick={handleSave} disabled={saving}
+              className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                saved ? 'bg-green-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+              }`}>
+              {saving ? '…' : saved ? '✓' : 'Draf'}
+            </button>
+          )}
         </div>
-      </header>
+      </div>
 
-      {/* HOME — senarai acara */}
+      {/* HOME — senarai acara (KOAM layout) */}
       {step === 'home' && (
-        <div className="max-w-2xl mx-auto px-3 py-4 space-y-3">
+        <div className="w-full pb-12">
 
-          {/* Carian */}
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Cari no. acara, nama, kategori…"
-              className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#003399]/40 focus:ring-2 focus:ring-[#003399]/10" />
-          </div>
-
-          {/* Hari tabs */}
-          {!search && allDates.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-              {allDates.map(d => {
-                const fmt = new Date(d).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short' })
-                return (
-                  <button key={d} onClick={() => setSelectedHari(d)}
-                    className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                      selectedHari === d ? 'bg-[#003399] text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-500 hover:border-[#003399]/30'
-                    }`}>{fmt}</button>
-                )
-              })}
+          {/* Progress bar keseluruhan */}
+          {acaraList.length > 0 && (
+            <div className="px-4 py-2.5 bg-white border-b border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Progress Keseluruhan</span>
+                <span className="text-[10px] font-mono font-bold text-gray-600">
+                  {filterCounts.rasmi} / {acaraList.length}
+                </span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden flex">
+                <div className="h-full bg-green-500 transition-all"
+                  style={{ width: `${acaraList.length ? filterCounts.rasmi / acaraList.length * 100 : 0}%` }} />
+                <div className="h-full bg-amber-400 transition-all"
+                  style={{ width: `${acaraList.length ? filterCounts.draf / acaraList.length * 100 : 0}%` }} />
+              </div>
+              <div className="flex gap-3 mt-1">
+                <span className="text-[9px] font-bold text-green-700">✓ {filterCounts.rasmi} Rasmi</span>
+                <span className="text-[9px] font-bold text-amber-600">⏳ {filterCounts.draf} Draf</span>
+                <span className="text-[9px] text-gray-400">{filterCounts.belum} Belum</span>
+              </div>
             </div>
           )}
+
+          {/* Search bar */}
+          <div className="px-4 py-2 bg-white border-b border-gray-100">
+            <div className="relative">
+              <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-300"
+                fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                className="w-full border border-gray-100 rounded-xl pl-9 pr-9 py-2 text-sm bg-gray-50 focus:outline-none focus:border-[#003399] focus:bg-white transition-colors"
+                placeholder="Cari No. Acara atau nama acara…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {search && (
+                <button onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-16 gap-2 text-gray-400">
@@ -1737,32 +1832,104 @@ export default function PencatatInputKeputusan() {
               </svg>
               <span className="text-sm">Memuatkan…</span>
             </div>
-          ) : acaraFiltered.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-10">Tiada acara ditemui.</p>
           ) : search ? (
-            /* Search result — flat list */
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              {acaraFiltered.map((a, idx) => (
-                <AcaraRow key={a.acaraId} acara={a} isLast={idx === acaraFiltered.length - 1}
-                  nowMs={now} onClick={() => selectAcara(a)} />
-              ))}
+            /* ── Mod Carian ── */
+            <div className="bg-white">
+              <div className="px-4 py-2 border-b border-gray-100">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                  Hasil Carian — {acaraFiltered.length} acara
+                </p>
+              </div>
+              <div className="grid px-3 py-1.5 bg-gray-50 border-b border-gray-100 text-[9px] font-bold text-gray-400 uppercase tracking-widest"
+                style={{ gridTemplateColumns: '36px 44px 1fr 58px 64px' }}>
+                <div>No.</div><div>Masa</div><div>Acara</div>
+                <div className="text-center">Jenis</div><div className="text-right">Status</div>
+              </div>
+              {acaraFiltered.length === 0
+                ? <p className="text-sm text-gray-400 text-center py-10">Tiada acara dijumpai.</p>
+                : acaraFiltered.map((a, idx) => (
+                  <AcaraRow key={a.acaraId} acara={a} nowMs={now}
+                    isLast={idx === acaraFiltered.length - 1} onClick={() => selectAcara(a)} />
+                ))
+              }
             </div>
           ) : (
-            /* Accordion by kategori */
-            <div className="space-y-2">
-              {Object.entries(kategoris).map(([kat, acaraKat]) => (
-                <AccordionSection key={kat} title={kat} count={acaraKat.length}
-                  open={!!accordionOpen[kat]}
-                  onToggle={() => setAccordionOpen(prev => ({ ...prev, [kat]: !prev[kat] }))}>
-                  <div className="rounded-xl border border-gray-100 overflow-hidden">
-                    {acaraKat.map((a, idx) => (
-                      <AcaraRow key={a.acaraId} acara={a} isLast={idx === acaraKat.length - 1}
-                        nowMs={now} onClick={() => selectAcara(a)} />
-                    ))}
+            <>
+              {/* ── Date chips ── */}
+              {allDates.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto px-4 py-3 bg-white border-b border-gray-100">
+                  {allDates.map(d => {
+                    const isActive = d === selectedHari
+                    const isToday  = d === new Date().toISOString().slice(0, 10)
+                    const hari = ['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'][new Date(d).getDay()]
+                    const tgl  = `${new Date(d).getDate()}/${new Date(d).getMonth() + 1}`
+                    return (
+                      <button key={d} onClick={() => setSelectedHari(d)}
+                        className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                          isActive ? 'bg-[#003399] text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}>
+                        <span className="text-base leading-none">{isToday ? '📅' : '📆'}</span>
+                        <span>{hari} {tgl}</span>
+                        {isToday && (
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                            isActive ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-600'
+                          }`}>Hari Ini</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* ── Filter pills ── */}
+              <div className="flex gap-1.5 overflow-x-auto px-4 py-2 bg-white border-b border-gray-100">
+                {[
+                  { key: 'semua', label: 'Semua',   act: 'bg-[#003399] text-white', inact: 'bg-gray-100 text-gray-500' },
+                  { key: 'belum', label: 'Belum',   act: 'bg-gray-600 text-white',  inact: 'bg-gray-100 text-gray-500' },
+                  { key: 'draf',  label: '⏳ Draf', act: 'bg-amber-500 text-white', inact: 'bg-amber-50 text-amber-700' },
+                  { key: 'rasmi', label: '✓ Rasmi', act: 'bg-green-600 text-white', inact: 'bg-green-50 text-green-700' },
+                ].map(t => (
+                  <button key={t.key} onClick={() => setFilterTab(t.key)}
+                    className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                      filterTab === t.key ? t.act : t.inact
+                    }`}>
+                    {t.label}
+                    <span className={`text-[9px] font-black px-1 py-0.5 rounded-full min-w-[16px] text-center ${
+                      filterTab === t.key ? 'bg-white/25 text-white' : 'bg-white text-gray-600 border border-gray-200'
+                    }`}>{hariFilterCounts[t.key]}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Table header ── */}
+              <div className="bg-white">
+                <div className="grid px-3 py-1.5 bg-gray-50 border-b border-gray-100 text-[9px] font-bold text-gray-400 uppercase tracking-widest"
+                  style={{ gridTemplateColumns: '36px 44px 1fr 58px 64px' }}>
+                  <div>No.</div><div>Masa</div><div>Acara</div>
+                  <div className="text-center">Jenis</div><div className="text-right">Status</div>
+                </div>
+
+                {acaraHariFiltered.length === 0 ? (
+                  <div className="py-12 text-center">
+                    <p className="text-2xl mb-2">
+                      {filterTab === 'rasmi' ? '🏆' : filterTab === 'draf' ? '⏳' : '📋'}
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      {filterTab === 'rasmi' ? 'Tiada keputusan rasmi lagi.' :
+                       filterTab === 'draf'  ? 'Tiada keputusan draf.' :
+                       filterTab === 'belum' ? 'Semua acara sudah ada keputusan!' :
+                       selectedHari ? 'Tiada acara dijadualkan hari ini.' : 'Tiada jadual ditemui.'}
+                    </p>
                   </div>
-                </AccordionSection>
-              ))}
-            </div>
+                ) : (
+                  acaraHariFiltered.map((a, idx) => (
+                    <AcaraRow key={a.acaraId} acara={a} nowMs={now}
+                      isLast={idx === acaraHariFiltered.length - 1}
+                      onClick={() => selectAcara(a)} />
+                  ))
+                )}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -1771,9 +1938,20 @@ export default function PencatatInputKeputusan() {
       {step === 'input' && selectedAcara && (
         <div className="max-w-2xl mx-auto px-3 py-4 space-y-3">
 
-          {/* Info acara */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
+          {/* #4h — Banner paparan sahaja (bukan pencatat) */}
+          {!bolehEdit && (
+            <div className="bg-gray-100 border border-gray-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+              <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              <span className="text-xs font-semibold text-gray-500">Paparan Sahaja — anda tidak mempunyai akses input</span>
+            </div>
+          )}
+
+          {/* #4a — Info acara + heat tabs dalam satu container */}
+          <div className="bg-[#003399]/5 rounded-2xl p-3.5 border border-[#003399]/10">
+            <div className="flex items-start justify-between gap-3 mb-2.5">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-black text-white bg-[#003399] px-2 py-0.5 rounded-full">#{selectedAcara.noAcara ?? '—'}</span>
@@ -1788,8 +1966,48 @@ export default function PencatatInputKeputusan() {
                   <p className="text-xs text-[#003399] font-semibold mt-0.5">{selectedAcara.masa}</p>
                 )}
               </div>
-              <HeatDots total={selectedAcara._totalHeat || heats.length} rasmi={selectedAcara._rasmiHeat || 0} draf={selectedAcara._drafHeat || 0} />
+              {/* #4b — Status badge ganti HeatDots */}
+              <div className="shrink-0">
+                {heatsLoading ? (
+                  <span className="text-[10px] text-gray-400">…</span>
+                ) : !selectedHeat ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">—</span>
+                ) : isRasmi ? (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-green-100 text-green-700">Rasmi</span>
+                ) : isDalamBantahan ? (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 text-red-600">Bantahan</span>
+                ) : selectedHeat.statusKeputusan === 'tidak_rasmi' ? (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Draf</span>
+                ) : (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                    {heats.length > 1 ? `Heat ${selectedHeat.noHeat ?? ''}` : 'Belum'}
+                  </span>
+                )}
+              </div>
             </div>
+
+            {/* Heat tabs dalam container yang sama */}
+            {!heatsLoading && heats.length > 1 && (
+              <div className="flex items-center gap-2 pt-2 border-t border-[#003399]/10">
+                <div className="flex-1">
+                  <HeatTabBar heats={heats} selectedHeat={selectedHeat} onSelect={h => selectHeat(h)} />
+                </div>
+                {/* #4c — Mod Semua: lorong + mass_start sahaja */}
+                {['lorong', 'mass_start'].includes(selectedAcara.jenisAcara) && (
+                  <button
+                    onClick={() => {
+                      if (!modSemua) initKeputusanSemua(heats)
+                      setModSemua(v => !v)
+                      setSaved(false)
+                    }}
+                    className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      modSemua ? 'bg-[#003399] text-white border-[#003399]' : 'bg-white text-gray-500 border-gray-200 hover:border-[#003399]/30'
+                    }`}>
+                    {modSemua ? '✕ Tutup Semua' : '☰ Semua Peserta'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Loading heats */}
@@ -1811,134 +2029,157 @@ export default function PencatatInputKeputusan() {
           )}
 
           {!heatsLoading && heats.length > 0 && (
-            <>
-              {/* Heat tabs + Mod Semua toggle */}
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <HeatTabBar heats={heats} selectedHeat={selectedHeat} onSelect={h => selectHeat(h)} />
+            /* #4d — Lock overlay bila !bolehInputSekarang */
+            <div className={!bolehInputSekarang && bolehEdit ? 'opacity-50 pointer-events-none select-none' : ''}>
+              <div className="space-y-3">
+
+                {/* #4e — Carian BIB: amber style */}
+                <div className="relative">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input type="text" value={carianBib}
+                    onChange={e => setCarianBib(e.target.value.toUpperCase())}
+                    placeholder="Cari No. BIB…"
+                    className="w-full pl-8 pr-4 py-2 border border-amber-200 rounded-xl text-xs bg-amber-50 focus:outline-none focus:border-amber-400 focus:bg-white transition-colors" />
                 </div>
-                {heats.length > 1 && (
-                  <button
-                    onClick={() => {
-                      if (!modSemua) initKeputusanSemua(heats)
-                      setModSemua(v => !v)
-                      setSaved(false)
-                    }}
-                    className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                      modSemua ? 'bg-[#003399] text-white border-[#003399]' : 'bg-white text-gray-500 border-gray-200 hover:border-[#003399]/30'
-                    }`}>
-                    {modSemua ? '✓ Semua' : 'Semua'}
-                  </button>
+
+                {/* Banner: data dikemaskini dari luar */}
+                {remoteKemaskini && (
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      <span className="text-xs font-semibold text-amber-700">Data dikemaskini oleh pencatat lain</span>
+                    </div>
+                    <button onClick={muatSemulaHeat}
+                      className="shrink-0 text-[10px] font-black text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-200 transition-colors">
+                      Muat Semula
+                    </button>
+                  </div>
+                )}
+
+                {modSemua ? (
+                  /* Mod Semua Peserta */
+                  <InputSemuaPeserta
+                    heats={heats}
+                    acara={selectedAcara}
+                    keputusanSemua={keputusanSemua}
+                    onChange={handleChangeSemua}
+                    sekolahMap={sekolahMap}
+                    carianBib={carianBib}
+                  />
+                ) : selectedHeat && (
+                  <>
+                    {/* #4g — Status banner rasmi: teal dengan butang EDIT + PADAM */}
+                    {isRasmi ? (
+                      <div className="flex items-center justify-between px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl">
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-teal-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                          </svg>
+                          <span className="text-sm font-bold text-teal-700">Keputusan Rasmi</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm('Edit semula keputusan ini? Status akan bertukar ke Draf.')) return
+                              try {
+                                await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId), { statusKeputusan: 'tidak_rasmi' })
+                                setSelectedHeat(prev => ({ ...prev, statusKeputusan: 'tidak_rasmi' }))
+                                setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: 'tidak_rasmi' } : h))
+                              } catch (e) { alert('Ralat: ' + e.message) }
+                            }}
+                            className="text-[10px] font-black text-teal-700 bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-200 transition-colors">
+                            EDIT
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm('Padam keputusan rasmi ini?')) return
+                              try {
+                                const freshPeserta = (selectedHeat.peserta || []).map(p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null }))
+                                await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId), { statusKeputusan: 'belum', peserta: freshPeserta })
+                                setSelectedHeat(prev => ({ ...prev, statusKeputusan: 'belum', peserta: freshPeserta }))
+                                setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: 'belum', peserta: freshPeserta } : h))
+                                setKeputusan(initKeputusanDariPeserta(selectedAcara, { ...selectedHeat, peserta: freshPeserta }))
+                              } catch (e) { alert('Ralat: ' + e.message) }
+                            }}
+                            className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-100 transition-colors">
+                            PADAM
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs bg-gray-50 border border-gray-200`}>
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${
+                          selectedHeat.statusKeputusan === 'tidak_rasmi' ? 'bg-amber-400' : 'bg-gray-300'
+                        }`} />
+                        <span className="font-bold text-gray-600">
+                          {selectedHeat.statusKeputusan === 'tidak_rasmi' ? 'Draf' : 'Belum Input'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Input table */}
+                    {selectedAcara.jenisAcara === 'lorong' && (
+                      <InputLorong acara={selectedAcara} heat={selectedHeat} keputusan={keputusan}
+                        onChange={handleChange} onWind={setWindSpeed} windSpeed={windSpeed}
+                        sekolahMap={sekolahMap} carianBib={carianBib} />
+                    )}
+                    {selectedAcara.jenisAcara === 'mass_start' && (
+                      <InputMassStart heat={selectedHeat} keputusan={keputusan}
+                        onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
+                    )}
+                    {['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara) && (
+                      <InputPadang acara={selectedAcara} peserta={peserta} keputusan={keputusan}
+                        onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
+                    )}
+                    {selectedAcara.jenisAcara === 'relay' && (
+                      <InputRelay acara={selectedAcara} heat={selectedHeat} keputusan={keputusan}
+                        onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
+                    )}
+                  </>
+                )}
+
+                {/* #4f — Butang: grid 2 col, label HANTAR ▶, nota bawah */}
+                {bolehEdit && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => modSemua ? handleSaveSemuaPeserta() : handleSave()}
+                        disabled={saving}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-50">
+                        {saving ? 'Menyimpan…' : '💾 Simpan Draf'}
+                      </button>
+                      <button
+                        onClick={() => modSemua ? handleSaveSemuaPeserta({ danHantar: true }) : handleHantar()}
+                        disabled={saving || (!modSemua && isRasmi)}
+                        className="bg-[#003399] hover:bg-[#002277] text-white font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-40 shadow-lg shadow-[#003399]/20">
+                        {saving ? 'Menghantar…' : (!modSemua && isRasmi) ? '✓ Sudah Rasmi' : 'HANTAR ▶'}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-center">
+                      Simpan Draf — simpan sementara. HANTAR — tandakan rasmi &amp; kira pingat.
+                    </p>
+                  </div>
+                )}
+
+                {saved && (
+                  <p className="text-center text-xs text-green-600 font-semibold">✓ Berjaya disimpan</p>
+                )}
+
+                {/* Jana Final */}
+                {isSaringanAcara && allHeatsDone && finalists.length > 0 && (
+                  <JanaFinalPanel
+                    finalists={finalists}
+                    acara={selectedAcara}
+                    onJana={handleJanaFinal}
+                    loading={janaFinalLoading}
+                    finalDijanaKe={finalDijanaKe}
+                    finalSetup={finalSetup}
+                  />
                 )}
               </div>
-
-              {/* Carian BIB */}
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input type="text" value={carianBib}
-                  onChange={e => setCarianBib(e.target.value.toUpperCase())}
-                  placeholder="Cari No. BIB…"
-                  className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-xl text-xs bg-white focus:outline-none focus:border-[#003399]/40" />
-              </div>
-
-              {/* Banner: data dikemaskini dari luar */}
-              {remoteKemaskini && (
-                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                    <span className="text-xs font-semibold text-amber-700">Data dikemaskini oleh pencatat lain</span>
-                  </div>
-                  <button onClick={muatSemulaHeat}
-                    className="shrink-0 text-[10px] font-black text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-200 transition-colors">
-                    Muat Semula
-                  </button>
-                </div>
-              )}
-
-              {modSemua ? (
-                /* Mod Semua Peserta */
-                <InputSemuaPeserta
-                  heats={heats}
-                  acara={selectedAcara}
-                  keputusanSemua={keputusanSemua}
-                  onChange={handleChangeSemua}
-                  sekolahMap={sekolahMap}
-                  carianBib={carianBib}
-                />
-              ) : selectedHeat && (
-                <>
-                  {/* Status bar */}
-                  <div className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs ${
-                    isRasmi ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${
-                        isRasmi ? 'bg-green-500' : selectedHeat.statusKeputusan === 'tidak_rasmi' ? 'bg-amber-400' : 'bg-gray-300'
-                      }`} />
-                      <span className={`font-bold ${isRasmi ? 'text-green-700' : 'text-gray-600'}`}>
-                        {isRasmi ? 'Telah Diterima' : selectedHeat.statusKeputusan === 'tidak_rasmi' ? 'Draf' : 'Belum Input'}
-                      </span>
-                    </div>
-                    {isRasmi && <span className="text-green-600 font-semibold">✓ Keputusan rasmi</span>}
-                  </div>
-
-                  {/* Input table */}
-                  {selectedAcara.jenisAcara === 'lorong' && (
-                    <InputLorong acara={selectedAcara} heat={selectedHeat} keputusan={keputusan}
-                      onChange={handleChange} onWind={setWindSpeed} windSpeed={windSpeed}
-                      sekolahMap={sekolahMap} carianBib={carianBib} />
-                  )}
-                  {selectedAcara.jenisAcara === 'mass_start' && (
-                    <InputMassStart heat={selectedHeat} keputusan={keputusan}
-                      onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
-                  )}
-                  {['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara) && (
-                    <InputPadang acara={selectedAcara} peserta={peserta} keputusan={keputusan}
-                      onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
-                  )}
-                  {selectedAcara.jenisAcara === 'relay' && (
-                    <InputRelay acara={selectedAcara} heat={selectedHeat} keputusan={keputusan}
-                      onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
-                  )}
-                </>
-              )}
-
-              {/* Butang Simpan / Hantar */}
-              {bolehEdit && (
-                <div className="flex gap-2.5 pt-1">
-                  <button
-                    onClick={() => modSemua ? handleSaveSemuaPeserta() : handleSave()}
-                    disabled={saving}
-                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-50">
-                    {saving ? 'Menyimpan…' : '💾 Simpan Draf'}
-                  </button>
-                  <button
-                    onClick={() => modSemua ? handleSaveSemuaPeserta({ danHantar: true }) : handleHantar()}
-                    disabled={saving || (!modSemua && isRasmi)}
-                    className="flex-1 bg-[#003399] hover:bg-[#002277] text-white font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-40 shadow-lg shadow-[#003399]/20">
-                    {saving ? 'Menghantar…' : (!modSemua && isRasmi) ? '✓ Sudah Rasmi' : '✅ Hantar Rasmi'}
-                  </button>
-                </div>
-              )}
-
-              {saved && (
-                <p className="text-center text-xs text-green-600 font-semibold">✓ Berjaya disimpan</p>
-              )}
-
-              {/* Jana Final */}
-              {isSaringanAcara && allHeatsDone && finalists.length > 0 && (
-                <JanaFinalPanel
-                  finalists={finalists}
-                  acara={selectedAcara}
-                  onJana={handleJanaFinal}
-                  loading={janaFinalLoading}
-                  finalDijanaKe={finalDijanaKe}
-                  finalSetup={finalSetup}
-                />
-              )}
-            </>
+            </div>
           )}
         </div>
       )}
