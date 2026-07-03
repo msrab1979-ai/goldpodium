@@ -196,7 +196,7 @@ async function cetakHadiahPDF({
     y += 4
 
     // Jadual keputusan
-    const MEDAL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5' }
+    const MEDAL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5', 6: 'T6', 7: 'T7', 8: 'T8' }
     const tblHead = isRelay
       ? [['No.', 'Pasukan / Sekolah', 'Ahli Pasukan', 'Masa', 'Status']]
       : [['No.', 'Nama Atlet', 'Sekolah', 'Prestasi', 'Status']]
@@ -241,7 +241,7 @@ async function cetakHadiahPDF({
         4: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [180, 60, 60] },
       },
       alternateRowStyles: { fillColor: [248, 248, 252] },
-      margin: { left: M, right: M },
+      margin: { left: M, right: M, bottom: 30 },
       didParseCell: (data) => {
         if (data.section === 'body') {
           const rank = pesertaFinal[data.row.index]?.rankDalamHeat
@@ -319,8 +319,8 @@ async function cetakHadiahPDF({
       pdf.setTextColor(0, 0, 0); y += 14
     }
 
-    // Footer
-    const footY = H - 18
+    // Footer — guna posisi lebih rendah antara y+content dan H-18
+    const footY = Math.max(y + 4, H - 18)
     pdf.setDrawColor(...sal.clr); pdf.setLineWidth(0.4)
     pdf.line(M, footY, W - M, footY)
     pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(80, 80, 80)
@@ -338,9 +338,9 @@ async function cetakHadiahPDF({
 
 const MEDAL_CLR = {
   1: 'text-yellow-600', 2: 'text-gray-500', 3: 'text-orange-600',
-  4: 'text-gray-400',   5: 'text-gray-400',
+  4: 'text-gray-400',   5: 'text-gray-400', 6: 'text-gray-400', 7: 'text-gray-400', 8: 'text-gray-400',
 }
-const MEDAL_LBL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5' }
+const MEDAL_LBL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5', 6: 'T6', 7: 'T7', 8: 'T8' }
 
 export default function CetakanHadiah() {
   const { userData } = useAuth()
