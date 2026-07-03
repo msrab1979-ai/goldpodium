@@ -150,6 +150,35 @@ tenants/{schoolId}/
 - `src/utils/finalistUtils.js` — algoritma pilih finalis (selectFinalists guna h.fasa)
 - `src/utils/startListPdfUtils.js` — PDF generation + resolveIsLompatTinggi + assignLorongFinal/Heat
 
+## Security — Firestore Rules (AUDIT DIPERLUKAN)
+
+**Rating semasa: 2.5/5 — BELUM SELAMAT untuk peringkat daerah/negeri**
+
+### Isu Kritikal
+- `write: if isAuth()` terlalu luas — Anonymous Auth mudah didapat, sesiapa boleh tulis
+- Cross-tenant write tidak disekat — user sekolah A boleh tulis ke sekolah B
+- `/tetapan`, `/atlet`, `/rekod` boleh ditulis oleh mana-mana authenticated user
+- Tiada audit log — tidak boleh kesan siapa yang buat perubahan
+
+### Yang Perlu Difix
+```js
+// Tukar dari:
+allow write: if isAuth();
+// Kepada:
+allow write: if canAccessSchool(schoolId);
+// Untuk pencatat (Anonymous Auth + PIN):
+allow write: if canAccessSchool(schoolId) || isPencatat(schoolId);
+```
+
+### Risiko Mengikut Skala
+| Senario | Selamat? |
+|---|---|
+| Sekolah sendiri, sorang admin | ✅ OK |
+| Beberapa sekolah, kejohanan daerah | ⚠️ Perlu fix |
+| Ramai sekolah, kejohanan negeri/kebangsaan | 🔴 Mesti fix dulu |
+
+**TODO: Fix Firestore rules sebelum deploy ke peringkat daerah/negeri**
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`
@@ -157,3 +186,4 @@ tenants/{schoolId}/
 - Jangan ubah logic multi-tenant — HANYA UI/UX boleh diubah
 - Jangan guna `h.peringkat` dalam heat doc — field itu tidak wujud, guna `h.fasa`
 - Jangan simpan `noKP` dalam heat docs, rekod, medal_tally, tuntutan (PDPA — public readable)
+- Jangan deploy ke peringkat daerah/negeri sebelum Firestore rules diketatkan
