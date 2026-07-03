@@ -51,6 +51,7 @@ const CetakAcara         = lazy(() => import('./pages/admin/CetakAcara'))
 const CetakKeputusan     = lazy(() => import('./pages/admin/CetakKeputusan'))
 const ESijil             = lazy(() => import('./pages/admin/ESijil'))
 const ESijilPencapaian   = lazy(() => import('./pages/admin/ESijilPencapaian'))
+const AksesPantasPage    = lazy(() => import('./pages/admin/AksesPantasPage'))
 const GaleriSetup        = lazy(() => import('./pages/admin/GaleriSetup'))
 const ManualPendaftaran  = lazy(() => import('./pages/admin/ManualPendaftaran'))
 const MuatTurunSijil     = lazy(() => import('./pages/admin/MuatTurunSijil'))
@@ -259,6 +260,7 @@ function AppRoutes() {
         <Route path="/admin/cetak-keputusan" element={<AdminRoute><CetakKeputusan /></AdminRoute>} />
         <Route path="/admin/esijil" element={<AdminRoute><ESijil /></AdminRoute>} />
         <Route path="/admin/esijil-pencapaian" element={<AdminRoute><ESijilPencapaian /></AdminRoute>} />
+        <Route path="/admin/akses-pantas" element={<AdminRoute><AksesPantasPage /></AdminRoute>} />
         <Route path="/admin/galeri" element={<AdminRoute><GaleriSetup /></AdminRoute>} />
         <Route path="/admin/manual-pendaftaran" element={<AdminRoute><ManualPendaftaran /></AdminRoute>} />
         <Route path="/admin/muat-turun-sijil" element={<AdminRoute><MuatTurunSijil /></AdminRoute>} />

@@ -11,6 +11,7 @@ const NAV = [
       { label: 'Dashboard',       icon: '🏠', path: '/admin' },
       { label: 'Panduan',         icon: '📖', path: '/admin/panduan' },
       { label: 'Kejohanan',       icon: '🏆', path: '/admin/kejohanan-setup' },
+      { label: 'Tetapan',         icon: '⚙️', path: '/admin/tetapan' },
     ],
   },
   {
@@ -44,9 +45,14 @@ const NAV = [
     ],
   },
   {
+    label: 'Akses Pantas Home',
+    items: [
+      { label: 'Akses Pantas Home', icon: '⚡', path: '/admin/akses-pantas' },
+    ],
+  },
+  {
     label: 'Sistem',
     items: [
-      { label: 'Tetapan',      icon: '⚙️', path: '/admin/tetapan' },
       { label: 'Backup',       icon: '💾', path: '/admin/backup' },
       { label: 'Health Check', icon: '🩺', path: '/admin/health' },
       { label: 'Reset Sistem', icon: '🔄', path: '/admin/reset' },
