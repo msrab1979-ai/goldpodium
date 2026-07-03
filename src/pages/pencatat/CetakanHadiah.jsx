@@ -515,7 +515,7 @@ export default function CetakanHadiah() {
         .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0 && p.kedudukan)
         .map(p => ({ ...p, rankDalamHeat: Number(p.kedudukan) }))
         .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
-        .slice(0, 5)
+        .slice(0, 8)
     } else {
       pemenang = (finalHeat.peserta || [])
         .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
@@ -523,7 +523,7 @@ export default function CetakanHadiah() {
           ? Number(b.keputusan) - Number(a.keputusan)
           : Number(a.keputusan) - Number(b.keputusan))
         .map((p, i) => ({ ...p, rankDalamHeat: i + 1 }))
-        .slice(0, 5)
+        .slice(0, 8)
     }
   }
 
@@ -740,20 +740,22 @@ export default function CetakanHadiah() {
               {/* Cetak buttons */}
               {!loadingHeat && finalHeat && pemenang.length > 0 && (
                 <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <p className="text-xs font-semibold text-gray-500 mb-3">Bilangan pemenang untuk dicetak:</p>
-                  <div className="flex gap-2">
-                    {[3, 4, 5].map(n => (
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold text-gray-500">Bilangan pemenang untuk dicetak:</p>
+                    <span className="text-[10px] text-gray-400">Default: 3</span>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
                       <button key={n}
-                        onClick={() => handleCetak(n)}
+                        onClick={() => { setCetakBilangan(n); handleCetak(n) }}
                         disabled={cetakLoading}
-                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 ${
+                        className={`flex-1 min-w-[2.5rem] py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 ${
                           cetakBilangan === n
                             ? 'bg-[#003399] text-white shadow-sm'
                             : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                         }`}
-                        onMouseEnter={() => setCetakBilangan(n)}
                       >
-                        {cetakLoading && cetakBilangan === n ? '...' : `${n} Teratas`}
+                        {cetakLoading && cetakBilangan === n ? '…' : n}
                       </button>
                     ))}
                   </div>
