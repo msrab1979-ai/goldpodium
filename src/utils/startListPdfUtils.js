@@ -50,6 +50,16 @@ export function deserializeKumpulan(data) {
 }
 
 /**
+ * Resolve sama ada acara adalah Lompat Tinggi.
+ * Semak acara.isLompatTinggi (Firestore field) dahulu; fallback ke regex nama.
+ */
+export function resolveIsLompatTinggi(acara) {
+  if (acara == null) return false
+  if (acara.isLompatTinggi != null) return !!acara.isLompatTinggi
+  return /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+}
+
+/**
  * Auto-detect jenisLorong dari nama acara.
  * Priority: acara.jenisLorong (jika ada) → auto-detect dari nama.
  */
@@ -334,7 +344,7 @@ export function buatStartListPDFUnified({
             4:{cellWidth:36},
           }
         } else {
-          const isLompatTinggi = /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+          const isLompatTinggi = resolveIsLompatTinggi(acara)
           if (isLompatTinggi) {
             // Format standard borang Lompat Tinggi MSSM
             // Columns: Gil | Nama Peserta | No. Peserta + Pasukan | Ketinggian (7×3) | Jumlah Gagal | Kedudukan | Catatan
@@ -571,7 +581,7 @@ export function buatStartListPDFUnified({
       }
 
       const isTeknikalPadang = isPadang && isTeknikal
-      const isLompatTinggiPdf = isPadang && /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+      const isLompatTinggiPdf = isPadang && resolveIsLompatTinggi(acara)
       const isLompatTinggiTeknikal = isLompatTinggiPdf && isTeknikal
       const isPadangBiasaTeknikal = isPadang && isTeknikal && !isLompatTinggiPdf && bilanganCubaan >= 6
       // Safe margin 8mm minimum — printer non-printable area ~5mm

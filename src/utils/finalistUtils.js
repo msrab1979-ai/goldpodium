@@ -76,7 +76,8 @@ export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
   const isRelay  = acara.jenisAcara === 'relay'
 
   const saringanHeats = heats.filter(h =>
-    h.peringkat !== 'final' && ['rasmi', 'tidak_rasmi', 'diterima'].includes(h.statusKeputusan)
+    !['final', 'terus_final'].includes(h.fasa) &&
+    ['rasmi', 'tidak_rasmi', 'diterima'].includes(h.statusKeputusan)
   )
   if (saringanHeats.length === 0) return []
 

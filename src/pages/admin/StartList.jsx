@@ -19,7 +19,7 @@
  * Fasa: heat | final | saringan
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc,
   serverTimestamp, query, orderBy, where, writeBatch, deleteField,
@@ -670,7 +670,8 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
   const isPadang = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
   const isRelay  = acara.jenisAcara === 'relay'
-  const bilLorong = acara.bilanganLorong || 8
+  const bilLorong = acara.bilanganLorong
+    || (console.warn(`StartList: acara ${acara.aceraId} tiada bilanganLorong — guna default 8`), 8)
 
   // ── RELAY: group by kodSekolah → 1 pasukan per sekolah ────────────────────
   if (isRelay) {
@@ -771,87 +772,6 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
   }
   await batch.commit()
   return { status: 'ok', heatCount: heats.length, pesertaCount: peserta.length }
-}
-
-// ─── Logik Pilih Finalis (Heat → Final) ───────────────────────────────────────
-
-/**
- * Pilih finalis berdasarkan setting acara:
- *  hybrid    — top 1 setiap heat + wildcard best time (STANDARD KOAM)
- *  best_time — gabung semua masa, rank, top N
- *  best_heat — top N dari setiap heat secara merata
- */
-function pilihFinalis(heatPhaseHeats, acara, isPadang) {
-  const cara          = acara.caraPilihFinal  || 'hybrid'
-  const bilanganFinal = acara.bilanganFinalis || 8
-  const wildcardSlot  = acara.wildcardSlot    ?? 2
-
-  // masa: asc (kecil lebih baik) | jarak: desc (besar lebih baik)
-  const sortFn = (a, b) => isPadang
-    ? (b.keputusan ?? 0)   - (a.keputusan ?? 0)
-    : (a.keputusan ?? 999) - (b.keputusan ?? 999)
-
-  // Kumpul semua peserta layak dari semua heat fasa
-  const semuaLayak = []
-  heatPhaseHeats.forEach(heat => {
-    ;(heat.peserta || []).forEach(p => {
-      if (p.status === 'selesai' && p.keputusan != null && p.keputusan !== '') {
-        semuaLayak.push({ ...p, _heatId: heat.heatId, _noHeat: heat.noHeat, _cara: null })
-      }
-    })
-  })
-
-  // ── best_time: gabung semua, ambil top N ────────────────────────────────────
-  if (cara === 'best_time') {
-    return [...semuaLayak]
-      .sort(sortFn)
-      .slice(0, bilanganFinal)
-      .map(p => ({ ...p, _cara: 'best_time' }))
-  }
-
-  // ── best_heat: top N dari setiap heat, agihkan merata ──────────────────────
-  if (cara === 'best_heat') {
-    const numHeats = heatPhaseHeats.length
-    const dipilih  = []
-    heatPhaseHeats.forEach((heat, i) => {
-      const slot       = Math.floor(bilanganFinal / numHeats) + (i < (bilanganFinal % numHeats) ? 1 : 0)
-      const layakHeat  = semuaLayak
-        .filter(p => p._heatId === heat.heatId)
-        .sort(sortFn)
-        .slice(0, slot)
-      layakHeat.forEach(p => dipilih.push({ ...p, _cara: 'best_heat' }))
-    })
-    return dipilih
-  }
-
-  // ── hybrid (default KOAM): top 1 setiap heat + wildcard ────────────────────
-  const dipilih   = []
-  const pilihBibs = new Set()
-
-  // 1. Top 1 dari setiap heat
-  heatPhaseHeats.forEach(heat => {
-    const layakHeat = semuaLayak.filter(p => p._heatId === heat.heatId).sort(sortFn)
-    const top1      = layakHeat[0]
-    if (top1 && !pilihBibs.has(top1.noBib)) {
-      dipilih.push({ ...top1, _cara: 'heat_winner' })
-      pilihBibs.add(top1.noBib)
-    }
-  })
-
-  // 2. Wildcard: best time dari baki (sehingga wildcardSlot)
-  const slotWildcard = Math.min(wildcardSlot, bilanganFinal - dipilih.length)
-  if (slotWildcard > 0) {
-    semuaLayak
-      .filter(p => !pilihBibs.has(p.noBib))
-      .sort(sortFn)
-      .slice(0, slotWildcard)
-      .forEach(p => {
-        dipilih.push({ ...p, _cara: 'wildcard' })
-        pilihBibs.add(p.noBib)
-      })
-  }
-
-  return dipilih
 }
 
 // ─── Modal: Jana Semua Heat ───────────────────────────────────────────────────
@@ -1650,6 +1570,14 @@ export default function StartList() {
   const [sekolahDaftarSet, setSekolahDaftarSet] = useState(new Set()) // kodSekolah yang ada pendaftaran
   const [cetakBalapanLoading, setCetakBalapanLoading] = useState(false)
   const [cetakPadangLoading,  setCetakPadangLoading]  = useState(false)
+  const [toastMsg,  setToastMsg]  = useState('')
+  const [toastType, setToastType] = useState('ok')
+  const toastTimerRef = useRef(null)
+  function showToast(msg, type = 'ok', ms = 3500) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToastMsg(msg); setToastType(type)
+    toastTimerRef.current = setTimeout(() => setToastMsg(''), ms)
+  }
 
   // Tutup dropdown cetak bila klik luar
   useEffect(() => {
@@ -2766,7 +2694,7 @@ export default function StartList() {
       const acaraPadang = acaraList
         .filter(a => a.isAktif !== false && ['padang_lompat', 'padang_balin'].includes(a.jenisAcara))
         .sort((a, b) => (a.noAcara || 0) - (b.noAcara || 0))
-      if (acaraPadang.length === 0) { alert('Tiada acara padang.'); return }
+      if (acaraPadang.length === 0) { showToast('Tiada acara padang.', 'err'); return }
 
       const acaraWithHeats = await Promise.all(
         acaraPadang.map(async a => {
@@ -2776,7 +2704,7 @@ export default function StartList() {
         })
       )
       const acaraAdaHeat = acaraWithHeats.filter(a => a.heats.length > 0)
-      if (acaraAdaHeat.length === 0) { alert('Tiada heat dijana untuk mana-mana acara padang.'); return }
+      if (acaraAdaHeat.length === 0) { showToast('Tiada heat dijana untuk mana-mana acara padang.', 'err'); return }
 
       const cfgSnap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}
@@ -2875,7 +2803,7 @@ export default function StartList() {
       pdf.text(`Dicetak: ${dicetak}   |   ${acaraAdaHeat.length} acara padang`, M, H - 6)
       pdf.setTextColor(0)
       pdf.save(`StartList_Padang_${Date.now()}.pdf`)
-    } catch (e) { alert('Gagal cetak padang: ' + e.message) }
+    } catch (e) { showToast('Gagal cetak padang: ' + e.message, 'err') }
     finally { setCetakPadangLoading(false) }
   }
 
@@ -2920,6 +2848,12 @@ export default function StartList() {
 
   return (
     <div className="p-5 max-w-6xl mx-auto space-y-4">
+
+      {toastMsg && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold pointer-events-none transition-all ${
+          toastType === 'ok' ? 'bg-teal-600 text-white' : 'bg-red-600 text-white'
+        }`}>{toastMsg}</div>
+      )}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3">

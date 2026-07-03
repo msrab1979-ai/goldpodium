@@ -24,8 +24,9 @@
  */
 
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, increment,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, increment, writeBatch,
 } from 'firebase/firestore'
+import { resolveIsLompatTinggi } from './startListPdfUtils'
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
 const NAMA_PINGAT = { 1: 'emas', 2: 'perak', 3: 'gangsa', 4: 'tempat4', 5: 'tempat5' }
@@ -79,9 +80,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   // Kira rank dari keputusan (on-the-fly — lebih tepat dari rankDalamHeat yang mungkin lapuk)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acaraDoc.jenisAcara)
   const semua    = heatDoc.peserta || []
-  const isLompatTinggi = /lompat tinggi/i.test(
-    acaraDoc.namaAcara || acaraDoc.namaAcaraPendek || ''
-  )
+  const isLompatTinggi = resolveIsLompatTinggi(acaraDoc)
   const finishers = semua
     .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
     .sort((a, b) => {
@@ -492,4 +491,70 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       if (onPesertaPatch) onPesertaPatch(pesertaPatched)
     } catch (e) { console.warn('patch rekod flag:', e.message) }
   }
+}
+
+/**
+ * Rollback kesan postRasmi untuk heat yang dipadam.
+ * Padam contrib_{heatId}_* dari medal_tally dan acaraDetail dari mata_olahragawan.
+ * Rekod tuntutan TIDAK dirollback (tuntutan belum tentu diluluskan).
+ */
+export async function rollbackPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
+  const { deleteField } = await import('firebase/firestore')
+  const { schoolId = '', isRelay = false } = config
+  if (!schoolId) return
+
+  const tPath   = (col, id) => doc(db, 'tenants', schoolId, 'kejohanan', kejId, col, id)
+  const peserta = heatDoc.peserta || []
+  const batch   = writeBatch(db)
+
+  for (const p of peserta) {
+    if (['DNS', 'DNF', 'DQ'].includes(p.status)) continue
+
+    // Rollback medal_tally contrib
+    if (p.kodSekolah) {
+      const tId        = `${p.kodSekolah}_${kejId}`
+      const tRef       = tPath('medal_tally', tId)
+      const contribKey = `contrib_${heatDoc.id}_${isRelay ? p.kodSekolah : (p.noBib || p.lorong || '')}`
+      try {
+        const tSnap    = await getDoc(tRef)
+        if (tSnap.exists()) {
+          const prevContr = tSnap.data()[contribKey]
+          if (prevContr) {
+            const { pingat, kategoriKod, jantina } = prevContr
+            const katPingat = `kat_${kategoriKod || ''}_${jantina || acaraDoc.jantina || ''}_${pingat}`
+            batch.update(tRef, {
+              [contribKey]: deleteField(),
+              jumlahPingat: increment(-1),
+              ...(pingat ? { [pingat]: increment(-1) } : {}),
+              ...(katPingat ? { [katPingat]: increment(-1) } : {}),
+            })
+          }
+        }
+      } catch (e) { console.warn('rollback medal_tally:', e.message) }
+    }
+
+    // Rollback mata_olahragawan acaraDetail
+    if (!isRelay && p.noBib) {
+      const mRef     = tPath('mata_olahragawan', `${p.noBib}_${kejId}`)
+      const acaraKey = `acaraDetail_${acaraDoc.id}`
+      try {
+        const mSnap = await getDoc(mRef)
+        if (mSnap.exists()) {
+          const prevDetail = mSnap.data()[acaraKey]
+          if (prevDetail) {
+            const { mata = 0, pingat = '' } = prevDetail
+            batch.update(mRef, {
+              [acaraKey]:  deleteField(),
+              jumlahMata:  increment(-mata),
+              ...(pingat ? { [`pingat_${pingat}`]: increment(-1) } : {}),
+            })
+          }
+        }
+      } catch (e) { console.warn('rollback mata_olahragawan:', e.message) }
+    }
+  }
+
+  try {
+    await batch.commit()
+  } catch (e) { console.warn('rollback batch commit:', e.message) }
 }

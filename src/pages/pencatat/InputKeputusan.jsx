@@ -20,8 +20,8 @@ import {
   query, where, orderBy, serverTimestamp, onSnapshot, runTransaction,
 } from 'firebase/firestore'
 import { selectFinalists, getFinalistSetup, serpentineSeed } from '../../utils/finalistUtils'
-import { assignLorongFinal, detectJenisLorong, WA_LORONG_KUMPULAN_DEFAULT, deserializeKumpulan } from '../../utils/startListPdfUtils'
-import { runPostRasmi } from '../../utils/postRasmiUtils'
+import { assignLorongFinal, detectJenisLorong, WA_LORONG_KUMPULAN_DEFAULT, deserializeKumpulan, resolveIsLompatTinggi } from '../../utils/startListPdfUtils'
+import { runPostRasmi, rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -564,7 +564,7 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
 // ─── Input Padang ─────────────────────────────────────────────────────────────
 
 function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
-  const isLompatTinggi = /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+  const isLompatTinggi = resolveIsLompatTinggi(acara)
   const rankMap = isLompatTinggi ? {} : kiraPadangRank(peserta, keputusan)
   const bilPes  = peserta.length
 
@@ -1047,7 +1047,17 @@ export default function PencatatInputKeputusan() {
   const [modSemua,       setModSemua]       = useState(false)
   const [keputusanSemua, setKeputusanSemua] = useState({})
 
+  const [toastMsg,    setToastMsg]    = useState('')
+  const [toastType,   setToastType]   = useState('ok') // 'ok' | 'err'
+  const toastTimerRef = useRef(null)
+
   const heatListenerRef = useRef(null)
+
+  function showToast(msg, type = 'ok', ms = 3000) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToastMsg(msg); setToastType(type)
+    toastTimerRef.current = setTimeout(() => setToastMsg(''), ms)
+  }
 
   // ── Pantau sistemTutup secara realtime ──────────────────────────────────────
   useEffect(() => {
@@ -1371,7 +1381,7 @@ export default function PencatatInputKeputusan() {
     })
 
     const isPadangLocal = isPadang
-    const isLompatTinggi = /lompat tinggi/i.test(acara.namaAcara || acara.namaAcaraPendek || '')
+    const isLompatTinggi = resolveIsLompatTinggi(acara)
 
     const finishers = [...updatedPeserta]
       .filter(p => p.status === 'selesai' && p.keputusan != null)
@@ -1413,7 +1423,7 @@ export default function PencatatInputKeputusan() {
 
   async function handleSave() {
     if (!schoolId || !kejId || !selectedAcara || !selectedHeat || !bolehEdit) return
-    if (sistemTutup) { alert('Sistem ditutup — input keputusan dihalang.'); return }
+    if (sistemTutup) { showToast('Sistem ditutup — input keputusan dihalang.', 'err'); return }
     setSaving(true); setSaved(false)
     try {
       const heatRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId)
@@ -1442,7 +1452,7 @@ export default function PencatatInputKeputusan() {
       setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: curStatus, peserta: savedPeserta } : h))
       setSaved(true)
     } catch (e) {
-      alert(`Ralat menyimpan: ${e.message}`)
+      showToast(`Ralat menyimpan: ${e.message}`, 'err', 5000)
     } finally {
       setSaving(false)
     }
@@ -1450,7 +1460,7 @@ export default function PencatatInputKeputusan() {
 
   async function handleHantar() {
     if (!schoolId || !kejId || !selectedAcara || !selectedHeat || !bolehEdit) return
-    if (sistemTutup) { alert('Sistem ditutup — input keputusan dihalang.'); return }
+    if (sistemTutup) { showToast('Sistem ditutup — input keputusan dihalang.', 'err'); return }
     setSaving(true); setSaved(false)
     try {
       const heatRef  = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId)
@@ -1507,7 +1517,7 @@ export default function PencatatInputKeputusan() {
       setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, ...patch } : h))
       setSaved(true)
     } catch (e) {
-      alert(`Ralat hantar: ${e.message}`)
+      showToast(`Ralat hantar: ${e.message}`, 'err', 5000)
     } finally {
       setSaving(false)
     }
@@ -1515,7 +1525,7 @@ export default function PencatatInputKeputusan() {
 
   async function handleSaveSemuaPeserta({ danHantar = false } = {}) {
     if (!schoolId || !kejId || !selectedAcara || heats.length === 0 || !bolehEdit) return
-    if (sistemTutup) { alert('Sistem ditutup — input keputusan dihalang.'); return }
+    if (sistemTutup) { showToast('Sistem ditutup — input keputusan dihalang.', 'err'); return }
     setSaving(true); setSaved(false)
     try {
       const jenisAcara = selectedAcara.jenisAcara
@@ -1605,7 +1615,7 @@ export default function PencatatInputKeputusan() {
       setSaved(true)
     } catch (e) {
       console.error('handleSaveSemuaPeserta:', e)
-      alert('Ralat: ' + e.message)
+      showToast('Ralat: ' + e.message, 'err', 5000)
     } finally {
       setSaving(false)
     }
@@ -1640,7 +1650,7 @@ export default function PencatatInputKeputusan() {
         String(a.parentAcaraId) === thisNo ||
         String(a.parentAcaraId) === String(selectedAcara.aceraId || selectedAcara.id)
       )
-      if (!nextAcara) { alert('Tiada acara seterusnya dikaitkan. Setup parentAcaraId dalam AcaraSetup.'); return }
+      if (!nextAcara) { showToast('Tiada acara seterusnya dikaitkan. Setup parentAcaraId dalam AcaraSetup.', 'err', 5000); return }
 
       const nextAcaraId  = nextAcara.aceraId || nextAcara.id
       const fasaHeat     = nextAcara.peringkat === 'akhir' ? 'final' : nextAcara.peringkat
@@ -1701,9 +1711,9 @@ export default function PencatatInputKeputusan() {
 
       setHeats(prev => prev.map(h => ({ ...h, finalDijanaKe: nextAcara.noAcara || nextAcaraId })))
       const label = fasaHeat === 'final' ? 'Final' : fasaHeat === 'separuh_akhir' ? `${bilHeatSF} Heat Separuh Akhir` : 'Acara seterusnya'
-      alert(`${label} berjaya dijana! (${finalistList.length} finalis)`)
+      showToast(`${label} berjaya dijana! (${finalistList.length} finalis)`, 'ok')
     } catch (e) {
-      alert('Ralat jana: ' + e.message)
+      showToast('Ralat jana: ' + e.message, 'err', 5000)
     } finally {
       setJanaFinalLoading(false)
     }
@@ -1786,6 +1796,15 @@ export default function PencatatInputKeputusan() {
 
   return (
     <div className="w-full pb-12">
+
+      {/* Toast notification */}
+      {toastMsg && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold pointer-events-none transition-all ${
+          toastType === 'ok' ? 'bg-teal-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toastMsg}
+        </div>
+      )}
 
       {/* Top Bar — gaya KOAM: putih, sticky */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
@@ -2144,21 +2163,34 @@ export default function PencatatInputKeputusan() {
                                 await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId), { statusKeputusan: 'tidak_rasmi' })
                                 setSelectedHeat(prev => ({ ...prev, statusKeputusan: 'tidak_rasmi' }))
                                 setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: 'tidak_rasmi' } : h))
-                              } catch (e) { alert('Ralat: ' + e.message) }
+                              } catch (e) { showToast('Ralat: ' + e.message, 'err', 5000) }
                             }}
                             className="text-[10px] font-black text-teal-700 bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-200 transition-colors">
                             EDIT
                           </button>
                           <button
                             onClick={async () => {
-                              if (!window.confirm('Padam keputusan rasmi ini?')) return
+                              if (!window.confirm('Padam keputusan rasmi ini? Medal tally & mata olahragawan akan dirollback.')) return
                               try {
-                                const freshPeserta = (selectedHeat.peserta || []).map(p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null }))
+                                const isSaringanLocal = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(selectedAcara.peringkat || '')
+                                const wasGrantMedal = !isSaringanLocal && (
+                                  ['final', 'terus_final'].includes(selectedHeat.fasa) || heats.length === 1
+                                )
+                                const isRelayAcara = selectedAcara.jenisAcara === 'relay'
+                                if (wasGrantMedal) {
+                                  await rollbackPostRasmi(db,
+                                    { id: selectedHeat.heatId, peserta: selectedHeat.peserta || [] },
+                                    { ...selectedAcara, id: selectedAcara.acaraId },
+                                    kejId,
+                                    { schoolId, isRelay: isRelayAcara }
+                                  ).catch(e => console.warn('rollback:', e.message))
+                                }
+                                const freshPeserta = (selectedHeat.peserta || []).map(p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null }))
                                 await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId), { statusKeputusan: 'belum', peserta: freshPeserta })
                                 setSelectedHeat(prev => ({ ...prev, statusKeputusan: 'belum', peserta: freshPeserta }))
                                 setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: 'belum', peserta: freshPeserta } : h))
                                 setKeputusan(initKeputusanDariPeserta(selectedAcara, { ...selectedHeat, peserta: freshPeserta }))
-                              } catch (e) { alert('Ralat: ' + e.message) }
+                              } catch (e) { showToast('Ralat: ' + e.message, 'err', 5000) }
                             }}
                             className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-100 transition-colors">
                             PADAM

@@ -18,6 +18,7 @@ import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { selectFinalists } from '../../utils/finalistUtils'
 import { rekodKeyStr } from '../../utils/postRasmiUtils'
+import { resolveIsLompatTinggi } from '../../utils/startListPdfUtils'
 
 // ─── PDF Generator (sama logik dengan InputKeputusan handleCetakHasil) ─────────
 
@@ -73,9 +74,7 @@ async function cetakHadiahPDF({
   // - Lompat Tinggi: TERUS pakai kedudukan pencatat (no fallback)
   // - Lain: sequential auto (1,2,3,4,5)
   const isPadangAcaraCH = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
-  const isLompatTinggiCH = /lompat tinggi/i.test(
-    acara?.namaAcara || acara?.namaAcaraPendek || ''
-  )
+  const isLompatTinggiCH = resolveIsLompatTinggi(acara)
   let pesertaFinal
   if (isLompatTinggiCH) {
     // Lompat Tinggi: rank = kedudukan (pencatat decide)
@@ -379,13 +378,13 @@ export default function CetakanHadiah() {
   useEffect(() => {
     if (!schoolId) return
     Promise.all([
-      getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+      getDocs(collection(db, 'tenants', schoolId, 'sekolah')),
       getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))),
       getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
       getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup')),
-    ]).then(([atletSnap, kejAktifSnap, homeSnap, fsSnap]) => {
+    ]).then(([sekolahSnap, kejAktifSnap, homeSnap, fsSnap]) => {
       const sm = {}
-      atletSnap.docs.forEach(d => { const k = d.data().kodSekolah; if (k) sm[k] = d.data().namaSekolah || k })
+      sekolahSnap.docs.forEach(d => { sm[d.id] = d.data().namaSekolah || d.data().nama || d.id })
       setSekolahMap(sm)
       // Load kategori from active kejohanan
       if (!kejAktifSnap.empty) {
@@ -505,9 +504,7 @@ export default function CetakanHadiah() {
   // - Lompat Tinggi: TERUS pakai kedudukan pencatat
   // - Lain: sequential auto (1,2,3,4,5)
   const isPadangAcaraUI = ['padang_lompat', 'padang_balin'].includes(selAcara?.jenisAcara)
-  const isLompatTinggiUI = /lompat tinggi/i.test(
-    selAcara?.namaAcara || selAcara?.namaAcaraPendek || ''
-  )
+  const isLompatTinggiUI = resolveIsLompatTinggi(selAcara)
   let pemenang = []
   if (finalHeat) {
     if (isLompatTinggiUI) {
