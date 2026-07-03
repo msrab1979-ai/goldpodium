@@ -50,6 +50,22 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 - Butang "Jana Heat" sentiasa nampak (disabled bila 0 peserta)
 - Heat path Firestore: `tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId}`
 - Heat doc ada `aceraId` field untuk link ke acara
+- Heat doc simpan `fasa: 'heat'` (bukan `saringan_qf/sf`) — filter `selectFinalists` guna `h.fasa`
+- `canJanaFinal`: semua acara yang jana ke acara lain (saringan_qf/sf, separuh_akhir) semak `finalDijanaKe`
+- `resolveIsLompatTinggi(acara)` — guna field Firestore `isLompatTinggi` dulu, fallback regex
+- `rollbackPostRasmi()` — undo medal_tally + mata_olahragawan bila PADAM keputusan rasmi
+
+### Heat fasa values
+| fasa dalam heat doc | Bermaksud |
+|---|---|
+| `heat` | Saringan (QF atau SF) |
+| `separuh_akhir` | Separuh Akhir (dijana dari QF) |
+| `final` | Final atau Terus Final |
+
+### Jana Final gate (canJanaFinal)
+- Semak `allHeatRasmi` — semua heat phase selesai + disahkan
+- Semak `finalExists` — guna `finalDijanaKe` untuk saringan_qf/sf + separuh_akhir; guna `h.fasa==='final'` untuk terus_final
+- Bila jana: tulis `finalDijanaKe` ke acara saringan supaya butang hilang
 
 ## Rekod System (TERKINI)
 
@@ -110,23 +126,34 @@ tenants/{schoolId}/
   tetapan/waConfig      — lorong config
 ```
 
+## Panduan Admin
+- Route: `/admin/panduan` → `Panduan.jsx`
+- 5 tab: Setup · Pendaftaran · Hari Pertandingan · Hadiah & Laporan · Tetapan Lanjutan
+- 21 langkah bernombor, setiap langkah ada penerangan + syarat perlu + butang navigasi terus
+- Butang guna `gp_kej_aktif` sessionStorage untuk resolve kejId
+- Entry 'Panduan' dalam sidebar admin (group Utama, bawah Dashboard)
+
 ## Files Penting
-- `src/pages/admin/AcaraSetup.jsx` — setup acara + peringkat flow
+- `src/pages/admin/AcaraSetup.jsx` — setup acara + peringkat flow + simpan `isLompatTinggi` field
 - `src/pages/admin/StartList.jsx` — 2-panel start list (AKTIF)
+- `src/pages/admin/Panduan.jsx` — panduan langkah demi langkah untuk tenant baru
 - `src/pages/admin/InputKeputusan.jsx` — input result + jana finalis
 - `src/pages/admin/Rekod.jsx` — rekod S/D/N/K, tuntutan, semak, PDF
 - `src/pages/admin/BukuKejohanan.jsx` — PDF buku kejohanan
-- `src/pages/pencatat/InputKeputusan.jsx` — pencatat version
+- `src/pages/pencatat/InputKeputusan.jsx` — pencatat version (toast, rollback PADAM)
+- `src/pages/pencatat/CetakanHadiah.jsx` — sekolahMap dari koleksi 'sekolah'
 - `src/pages/pengurus/SijilPenyertaanPP.jsx` — PP muat turun sijil penyertaan
 - `src/pages/pengurus/SijilPencapaianPP.jsx` — PP muat turun sijil pencapaian
 - `src/pages/SchoolLanding.jsx` — halaman public (jadual/keputusan/rekod)
-- `src/utils/postRasmiUtils.js` — rekod detection + medal_tally + mata_olahragawan
+- `src/utils/postRasmiUtils.js` — rekod detection + medal_tally + mata_olahragawan + rollbackPostRasmi
 - `src/utils/rekodUtils.js` — fetch rekod S/D/N/K per acara
-- `src/utils/finalistUtils.js` — algoritma pilih finalis
-- `src/utils/startListPdfUtils.js` — PDF generation shared utils
+- `src/utils/finalistUtils.js` — algoritma pilih finalis (selectFinalists guna h.fasa)
+- `src/utils/startListPdfUtils.js` — PDF generation + resolveIsLompatTinggi + assignLorongFinal/Heat
 
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`
 - Jangan tukar route startlist ke StartListSetup semula
 - Jangan ubah logic multi-tenant — HANYA UI/UX boleh diubah
+- Jangan guna `h.peringkat` dalam heat doc — field itu tidak wujud, guna `h.fasa`
+- Jangan simpan `noKP` dalam heat docs, rekod, medal_tally, tuntutan (PDPA — public readable)
