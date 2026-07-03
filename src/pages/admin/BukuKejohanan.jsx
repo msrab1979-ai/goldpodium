@@ -996,7 +996,7 @@ export default function BukuKejohanan() {
     // HALAMAN — KEPUTUSAN HARIAN (per hari → per acara, semua heat + final, semua peserta)
     // Setiap hari = page baru. Susun ikut noAcara. Skip acara/hari tanpa keputusan.
     // ════════════════════════════════════════════════════════════
-    const MEDAL_MAP = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5' }
+    const MEDAL_MAP = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5', 6: 'T6', 7: 'T7', 8: 'T8' }
 
     // Group acara (yg ada keputusan) by tarikhAcara dari jadual
     const acaraTarikhMap = {}
