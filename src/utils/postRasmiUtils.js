@@ -402,7 +402,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
 
         const rekodSediaRelay = rekodSnap.exists() && rekodSnap.data().statusRekod === 'aktif'
           ? rekodSnap.data()
-          : tuntutanSnap.exists() ? tuntutanSnap.data() : null
+          : tuntutanSnap.exists() && tuntutanSnap.data().heatId !== heatDoc.id
+            ? tuntutanSnap.data()
+            : null
 
         let isBetter = false
         let isEqual  = false

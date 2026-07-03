@@ -17,6 +17,7 @@ import autoTable from 'jspdf-autotable'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { selectFinalists } from '../../utils/finalistUtils'
+import { rekodKeyStr } from '../../utils/postRasmiUtils'
 
 // ─── PDF Generator (sama logik dengan InputKeputusan handleCetakHasil) ─────────
 
@@ -29,10 +30,9 @@ async function cetakHadiahPDF({
   const isPadang  = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isRelay   = acara.jenisAcara === 'relay'
 
-  // Rekod
+  // Rekod — guna rekodKeyStr supaya normalisasi nama acara konsisten dengan postRasmi
   const rekodNamaCetak = acara.namaAcaraPendek || acara.namaAcara || ''
-  const rKey = [rekodNamaCetak, acara.jantina, acara.kategoriKod, peringkatKej]
-    .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+  const rKey = rekodKeyStr(rekodNamaCetak, acara.jantina, acara.kategoriKod, peringkatKej)
 
   const [rSnap, rTuntSnap] = await Promise.all([
     getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey)).catch(() => null),

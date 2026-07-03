@@ -127,12 +127,12 @@ function AtletModal({ atlet, namaKej, katLabelFn, onClose, schoolId }) {
   useEffect(() => {
     const fromAtlet = getRekodDetail(atlet)
     if (fromAtlet.length > 0) { setRekodList(fromAtlet); return }
-    // Fallback: rekod_* tiada dalam mata_olahragawan — fetch terus dari rekod collection
-    if (!atlet.noKP || !atlet.kejohananId) return
+    // Fallback: rekod_* tiada dalam mata_olahragawan — fetch dari rekod collection by atletId (noBib)
+    if (!atlet.noBib || !atlet.kejohananId) return
     setRekodLoading(true)
     getDocs(query(
       collection(db, 'tenants', schoolId, 'rekod'),
-      where('noKP', '==', atlet.noKP),
+      where('atletId', '==', atlet.noBib),
       where('kejohananId', '==', atlet.kejohananId),
     ))
       .then(snap => {
