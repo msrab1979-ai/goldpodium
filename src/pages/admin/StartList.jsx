@@ -2830,9 +2830,10 @@ export default function StartList() {
   // ── Derived: Heat → Final gate ────────────────────────────────────────────
   const isSukuAkhirAcara    = selectedAcara?.peringkat === 'saringan_qf'
   const isSeparuhAkhirAcara = selectedAcara?.peringkat === 'separuh_akhir'
+  const isSaringanSF        = selectedAcara?.peringkat === 'saringan_sf'
   const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf' || h.fasa === 'separuh_akhir')
-  // saringan_qf/separuh_akhir: final dijana di acara lain — guna finalDijanaKe sebagai flag dah jana
-  const finalExists    = (isSukuAkhirAcara || isSeparuhAkhirAcara)
+  // Semua acara yang jana final ke acara lain: semak finalDijanaKe (bukan heat fasa:'final' dalam heatList sendiri)
+  const finalExists    = (isSukuAkhirAcara || isSeparuhAkhirAcara || isSaringanSF)
     ? !!(selectedAcara?.finalDijanaKe)
     : heatList.some(h => h.fasa === 'final')
   const allHeatRasmi   = heatPhaseHeats.length > 0 &&
