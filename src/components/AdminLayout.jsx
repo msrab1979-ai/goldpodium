@@ -9,6 +9,7 @@ const NAV = [
     label: 'Utama',
     items: [
       { label: 'Dashboard',       icon: '🏠', path: '/admin' },
+      { label: 'Panduan',         icon: '📖', path: '/admin/panduan' },
       { label: 'Kejohanan',       icon: '🏆', path: '/admin/kejohanan-setup' },
     ],
   },

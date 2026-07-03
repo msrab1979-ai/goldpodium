@@ -62,6 +62,7 @@ const SijilPencapaianPP  = lazy(() => import('./pages/pengurus/SijilPencapaianPP
 const SijilPenyertaanPP  = lazy(() => import('./pages/pengurus/SijilPenyertaanPP'))
 const PengurusLayout     = lazy(() => import('./pages/pengurus/PengurusLayout'))
 const PanduanPP          = lazy(() => import('./pages/pengurus/PanduanPP'))
+const Panduan            = lazy(() => import('./pages/admin/Panduan'))
 
 // ── Spinner ringkas semasa lazy load ─────────────────────────────────────────
 function PageLoader() {
@@ -249,6 +250,7 @@ function AppRoutes() {
         <Route path="/admin/health" element={<AdminRoute><HealthCheck /></AdminRoute>} />
         <Route path="/admin/analisis-pendaftaran" element={<AdminRoute><AnalisisPendaftaran /></AdminRoute>} />
         <Route path="/admin/backup" element={<AdminRoute><Backup /></AdminRoute>} />
+        <Route path="/admin/panduan" element={<AdminRoute><Panduan /></AdminRoute>} />
         <Route path="/admin/buku-kejohanan" element={<AdminRoute><BukuKejohanan /></AdminRoute>} />
         <Route path="/admin/buku-kejohanan-link" element={<AdminRoute><BukuKejohananLinkSetup /></AdminRoute>} />
         <Route path="/admin/buku-kongsi" element={<AdminRoute><BukuKongsiSetup /></AdminRoute>} />
