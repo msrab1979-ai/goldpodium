@@ -276,10 +276,12 @@ export default function BukuKejohanan() {
       const tajukList = tbSnap.exists() ? (tbSnap.data().tajuk || []) : []
 
       // 9. Mata olahragawan — guna semula mataSnapRekod (dah diload dalam 7b)
+      // Key: noBib (bukan noKP — PDPA, noKP = null dalam mata_olahragawan)
       const mataMap = {}
       mataSnapRekod.docs.forEach(d => {
         const r = d.data()
-        if (r.noKP) mataMap[r.noKP] = { id: d.id, ...r }
+        const bibKey = r.noBib || d.id.replace(`_${kejId}`, '')
+        if (bibKey) mataMap[bibKey] = { id: d.id, ...r }
       })
 
       // 10. Kategori
@@ -1289,7 +1291,7 @@ export default function BukuKejohanan() {
       y = 26
 
       const rows = tajukAda.map(t => {
-        const live = mataMap[t.atlet.noKP] || {}
+        const live = mataMap[t.atlet.noBib] || {}
         // pingat_emas/perak/gangsa dari live (mata_olahragawan) — fallback ke snapshot pingat{}
         const E    = live.pingat_emas   ?? t.atlet.pingat?.['1'] ?? 0
         const P    = live.pingat_perak  ?? t.atlet.pingat?.['2'] ?? 0
