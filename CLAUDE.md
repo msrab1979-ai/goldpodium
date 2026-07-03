@@ -124,6 +124,7 @@ tenants/{schoolId}/
   tetapan/sijilPencapaian — template sijil pencapaian
   tetapan/finalSetup    — finalist algorithm config
   tetapan/waConfig      — lorong config
+  tetapan/aksesPantas   — { items: [{id, emoji, tajuk, url, penerangan, aktif}] } max 6
 ```
 
 ## Panduan Admin
@@ -133,7 +134,19 @@ tenants/{schoolId}/
 - Butang guna `gp_kej_aktif` sessionStorage untuk resolve kejId
 - Entry 'Panduan' dalam sidebar admin (group Utama, bawah Dashboard)
 
+## Akses Pantas Home
+- Route setup: `/admin/akses-pantas` → `AksesPantasPage.jsx`
+- Sidebar: group "Akses Pantas Home" bawah group "Sijil"
+- Admin bebas tambah/edit/padam cards (max 6), pilih emoji dari picker, susun ▲▼
+- Card "Pengurus Pasukan" kekal tetap — tidak masuk sistem bebas
+- Firestore: `tetapan/aksesPantas` → `{ items: [{id, emoji, tajuk, url, penerangan, aktif}] }`
+- Auto-migrate dari 3 doc lama (galeri/bukuKejohananLink/bukuProgram) jika ada
+- Home.jsx + SchoolLanding.jsx baca real-time dari `tetapan/aksesPantas`
+- Animasi icon: pulse scale hover (keyframe `pulse-icon` dalam tailwind.config.js)
+- Sidebar admin: "Tetapan" dipindah ke group Utama (bawah Kejohanan)
+
 ## Files Penting
+- `src/pages/admin/AksesPantasPage.jsx` — setup Akses Pantas Home (sistem bebas)
 - `src/pages/admin/AcaraSetup.jsx` — setup acara + peringkat flow + simpan `isLompatTinggi` field
 - `src/pages/admin/StartList.jsx` — 2-panel start list (AKTIF)
 - `src/pages/admin/Panduan.jsx` — panduan langkah demi langkah untuk tenant baru
