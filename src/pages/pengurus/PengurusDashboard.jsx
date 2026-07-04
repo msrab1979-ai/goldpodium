@@ -223,8 +223,14 @@ function FormField({ label, hint, required, children }) {
 }
 
 function JantinaBadge({ j }) {
+  if (!j) return null
+  const isCampuran = j === 'C' || j === 'Campuran'
   return (
-    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${j==='L'?'bg-blue-100 text-blue-700':'bg-pink-100 text-pink-700'}`}>{j}</span>
+    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+      isCampuran ? 'bg-purple-100 text-purple-700'
+      : j === 'L' ? 'bg-blue-100 text-blue-700'
+      : 'bg-pink-100 text-pink-700'
+    }`}>{isCampuran ? 'C' : j}</span>
   )
 }
 
@@ -871,7 +877,7 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
   const atletLayak = atletSekolah.filter(a => {
     if (a.isAktif === false) return false
     if (sudahDaftar.includes(a.noKP)) return false
-    if (a.jantina !== acara.jantina) return false
+    if (!['C','Campuran'].includes(acara.jantina) && a.jantina !== acara.jantina) return false
     const pRecAtlet   = pendaftaranList.find(p => p.noKP === a.noKP)
     const overrideKat = pRecAtlet?.kategoriOverride || null
     if (isAcaraTerbuka) {
@@ -1051,7 +1057,7 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
             <div>
               <h2 className="text-sm font-bold text-gray-800">Daftar ke Acara</h2>
               <p className="text-xs text-gray-500 mt-0.5 font-semibold">
-                {acara.namaAcara} — Kat {acara.kategoriKod} {acara.jantina==='L'?'Lelaki':'Perempuan'}
+                {acara.namaAcara} — Kat {acara.kategoriKod} {acara.jantina==='L'?'Lelaki':acara.jantina==='P'?'Perempuan':'Campuran'}
               </p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
@@ -1102,8 +1108,7 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
                 {isRelayAcara ? `Pilih ${relayInfo.saiz} Atlet — Pasukan ${pasukanPilih} (${selected.length}/${relayInfo.saiz})` : `Pilih Atlet (${atletLayak.length} layak)`}
               </p>
               {atletLayak.map(a => {
-                const katKira = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-                const kat = katKira || a.kategoriKod
+                const katKira = isAcaraTerbuka ? null : (kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList) || a.kategoriKod)
                 const isSelected  = selected.includes(a.noKP)
                 const maxPilih    = isRelayAcara ? relayInfo.saiz : slotBaki
                 const willExceed  = !isSelected && selected.length >= maxPilih
@@ -1126,7 +1131,7 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <KategoriBadge kat={kat} kategoriList={kategoriList} />
+                      {katKira && <KategoriBadge kat={katKira} kategoriList={kategoriList} />}
                       <JantinaBadge j={a.jantina} />
                     </div>
                   </button>
@@ -1921,7 +1926,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                   const atletLayak  = atletSekolah.filter(a => {
                     if (a.isAktif === false) return false
                     if (sudahDaftar.includes(a.noKP)) return false
-                    if (a.jantina !== acara.jantina) return false
+                    if (!['C','Campuran'].includes(acara.jantina) && a.jantina !== acara.jantina) return false
                     const pRecAtlet   = pendaftaranList.find(p => p.noKP === a.noKP)
                     const overrideKat = pRecAtlet?.kategoriOverride || null
                     if (isAcaraTerbuka2) {
@@ -2062,7 +2067,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                                 <p className="text-[9px] font-black text-purple-700 uppercase tracking-widest mb-1 px-1">Pasukan {label}</p>
                                 <div className="space-y-1">
                                   {pesertaSek.filter(p => (p.pasukanRelay || 'A') === label).map(p => {
-                                    const kat = kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
+                                    const kat = isRelayAcara2 || isAcaraTerbuka2 ? null : kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
                                     return (
                                       <div key={p.noBib || p.noKP} className="flex items-center justify-between px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
                                         <div className="flex items-center gap-2 min-w-0">
@@ -2090,7 +2095,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                           ) : (
                             <div className="space-y-1">
                               {pesertaSek.map(p => {
-                                const kat = kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
+                                const kat = isAcaraTerbuka2 ? null : kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
                                 return (
                                   <div key={p.noBib || p.noKP} className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-100 rounded-lg">
                                     <div className="flex items-center gap-2 min-w-0">
@@ -2133,7 +2138,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                               </p>
                               <div className="space-y-1">
                                 {atletLayak.map(a => {
-                                  const kat = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
+                                  const kat = isAcaraTerbuka2 ? null : kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                                   const isChosen  = selSet.has(a.noKP)
                                   const willExceed = !isChosen && selSet.size >= maxPilihInline
                                   return (
