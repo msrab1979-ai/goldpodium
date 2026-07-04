@@ -81,15 +81,18 @@ export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
   )
   if (saringanHeats.length === 0) return []
 
-  // Key unik: relay guna kodSekolah, individu guna noBib
-  const getKey = p => isRelay ? (p.kodSekolah || 'UNKNOWN') : (p.noBib || '')
+  // Key unik: relay guna kodSekolah+pasukanRelay, individu guna noBib
+  const getKey = p => isRelay
+    ? `${p.kodSekolah || 'UNKNOWN'}_${p.pasukanRelay || 'A'}`
+    : (p.noBib || '')
 
   const toEntry = (p, heat) => isRelay ? ({
-    kodSekolah:  p.kodSekolah  || '',
-    ahliPasukan: p.ahliPasukan || [],
-    keputusan:   Number(p.keputusan),
-    heatId:      heat.heatId   || heat.id || '',
-    noHeat:      heat.noHeat   || 0,
+    kodSekolah:   p.kodSekolah   || '',
+    pasukanRelay: p.pasukanRelay || 'A',
+    ahliPasukan:  p.ahliPasukan  || [],
+    keputusan:    Number(p.keputusan),
+    heatId:       heat.heatId    || heat.id || '',
+    noHeat:       heat.noHeat    || 0,
   }) : ({
     noBib:      p.noBib      || '',
     namaAtlet:  p.namaAtlet  || '',

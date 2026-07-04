@@ -668,11 +668,14 @@ function sortAndRankRows(rows) {
 }
 
 function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarikhTamat, lokasi, logoKiri, logoKanan }) {
-  const [allRows,    setAllRows]    = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [openGrps,   setOpenGrps]   = useState(new Set())
-  const [jenisList,  setJenisList]  = useState([])
-  const [printingKat, setPrintingKat] = useState(null)
+  const [allRows,      setAllRows]      = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [openGrps,     setOpenGrps]     = useState(new Set())
+  const [jenisList,    setJenisList]    = useState([])
+  const [printingKat,  setPrintingKat]  = useState(null)
+  const [expandedRows, setExpandedRows] = useState(new Set()) // klik nama sekolah
+  const [medalRawMap,  setMedalRawMap]  = useState({})       // kodSekolah → raw tally doc
+  const [katMap,       setKatMap]       = useState({})        // kategoriKod → { umurHad }
   const unsubRef  = useRef(null)
   const unsubRef2 = useRef(null)
 
@@ -717,7 +720,14 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
       collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'),
       snap => {
         medalMap = {}
-        snap.docs.forEach(d => { medalMap[d.data().kodSekolah || d.id] = d.data() })
+        const rawMap = {}
+        snap.docs.forEach(d => {
+          const data = d.data()
+          const kod = data.kodSekolah || d.id
+          medalMap[kod] = data
+          rawMap[kod]   = data
+        })
+        setMedalRawMap(rawMap)
         medalReady = true
         merge()
       },
@@ -743,6 +753,72 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
       if (unsubRef2.current) unsubRef2.current()
     }
   }, [schoolId, kejId])
+
+  // Load kategoriMap dari kategori subcollection (sumber benar — ada label, umurHad, urutan, jenisSekolah)
+  useEffect(() => {
+    if (!schoolId || !kejId) return
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'))
+      .then(snap => {
+        const kMap = {}
+        snap.docs.forEach(d => {
+          const k = d.data()
+          kMap[d.id] = {
+            label:       k.label || d.id,
+            umurHad:     k.umurHad ?? null,
+            jenisSekolah: k.jenisSekolah || 'SR',
+            urutan:      k.urutan ?? 99,
+          }
+        })
+        setKatMap(kMap)
+      }).catch(() => {})
+  }, [schoolId, kejId])
+
+  // Bina breakdown kat dari raw tally doc (sama logic Home.jsx)
+  function buildKatDetail(kodSekolah) {
+    const tallyRow = medalRawMap[kodSekolah]
+    if (!tallyRow) return {}
+    const grp = {}
+    Object.entries(tallyRow).forEach(([key, val]) => {
+      if (!key.startsWith('kat_') || typeof val !== 'number' || val === 0) return
+      const parts = key.split('_')
+      if (parts.length < 4) return
+      const kat    = parts[1]
+      const jan    = parts[2]
+      const pingat = parts[3]
+      const grpKey = `${jan}_${kat}`
+      if (!grp[grpKey]) grp[grpKey] = { kategoriKod: kat, jantina: jan, emas: 0, perak: 0, gangsa: 0, tempat4: 0, tempat5: 0 }
+      if (pingat in grp[grpKey]) grp[grpKey][pingat] += val
+    })
+    // Relay — pindah dari bucket individu ke RELAY
+    Object.entries(tallyRow).forEach(([key, val]) => {
+      if (!key.startsWith('contrib_') || typeof val !== 'object' || !val || !val.pingat) return
+      const isRelayEntry = val.isRelay === true || (val.isRelay === undefined && !val.noBib && !val.noKP)
+      if (!isRelayEntry) return
+      const kat    = val.kategoriKod || ''
+      const jan    = val.jantina     || ''
+      const pingat = val.pingat
+      const srcKey = `${jan}_${kat}`
+      const dstKey = `${jan}_RELAY`
+      if (grp[srcKey] && pingat in grp[srcKey]) grp[srcKey][pingat] = Math.max(0, grp[srcKey][pingat] - 1)
+      if (!grp[dstKey]) grp[dstKey] = { kategoriKod: 'RELAY', jantina: jan, emas: 0, perak: 0, gangsa: 0, tempat4: 0, tempat5: 0 }
+      if (pingat in grp[dstKey]) grp[dstKey][pingat] += 1
+    })
+    // Nama acara dari contrib_ fields
+    const namaMap = {} // `${jan}_${kat}_${pingat}` → [namaAcara]
+    Object.entries(tallyRow).forEach(([key, val]) => {
+      if (!key.startsWith('contrib_') || typeof val !== 'object' || !val || !val.pingat) return
+      const isRelayEntry = val.isRelay === true || (val.isRelay === undefined && !val.noBib && !val.noKP)
+      const kat    = isRelayEntry ? 'RELAY' : (val.kategoriKod || '')
+      const jan    = val.jantina || ''
+      const pingat = val.pingat
+      const nama   = val.namaAcaraPendek || val.namaAcara || ''
+      if (!nama) return
+      const nKey = `${jan}_${kat}_${pingat}`
+      if (!namaMap[nKey]) namaMap[nKey] = []
+      if (!namaMap[nKey].includes(nama)) namaMap[nKey].push(nama)
+    })
+    return { grp, namaMap }
+  }
 
   const RANK_STYLE = {
     1: { row: 'bg-yellow-50/60 border-l-4 border-l-yellow-400', badge: 'bg-yellow-400 text-white' },
@@ -854,6 +930,7 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
   }
 
   function renderTable(rows, bilKed) {
+    const totalCols = 3 + (bilKed >= 4 ? 1 : 0) + (bilKed >= 5 ? 1 : 0) + 2 // No+Nama+E+P+G+T4?+T5?+Jml
     return (
       <div className="overflow-x-auto border-t border-gray-100">
         <table className="w-full">
@@ -871,9 +948,38 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
           </thead>
           <tbody>
             {rows.map(t => {
-              const rs     = RANK_STYLE[t.rank] || {}
-              const jumlah = (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0)
+              const rs      = RANK_STYLE[t.rank] || {}
+              const jumlah  = (t.emas||0)+(t.perak||0)+(t.gangsa||0)+(bilKed>=4?t.tempat4||0:0)+(bilKed>=5?t.tempat5||0:0)
+              const isExp   = expandedRows.has(t.kodSekolah)
+              const detail  = isExp ? buildKatDetail(t.kodSekolah) : null
+
+              // Kumpul kategori dari katMap — ikut jenisSekolah sekolah + urutan
+              // grpKey dalam buildKatDetail = `${jantina}_${kategoriKod}` (dari kat_ field postRasmi)
+              // Tunjuk semua kategori yang ada dalam katMap, tapi row yang tiada pingat jadi fade
+              const katKombos = (() => {
+                const grp = detail?.grp || {}
+                // Kumpul semua grpKeys yang ada dalam grp — `L_L12A`, `P_P12` dsb
+                const grpKeys = new Set(Object.keys(grp).filter(k => k !== 'L_RELAY' && k !== 'P_RELAY'))
+                const result = []
+                Object.entries(katMap)
+                  .filter(([, info]) => !t.kategori || t.kategori === 'Lain-lain' || info.jenisSekolah === t.kategori)
+                  .sort((a, b) => (a[1].urutan ?? 99) - (b[1].urutan ?? 99))
+                  .forEach(([kod, info]) => {
+                    // Cari jantina yang exist dalam grp untuk kod ini
+                    const jantinas = ['L', 'P'].filter(j => grpKeys.has(`${j}_${kod}`))
+                    if (jantinas.length > 0) {
+                      jantinas.forEach(j => result.push({ kod, label: info.label || kod, j }))
+                    } else {
+                      // Row tiada pingat — teka jantina dari label prefix
+                      const guessJ = /^L/i.test(info.label || kod) ? 'L' : /^P/i.test(info.label || kod) ? 'P' : 'L'
+                      result.push({ kod, label: info.label || kod, j: guessJ })
+                    }
+                  })
+                return result
+              })()
+
               return (
+                <>
                 <tr key={t.id} className={`border-b border-gray-50 ${rs.row || ''}`}>
                   <td className="hidden sm:table-cell px-3 py-3 text-center">
                     {t.rank <= 3
@@ -881,8 +987,24 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
                       : <span className="text-[10px] font-bold text-gray-400">{t.rank}</span>}
                   </td>
                   <td className="px-3 py-3">
-                    <p className="font-semibold text-xs text-gray-800">{t.namaSekolah || t.kodSekolah}</p>
-                    <p className="text-[9px] text-gray-300 font-mono mt-0.5">{t.kodSekolah}</p>
+                    <button
+                      className="text-left w-full"
+                      onClick={() => setExpandedRows(prev => {
+                        const next = new Set(prev)
+                        if (next.has(t.kodSekolah)) next.delete(t.kodSekolah)
+                        else next.add(t.kodSekolah)
+                        return next
+                      })}
+                    >
+                      <p className="font-semibold text-xs text-gray-800 flex items-center gap-1">
+                        <span className="truncate">{t.namaSekolah || t.kodSekolah}</span>
+                        <svg className={`w-3 h-3 shrink-0 text-gray-400 transition-transform ${isExp ? 'rotate-180' : ''}`}
+                          fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </p>
+                      <p className="text-[9px] text-gray-300 font-mono mt-0.5">{t.kodSekolah}</p>
+                    </button>
                   </td>
                   <td className="px-2 py-3 text-center"><span className={`text-sm font-black ${(t.emas||0)>0?'text-yellow-600':'text-gray-200'}`}>{t.emas||0}</span></td>
                   <td className="px-2 py-3 text-center"><span className={`text-sm font-black ${(t.perak||0)>0?'text-gray-500':'text-gray-200'}`}>{t.perak||0}</span></td>
@@ -891,6 +1013,112 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
                   {bilKed >= 5 && <td className="hidden sm:table-cell px-2 py-3 text-center"><span className={`text-sm font-black ${(t.tempat5||0)>0?'text-purple-400':'text-gray-200'}`}>{t.tempat5||0}</span></td>}
                   <td className="px-3 py-3 text-center"><span className={`text-xs font-black ${jumlah>0?'text-gray-700':'text-gray-200'}`}>{jumlah}</span></td>
                 </tr>
+
+                {/* ── Expand: breakdown per kategori (KOAM-style) ── */}
+                {isExp && (
+                  <tr key={`exp_${t.kodSekolah}`} className="bg-blue-50/40 border-b border-blue-100">
+                    <td colSpan={totalCols} className="px-4 py-3">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[10px]">
+                          <thead>
+                            <tr className="text-gray-400 font-bold uppercase tracking-wide border-b border-blue-100">
+                              <th className="py-1.5 pr-3 text-left w-16">Kat</th>
+                              <th className="py-1.5 px-2 text-center">
+                                <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-500" />
+                              </th>
+                              <th className="py-1.5 px-2 text-center">
+                                <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300 border border-gray-400" />
+                              </th>
+                              <th className="py-1.5 px-2 text-center">
+                                <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-300 border border-orange-400" />
+                              </th>
+                              {bilKed >= 4 && <th className="py-1.5 px-2 text-center text-gray-300">4</th>}
+                              {bilKed >= 5 && <th className="py-1.5 px-2 text-center text-gray-300">5</th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {katKombos.map(({ j, kod, label }) => {
+                              const grpKey = `${j}_${kod}`
+                              const row = detail?.grp?.[grpKey]
+                              const emas  = row?.emas   || 0
+                              const perak = row?.perak  || 0
+                              const gsa   = row?.gangsa || 0
+                              const t4    = row?.tempat4 || 0
+                              const t5    = row?.tempat5 || 0
+                              const ada   = emas + perak + gsa + t4 + t5 > 0
+                              const getNama = (pingat) => detail?.namaMap?.[`${j}_${kod}_${pingat}`] || []
+                              return (
+                                <tr key={grpKey} className={`border-b border-blue-50/50 ${ada ? '' : 'opacity-35'}`}>
+                                  <td className="py-1.5 pr-3 font-bold text-gray-600 align-top">{label}</td>
+                                  <td className="py-1.5 px-2 text-center align-top">
+                                    <span className={`font-black ${emas > 0 ? 'text-yellow-600' : 'text-gray-200'}`}>{emas}</span>
+                                    {getNama('emas').map((n, ni) => (
+                                      <p key={ni} className="text-[8px] text-yellow-700/70 leading-tight mt-0.5">{n}</p>
+                                    ))}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-center align-top">
+                                    <span className={`font-black ${perak > 0 ? 'text-gray-500' : 'text-gray-200'}`}>{perak}</span>
+                                    {getNama('perak').map((n, ni) => (
+                                      <p key={ni} className="text-[8px] text-gray-400 leading-tight mt-0.5">{n}</p>
+                                    ))}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-center align-top">
+                                    <span className={`font-black ${gsa > 0 ? 'text-orange-500' : 'text-gray-200'}`}>{gsa}</span>
+                                    {getNama('gangsa').map((n, ni) => (
+                                      <p key={ni} className="text-[8px] text-orange-400/80 leading-tight mt-0.5">{n}</p>
+                                    ))}
+                                  </td>
+                                  {bilKed >= 4 && (
+                                    <td className="py-1.5 px-2 text-center align-top">
+                                      <span className={`font-bold ${t4 > 0 ? 'text-gray-500' : 'text-gray-200'}`}>{t4}</span>
+                                    </td>
+                                  )}
+                                  {bilKed >= 5 && (
+                                    <td className="py-1.5 px-2 text-center align-top">
+                                      <span className={`font-bold ${t5 > 0 ? 'text-gray-500' : 'text-gray-200'}`}>{t5}</span>
+                                    </td>
+                                  )}
+                                </tr>
+                              )
+                            })}
+                            {/* Relay rows */}
+                            {['L', 'P'].map(j => {
+                              const row  = detail?.grp?.[`${j}_RELAY`]
+                              if (!row) return null
+                              const emas = row.emas   || 0
+                              const perak= row.perak  || 0
+                              const gsa  = row.gangsa || 0
+                              const t4   = row.tempat4 || 0
+                              const t5   = row.tempat5 || 0
+                              if (emas + perak + gsa + t4 + t5 === 0) return null
+                              const getNama = (pingat) => detail?.namaMap?.[`${j}_RELAY_${pingat}`] || []
+                              return (
+                                <tr key={`relay_${j}`} className="border-b border-blue-50/50 border-t-2 border-t-blue-200">
+                                  <td className="py-1 pr-3 font-bold text-[#003399] align-top">Relay {j}</td>
+                                  <td className="py-1 px-2 text-center align-top">
+                                    <span className={`font-black ${emas > 0 ? 'text-yellow-600' : 'text-gray-200'}`}>{emas}</span>
+                                    {getNama('emas').map((n, ni) => <p key={ni} className="text-[8px] text-yellow-700/70 leading-tight mt-0.5">{n}</p>)}
+                                  </td>
+                                  <td className="py-1 px-2 text-center align-top">
+                                    <span className={`font-black ${perak > 0 ? 'text-gray-500' : 'text-gray-200'}`}>{perak}</span>
+                                    {getNama('perak').map((n, ni) => <p key={ni} className="text-[8px] text-gray-400 leading-tight mt-0.5">{n}</p>)}
+                                  </td>
+                                  <td className="py-1 px-2 text-center align-top">
+                                    <span className={`font-black ${gsa > 0 ? 'text-orange-500' : 'text-gray-200'}`}>{gsa}</span>
+                                    {getNama('gangsa').map((n, ni) => <p key={ni} className="text-[8px] text-orange-400/80 leading-tight mt-0.5">{n}</p>)}
+                                  </td>
+                                  {bilKed >= 4 && <td className="py-1 px-2 text-center align-top"><span className={`font-bold ${t4>0?'text-gray-500':'text-gray-200'}`}>{t4}</span></td>}
+                                  {bilKed >= 5 && <td className="py-1 px-2 text-center align-top"><span className={`font-bold ${t5>0?'text-gray-500':'text-gray-200'}`}>{t5}</span></td>}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </>
               )
             })}
           </tbody>

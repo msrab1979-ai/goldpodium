@@ -229,7 +229,7 @@ export default function PengurusLayout({ children }) {
         {/* Mobile topbar */}
         <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shrink-0">
           <button onClick={() => setSidebarOpen(true)}
-            className="p-1.5 text-gray-500 hover:text-gray-700 transition-colors">
+            className="p-1.5 text-gray-500 hover:text-gray-700 transition-colors" title="Buka menu">
             {Icons.menu}
           </button>
           <div className="flex-1 min-w-0">

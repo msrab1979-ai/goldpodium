@@ -873,9 +873,14 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianB
             </div>
             <div className="px-2 py-2 flex flex-col justify-center min-w-0">
               <p className="text-sm font-bold text-gray-800 truncate">{(kp.kodSekolah && (sekolahMap[kp.kodSekolah] || kp.kodSekolah)) || '—'}</p>
-              {kp.kodSekolah && sekolahMap[kp.kodSekolah] && (
-                <p className="text-xs text-gray-500 truncate mt-0.5">{kp.kodSekolah}</p>
-              )}
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {kp.kodSekolah && sekolahMap[kp.kodSekolah] && (
+                  <p className="text-xs text-gray-500 truncate">{kp.kodSekolah}</p>
+                )}
+                {kp.pasukanRelay && (
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 shrink-0">Pskmn {kp.pasukanRelay}</span>
+                )}
+              </div>
             </div>
             <div className="px-1 py-2 flex flex-col items-center gap-0.5">
               <input type="text" inputMode="decimal"
@@ -1166,13 +1171,14 @@ export default function PencatatInputKeputusan() {
     if (acara.jenisAcara === 'lorong' || acara.jenisAcara === 'relay') {
       pesertaArr.forEach(p => {
         if (p.lorong != null) kpMap[p.lorong] = {
-          noBib:      p.noBib || '',
-          namaAtlet:  p.namaAtlet || '',
-          kodSekolah: p.kodSekolah || '',
-          keputusan:  p.keputusan != null ? String(p.keputusan) : '',
-          _raw:       p.keputusan != null ? fmtMasaDisplay(p.keputusan) : '',
-          kedudukan:  p.kedudukan != null ? p.kedudukan : '',
-          status:     (p.status && p.status !== 'belum') ? p.status : '',
+          noBib:        p.noBib || '',
+          namaAtlet:    p.namaAtlet || '',
+          kodSekolah:   p.kodSekolah || '',
+          pasukanRelay: p.pasukanRelay || null,
+          keputusan:    p.keputusan != null ? String(p.keputusan) : '',
+          _raw:         p.keputusan != null ? fmtMasaDisplay(p.keputusan) : '',
+          kedudukan:    p.kedudukan != null ? p.kedudukan : '',
+          status:       (p.status && p.status !== 'belum') ? p.status : '',
         }
       })
     } else if (acara.jenisAcara === 'mass_start') {

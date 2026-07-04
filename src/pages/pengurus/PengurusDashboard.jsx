@@ -185,6 +185,31 @@ function downloadTemplateDaftar(bibPrefix = '', bibFormat = 3, acaraList = []) {
 
 // ─── Sub-Components ───────────────────────────────────────────────────────────
 
+// Untuk relay Terbuka, kategoriKod='TERBUKA' tiada match dalam kategoriList.
+// Ambil katObj mana-mana — saizPasukan & hadPasukan sama untuk semua kat.
+function resolveKatRelay(acara, kategoriList) {
+  return kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
+    || (acara.jenisAcara === 'relay' ? kategoriList[0] : null)
+}
+
+function hadRelayInfo(acara, kategoriList) {
+  const katObj  = resolveKatRelay(acara, kategoriList)
+  const saiz    = Number(katObj?.saizPasukan) || 4
+  const had     = Number(acara.hadAtletPerSekolah) || 1  // bilangan pasukan — set oleh admin
+  return { saiz, had, total: saiz * had }
+}
+
+function Tip({ text, children }) {
+  return (
+    <span className="relative group/tip">
+      {children}
+      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-white opacity-0 group-hover/tip:opacity-100 transition-opacity duration-0 z-50">
+        {text}
+      </span>
+    </span>
+  )
+}
+
 function FormField({ label, hint, required, children }) {
   return (
     <div>
@@ -821,11 +846,14 @@ function ImportAtletModal({ schoolId, kodSekolah, sekolahData, existingBibs, onC
 
 // ─── Modal: Daftar Atlet ke Acara ─────────────────────────────────────────────
 
+const PASUKAN_LABELS = ['A','B','C','D','E','F']
+
 function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList, kategoriList, onClose, onSaved }) {
-  const [selected,   setSelected]   = useState([])
-  const [saving,     setSaving]     = useState(false)
-  const [validating, setValidating] = useState(false)
-  const [err, setErr]               = useState('')
+  const [selected,      setSelected]      = useState([])
+  const [pasukanPilih,  setPasukanPilih]  = useState('A')
+  const [saving,        setSaving]        = useState(false)
+  const [validating,    setValidating]    = useState(false)
+  const [err, setErr]                     = useState('')
   const [errGate, setErrGate]       = useState('')
   const [warn, setWarn]             = useState('')
 
@@ -837,39 +865,41 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
     .filter(p => p.acaraIds?.includes(acara.aceraId || acara.id))
     .map(p => p.noKP)
 
-  const _katObj = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
-
   const isAcaraTerbuka = acara.isTerbuka || acara.kategoriKod === 'TERBUKA'
+  const isRelayAcara   = acara.jenisAcara === 'relay'
+
   const atletLayak = atletSekolah.filter(a => {
     if (a.isAktif === false) return false
     if (sudahDaftar.includes(a.noKP)) return false
-    const pRecAtlet = pendaftaranList.find(p => p.noKP === a.noKP)
+    if (a.jantina !== acara.jantina) return false
+    const pRecAtlet   = pendaftaranList.find(p => p.noKP === a.noKP)
     const overrideKat = pRecAtlet?.kategoriOverride || null
     if (isAcaraTerbuka) {
       const katTerbuka = acara.kategoriTerbuka || []
-      if (katTerbuka.length === 0) return false
+      if (katTerbuka.length === 0) return true  // terbuka semua kat
       const katAtlet = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
       return katAtlet && katTerbuka.includes(katAtlet)
     }
-    if (a.jantina !== acara.jantina) return false
     const katKira = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
     return katKira === acara.kategoriKod
   })
 
-  const hadAcara = (() => {
-    if (acara.jenisAcara === 'relay' && _katObj) {
-      const saizPasukan = Number(_katObj.saizPasukan) || 4
-      const hadPasukan  = acara.jantina === 'P'
-        ? (Number(_katObj.hadPasukanP) || 1)
-        : (Number(_katObj.hadPasukanL) || 1)
-      return saizPasukan * hadPasukan
-    }
-    return acara.hadAtletPerSekolah || 2
-  })()
+  const relayInfo   = isRelayAcara ? hadRelayInfo(acara, kategoriList) : null
+  const hadAcara    = isRelayAcara ? relayInfo.total : (acara.hadAtletPerSekolah || 2)
 
-  const aceraId     = acara.aceraId || acara.id
+  const aceraId      = acara.aceraId || acara.id
   const sekolahSudah = pendaftaranList.filter(p => p.acaraIds?.includes(aceraId)).length
-  const slotBaki    = hadAcara - sekolahSudah
+
+  // Pasukan yang sudah ada untuk acara relay ini (dari sekolah ini)
+  const pasukanSedia = isRelayAcara
+    ? [...new Set(pendaftaranList.filter(p => p.acaraIds?.includes(aceraId)).map(p => p.pasukanRelay || 'A'))]
+    : []
+
+  // Relay: slotBaki kira berdasarkan pasukan, bukan atlet
+  const slotBaki = isRelayAcara
+    ? (relayInfo.had - pasukanSedia.length)
+    : (hadAcara - sekolahSudah)
+  const pasukanAvail = PASUKAN_LABELS.filter(l => !pasukanSedia.includes(l))
 
   function toggleSelect(noKP) {
     setSelected(s => s.includes(noKP) ? s.filter(x => x !== noKP) : [...s, noKP])
@@ -877,6 +907,9 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
 
   async function handleSave() {
     setErr(''); setErrGate(''); setWarn('')
+    if (isRelayAcara && selected.length !== relayInfo.saiz) {
+      return setErr(`Relay mesti tepat ${relayInfo.saiz} atlet. Pilih ${relayInfo.saiz} atlet untuk Pasukan ${pasukanPilih}.`)
+    }
     if (selected.length === 0) return setErr('Pilih sekurang-kurangnya seorang atlet.')
 
     const kejohananId = kejohanan.id
@@ -947,9 +980,11 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
 
       for (const { pRec } of toUpdate) {
         const acaraIds = [...new Set([...(pRec.acaraIds || []), aceraId])]
+        const updateData = { acaraIds, updatedAt: serverTimestamp() }
+        if (isRelayAcara) { updateData.pasukanRelay = pasukanPilih; updateData.isRelay = true }
         await updateDoc(
           doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', pRec.noKP),
-          { acaraIds, updatedAt: serverTimestamp() }
+          updateData
         )
       }
 
@@ -982,7 +1017,8 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
                 kategoriKod: kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList),
                 acaraIds:    [aceraId],
                 isAktif:     true,
-                isRelay:     false,
+                isRelay:     isRelayAcara,
+                ...(isRelayAcara ? { pasukanRelay: pasukanPilih } : {}),
                 createdAt:   serverTimestamp(),
                 updatedAt:   serverTimestamp(),
               }
@@ -1020,12 +1056,32 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
           </div>
-          <div className="flex gap-2 mt-2 flex-wrap">
+          <div className="flex gap-2 mt-2 flex-wrap items-center">
             <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
               slotBaki > 0 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
             }`}>
-              {slotBaki > 0 ? `${sekolahSudah}/${hadAcara} slot` : `${sekolahSudah}/${hadAcara} PENUH`}
+              {isRelayAcara
+                ? slotBaki > 0
+                  ? `${pasukanSedia.length}/${relayInfo.had} pasukan · ${sekolahSudah}/${hadAcara} atlet`
+                  : `PENUH — ${relayInfo.had} pasukan`
+                : slotBaki > 0
+                  ? `${sekolahSudah}/${hadAcara} slot`
+                  : `${sekolahSudah}/${hadAcara} PENUH`
+              }
             </span>
+            {isRelayAcara && slotBaki > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-gray-500 font-medium">Daftar sebagai:</span>
+                <div className="flex gap-1">
+                  {pasukanAvail.slice(0, relayInfo.had).map(l => (
+                    <button key={l} onClick={() => { setPasukanPilih(l); setSelected([]) }}
+                      className={`text-[10px] font-black px-2 py-0.5 rounded border transition-colors ${pasukanPilih === l ? 'bg-[#003399] text-white border-[#003399]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#003399]'}`}>
+                      Pasukan {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1042,12 +1098,15 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
             </div>
           ) : (
             <div className="space-y-1.5">
-              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">Pilih Atlet ({atletLayak.length} layak)</p>
+              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">
+                {isRelayAcara ? `Pilih ${relayInfo.saiz} Atlet — Pasukan ${pasukanPilih} (${selected.length}/${relayInfo.saiz})` : `Pilih Atlet (${atletLayak.length} layak)`}
+              </p>
               {atletLayak.map(a => {
                 const katKira = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                 const kat = katKira || a.kategoriKod
                 const isSelected  = selected.includes(a.noKP)
-                const willExceed  = !isSelected && selected.length >= slotBaki
+                const maxPilih    = isRelayAcara ? relayInfo.saiz : slotBaki
+                const willExceed  = !isSelected && selected.length >= maxPilih
                 return (
                   <button key={a.noKP} type="button"
                     onClick={() => !willExceed && toggleSelect(a.noKP)}
@@ -1305,10 +1364,14 @@ function TukarKategoriModal({ atlet, schoolId, kejohananId, tahunKej, kategoriLi
 
 // ─── Modal: Buang Atlet dari Acara ────────────────────────────────────────────
 
-function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, onSaved }) {
+function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, onSaved, semuaPasukan = [] }) {
   const [saving, setSaving] = useState(false)
+  const isRelay   = acara.jenisAcara === 'relay'
+  const pasukan   = atlet?.pasukanRelay || pRec?.pasukanRelay || null
+  // semuaPasukan = semua ahli pasukan yang sama (untuk buang keseluruhan pasukan)
+  const ahliSamaPasukan = semuaPasukan.filter(p => p.pasukanRelay === pasukan)
 
-  async function handleBuang() {
+  async function buangSeorang() {
     setSaving(true)
     try {
       const docId   = pRec.id || pRec.noKP
@@ -1318,8 +1381,28 @@ function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, 
       if (acaraBaru.length === 0) {
         await deleteDoc(ref)
       } else {
-        await updateDoc(ref, { acaraIds: acaraBaru, updatedAt: serverTimestamp() })
+        await updateDoc(ref, { acaraIds: acaraBaru, pasukanRelay: null, updatedAt: serverTimestamp() })
       }
+      onSaved(); onClose()
+    } catch (e) { alert(e.message); setSaving(false) }
+  }
+
+  async function buangPasukan() {
+    setSaving(true)
+    try {
+      const aceraId = acara.aceraId || acara.id
+      const batch = writeBatch(db)
+      for (const ahli of ahliSamaPasukan) {
+        const docId = ahli.id || ahli.noKP
+        const acaraBaru = (ahli.acaraIds || []).filter(id => id !== aceraId)
+        const ref = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran', docId)
+        if (acaraBaru.length === 0) {
+          batch.delete(ref)
+        } else {
+          batch.update(ref, { acaraIds: acaraBaru, pasukanRelay: null, updatedAt: serverTimestamp() })
+        }
+      }
+      await batch.commit()
       onSaved(); onClose()
     } catch (e) { alert(e.message); setSaving(false) }
   }
@@ -1333,16 +1416,38 @@ function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, 
           </svg>
         </div>
         <h3 className="text-sm font-bold text-gray-800 mb-1">Buang Pendaftaran?</h3>
-        <p className="text-xs text-gray-500 mb-4">
-          Buang <strong>{atlet?.namaAtlet || atlet?.nama}</strong> dari <strong>{acara.namaAcara}</strong>?
-        </p>
-        <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Batal</button>
-          <button onClick={handleBuang} disabled={saving}
-            className="flex-1 py-2 text-xs font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
-            {saving ? 'Membuang…' : 'Buang'}
-          </button>
-        </div>
+        {isRelay && pasukan ? (
+          <>
+            <p className="text-xs text-gray-500 mb-1">
+              <strong>{atlet?.namaAtlet || atlet?.nama}</strong> — Pasukan <strong>{pasukan}</strong>
+            </p>
+            <p className="text-xs text-gray-400 mb-4">Buang atlet ini sahaja, atau buang keseluruhan Pasukan {pasukan} ({ahliSamaPasukan.length} atlet)?</p>
+            <div className="flex flex-col gap-2">
+              <button onClick={buangSeorang} disabled={saving}
+                className="w-full py-2 text-xs font-bold bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                {saving ? 'Membuang…' : `Buang Atlet Ini Sahaja`}
+              </button>
+              <button onClick={buangPasukan} disabled={saving}
+                className="w-full py-2 text-xs font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
+                {saving ? 'Membuang…' : `Buang Keseluruhan Pasukan ${pasukan} (${ahliSamaPasukan.length} atlet)`}
+              </button>
+              <button onClick={onClose} className="w-full py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Batal</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-gray-500 mb-4">
+              Buang <strong>{atlet?.namaAtlet || atlet?.nama}</strong> dari <strong>{acara.namaAcara}</strong>?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="flex-1 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Batal</button>
+              <button onClick={buangSeorang} disabled={saving}
+                className="flex-1 py-2 text-xs font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
+                {saving ? 'Membuang…' : 'Buang'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -1487,19 +1592,25 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
                       <td className="px-3 py-2.5">
                         <div className="flex justify-center gap-1">
                           {kejohananId && (
-                            <button onClick={() => setTukarKatAtlet(a)}
-                              className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Tukar Kategori">
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
-                            </button>
+                            <Tip text="Tukar Kategori">
+                              <button onClick={() => setTukarKatAtlet(a)}
+                                className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
+                              </button>
+                            </Tip>
                           )}
-                          <button onClick={() => setModal({ type:'edit', data:a })}
-                            className="p-1 text-gray-400 hover:text-[#003399] hover:bg-blue-50 rounded transition-colors" title="Edit">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                          </button>
-                          <button onClick={() => setConfirmDel(a)}
-                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Padam">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                          </button>
+                          <Tip text="Edit atlet">
+                            <button onClick={() => setModal({ type:'edit', data:a })}
+                              className="p-1 text-gray-400 hover:text-[#003399] hover:bg-blue-50 rounded transition-colors">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            </button>
+                          </Tip>
+                          <Tip text="Padam atlet">
+                            <button onClick={() => setConfirmDel(a)}
+                              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </Tip>
                         </div>
                       </td>
                     </tr>
@@ -1754,18 +1865,13 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
             const aceraId    = acara.aceraId || acara.id
             const peserta    = pesertaByAcara[aceraId] || []
             const pesertaSek = pesertaSekolahByAcara[aceraId] || []
-            const _katObj    = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
-            const hadAcara   = (() => {
-              if (acara.jenisAcara === 'relay' && _katObj) {
-                const saizPasukan = Number(_katObj.saizPasukan) || 4
-                const hadPasukan  = acara.jantina === 'P'
-                  ? (Number(_katObj.hadPasukanP) || 1)
-                  : (Number(_katObj.hadPasukanL) || 1)
-                return saizPasukan * hadPasukan
-              }
-              return acara.hadAtletPerSekolah || 2
-            })()
-            const slotBaki   = hadAcara - pesertaSek.length
+            const isRelayAcara2 = acara.jenisAcara === 'relay'
+            const relayInfo2    = isRelayAcara2 ? hadRelayInfo(acara, kategoriList) : null
+            const hadAcara      = isRelayAcara2 ? relayInfo2.total : (acara.hadAtletPerSekolah || 2)
+            const pasukanSekSet = isRelayAcara2 ? [...new Set(pesertaSek.map(p => p.pasukanRelay || 'A'))] : []
+            const slotBaki      = isRelayAcara2
+              ? (relayInfo2.had - pasukanSekSet.length)
+              : (hadAcara - pesertaSek.length)
             const isSelected = selectedAcara?.aceraId === aceraId || selectedAcara?.id === aceraId
 
             return (
@@ -1793,7 +1899,12 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                     <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${
                       slotBaki > 0 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
                     }`}>
-                      {slotBaki > 0 ? `${pesertaSek.length}/${hadAcara}` : 'PENUH'}
+                      {isRelayAcara2
+                        ? slotBaki > 0
+                          ? `${[...new Set(pesertaSek.map(p=>p.pasukanRelay||'A'))].length}/${relayInfo2.had} pskmn`
+                          : 'PENUH'
+                        : slotBaki > 0 ? `${pesertaSek.length}/${hadAcara}` : 'PENUH'
+                      }
                     </span>
                     <svg className={`w-4 h-4 text-gray-400 transition-transform ${isSelected?'rotate-180':''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -1803,27 +1914,33 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
 
                 {isSelected && (() => {
                   const _katObj2  = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
+                  const pasukanSediaInline = [...new Set(pesertaSek.map(p => p.pasukanRelay || 'A'))]
+                  const pasukanSediaTambah = PASUKAN_LABELS.find(l => !pasukanSediaInline.includes(l)) || 'A'
                   const sudahDaftar = pesertaSek.map(p => p.noKP)
                   const isAcaraTerbuka2 = acara.isTerbuka || acara.kategoriKod === 'TERBUKA'
                   const atletLayak  = atletSekolah.filter(a => {
                     if (a.isAktif === false) return false
                     if (sudahDaftar.includes(a.noKP)) return false
-                    const pRecAtlet = pendaftaranList.find(p => p.noKP === a.noKP)
+                    if (a.jantina !== acara.jantina) return false
+                    const pRecAtlet   = pendaftaranList.find(p => p.noKP === a.noKP)
                     const overrideKat = pRecAtlet?.kategoriOverride || null
                     if (isAcaraTerbuka2) {
                       const katTerbuka = acara.kategoriTerbuka || []
-                      if (katTerbuka.length === 0) return false
+                      if (katTerbuka.length === 0) return true  // terbuka semua kat
                       const katAtlet = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                       return katAtlet && katTerbuka.includes(katAtlet)
                     }
-                    if (a.jantina !== acara.jantina) return false
                     const kat = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                     return kat === acara.kategoriKod
                   })
                   const selSet   = inlineSelected[aceraId] || new Set()
                   const isSaving = inlineSaving[aceraId] || false
                   const errMsg   = inlineErr[aceraId] || ''
-                  const slotBaki2 = hadAcara - pesertaSek.length
+                  const slotBaki2 = isRelayAcara2
+                    ? (relayInfo2.had - pasukanSekSet.length)
+                    : (hadAcara - pesertaSek.length)
+                  // Relay: max pilih = saizPasukan (bukan total), label pasukan seterusnya
+                  const maxPilihInline = isRelayAcara2 ? (relayInfo2?.saiz || 4) : slotBaki2
 
                   function toggleAtlet(noKP) {
                     setInlineSelected(prev => {
@@ -1835,6 +1952,10 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
 
                   async function handleDaftar() {
                     if (selSet.size === 0) return
+                    if (isRelayAcara2 && selSet.size !== (relayInfo2?.saiz || 4)) {
+                      setInlineErr(p => ({ ...p, [aceraId]: `Relay mesti tepat ${relayInfo2?.saiz || 4} atlet untuk satu pasukan.` }))
+                      return
+                    }
                     setInlineSaving(p => ({ ...p, [aceraId]: true }))
                     setInlineErr(p => ({ ...p, [aceraId]: '' }))
                     try {
@@ -1907,7 +2028,8 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                             namaSekolah: sklData.namaSekolah || atlet.kodSekolah,
                             kategoriKod: katEfektif,
                             ...(overrideKat ? { kategoriOverride: overrideKat } : {}),
-                            acaraIds: [aceraId], isAktif: true, isRelay: false,
+                            acaraIds: [aceraId], isAktif: true, isRelay: isRelayAcara2,
+                            ...(isRelayAcara2 ? { pasukanRelay: pasukanSediaTambah } : {}),
                             createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
                           })
                           pendLiveByKP[noKP] = { noKP, acaraIds: [aceraId] }
@@ -1933,31 +2055,65 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                       {pesertaSek.length > 0 && (
                         <div>
                           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Sudah Daftar</p>
-                          <div className="space-y-1">
-                            {pesertaSek.map(p => {
-                              const kat = kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
-                              return (
-                                <div key={p.noBib || p.noKP} className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-100 rounded-lg">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <svg className="w-3.5 h-3.5 text-green-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                    <span className="text-[9px] font-black font-mono text-[#003399] bg-blue-50 px-1.5 py-0.5 rounded">{p.noBib}</span>
-                                    <p className="text-xs font-semibold text-gray-800 truncate">{p.namaAtlet}</p>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {kat && <KategoriBadge kat={kat} kategoriList={kategoriList} />}
-                                    <JantinaBadge j={p.jantina} />
-                                    {!pendaftaranTutup && (
-                                      <button onClick={() => setModal({ type:'buang', atlet:p, acara })}
-                                        className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-red-500 bg-red-50 border border-red-200 hover:bg-red-100 rounded transition-colors">
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                                        Buang
-                                      </button>
-                                    )}
-                                  </div>
+                          {isRelayAcara2 ? (
+                            // Relay — group by pasukan
+                            PASUKAN_LABELS.filter(l => pesertaSek.some(p => (p.pasukanRelay || 'A') === l)).map(label => (
+                              <div key={label} className="mb-2">
+                                <p className="text-[9px] font-black text-purple-700 uppercase tracking-widest mb-1 px-1">Pasukan {label}</p>
+                                <div className="space-y-1">
+                                  {pesertaSek.filter(p => (p.pasukanRelay || 'A') === label).map(p => {
+                                    const kat = kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
+                                    return (
+                                      <div key={p.noBib || p.noKP} className="flex items-center justify-between px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <svg className="w-3.5 h-3.5 text-purple-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                          <span className="text-[9px] font-black font-mono text-[#003399] bg-blue-50 px-1.5 py-0.5 rounded">{p.noBib}</span>
+                                          <p className="text-xs font-semibold text-gray-800 truncate">{p.namaAtlet}</p>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {kat && <KategoriBadge kat={kat} kategoriList={kategoriList} />}
+                                          <JantinaBadge j={p.jantina} />
+                                          {!pendaftaranTutup && (
+                                            <button onClick={() => setModal({ type:'buang', atlet:p, acara, semuaPasukan: pesertaSek })}
+                                              className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-red-500 bg-red-50 border border-red-200 hover:bg-red-100 rounded transition-colors">
+                                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                              Buang
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
                                 </div>
-                              )
-                            })}
-                          </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="space-y-1">
+                              {pesertaSek.map(p => {
+                                const kat = kiraKategori(p.tarikhLahir, p.jantina, tahunKej, kategoriList)
+                                return (
+                                  <div key={p.noBib || p.noKP} className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-100 rounded-lg">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <svg className="w-3.5 h-3.5 text-green-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                      <span className="text-[9px] font-black font-mono text-[#003399] bg-blue-50 px-1.5 py-0.5 rounded">{p.noBib}</span>
+                                      <p className="text-xs font-semibold text-gray-800 truncate">{p.namaAtlet}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {kat && <KategoriBadge kat={kat} kategoriList={kategoriList} />}
+                                      <JantinaBadge j={p.jantina} />
+                                      {!pendaftaranTutup && (
+                                        <button onClick={() => setModal({ type:'buang', atlet:p, acara })}
+                                          className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-red-500 bg-red-50 border border-red-200 hover:bg-red-100 rounded transition-colors">
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                          Buang
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1970,12 +2126,16 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                             </p>
                           ) : (
                             <>
-                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Pilih Atlet</p>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
+                                {isRelayAcara2
+                                  ? `Daftar Pasukan ${pasukanSediaTambah} — Pilih ${relayInfo2?.saiz || 4} Atlet (${selSet.size}/${relayInfo2?.saiz || 4})`
+                                  : 'Pilih Atlet'}
+                              </p>
                               <div className="space-y-1">
                                 {atletLayak.map(a => {
                                   const kat = kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
                                   const isChosen  = selSet.has(a.noKP)
-                                  const willExceed = !isChosen && selSet.size >= slotBaki2
+                                  const willExceed = !isChosen && selSet.size >= maxPilihInline
                                   return (
                                     <button key={a.noKP} type="button"
                                       onClick={() => !willExceed && toggleAtlet(a.noKP)}
@@ -2013,7 +2173,9 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                                     className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-50">
                                     {isSaving
                                       ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Mendaftar…</>
-                                      : `Daftar ${selSet.size} Atlet`
+                                      : isRelayAcara2
+                                        ? `Daftar Pasukan ${pasukanSediaTambah} (${selSet.size} atlet)`
+                                        : `Daftar ${selSet.size} Atlet`
                                     }
                                   </button>
                                 </div>
@@ -2045,6 +2207,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
           kejohananId={kejohanan.id}
           onClose={() => setModal(null)}
           onSaved={onRefresh}
+          semuaPasukan={modal.semuaPasukan || []}
         />
       )}
     </div>
@@ -2496,7 +2659,9 @@ export default function PengurusDashboard() {
                         const isRelay = a.jenisAcara === 'relay' || a.isRelay === true
                         const had     = !isRelay ? (a.hadAtletPerSekolah ?? a.hadAtlet ?? null) : null
                         const lebih   = !isRelay && had !== null && peserta.length > had
-                        const catatan = ada ? (lebih ? 'Melebihi had' : 'Cukup kuota') : 'Belum daftar'
+                        const kurang  = !isRelay && ada && had !== null && peserta.length < had
+                        const penuh   = !isRelay && ada && had !== null && peserta.length === had
+                        const catatan = !ada ? '' : lebih ? 'Melebihi had' : kurang ? 'Tak cukup kuota' : penuh ? 'Kuota penuh' : 'Daftar'
                         return (
                           <tr key={aid} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                             <td className="px-3 py-2.5">
@@ -2507,15 +2672,20 @@ export default function PengurusDashboard() {
                               </span>
                             </td>
                             <td className="px-3 py-2.5 text-center">
-                              {ada ? (
-                                <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                  Daftar
-                                </span>
-                              ) : (
+                              {!ada ? (
                                 <span className="inline-flex items-center gap-1 text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full text-[10px] font-bold">
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                                   Belum
+                                </span>
+                              ) : kurang ? (
+                                <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                                  Daftar
+                                </span>
+                              ) : (
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${lebih ? 'text-red-600 bg-red-50 border border-red-200' : 'text-green-700 bg-green-50 border border-green-200'}`}>
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                  Daftar
                                 </span>
                               )}
                             </td>
@@ -2526,12 +2696,12 @@ export default function PengurusDashboard() {
                                 </span>
                               ) : (
                                 <>
-                                  <span className={ada ? 'text-green-700 font-bold' : 'text-gray-400'}>{peserta.length}</span>
+                                  <span className={!ada ? 'text-gray-400' : kurang ? 'text-amber-600 font-bold' : lebih ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>{peserta.length}</span>
                                   {had !== null && <span className="text-gray-400">/{had}</span>}
                                 </>
                               )}
                             </td>
-                            <td className={`px-3 py-2.5 text-[10px] ${lebih ? 'text-red-600 font-bold' : ada ? 'text-green-700' : 'text-gray-400'}`}>
+                            <td className={`px-3 py-2.5 text-[10px] font-medium ${lebih ? 'text-red-600 font-bold' : kurang ? 'text-amber-600 font-bold' : ada ? 'text-green-700' : 'text-gray-300'}`}>
                               {catatan}
                             </td>
                           </tr>

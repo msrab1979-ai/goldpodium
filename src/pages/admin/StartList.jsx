@@ -305,13 +305,15 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
   const [generating, setGen]      = useState(false)
   const [preview, setPreview]     = useState(null)
 
-  // Relay: group individu atlet → pasukan (1 per sekolah)
+  // Relay: group by kodSekolah + pasukanRelay (A/B/C/D)
   function groupRelayPasukan(atletList) {
     const map = {}
     atletList.forEach(p => {
-      const ks = p.kodSekolah || 'UNKNOWN'
-      if (!map[ks]) map[ks] = { kodSekolah: ks, ahliPasukan: [] }
-      map[ks].ahliPasukan.push(p)
+      const ks  = p.kodSekolah || 'UNKNOWN'
+      const pas = p.pasukanRelay || 'A'
+      const key = `${ks}_${pas}`
+      if (!map[key]) map[key] = { kodSekolah: ks, pasukanRelay: pas, ahliPasukan: [] }
+      map[key].ahliPasukan.push(p)
     })
     return Object.values(map)
   }
@@ -392,8 +394,9 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
           windSpeed: null,
           isWindLegal: null,
           peserta: h.peserta.map(p => isRelay ? ({
-            // Relay: 1 rekod per pasukan (sekolah)
+            // Relay: 1 rekod per pasukan (sekolah+pasukanRelay)
             kodSekolah:   p.kodSekolah,
+            pasukanRelay: p.pasukanRelay || 'A',
             lorong:       p.lorong ?? null,
             ahliPasukan:  (p.ahliPasukan || []).map(a => ({
               noBib:      atletBibMap[a.noKP] || a.noBib || '',
@@ -538,9 +541,12 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
                     <tbody>
                       {[...h.peserta].sort((a,b)=>a.lorong-b.lorong).map((p, idx) => (
                         isRelay ? (
-                          <tr key={p.kodSekolah || idx} className="border-t border-gray-50">
+                          <tr key={`${p.kodSekolah}_${p.pasukanRelay || 'A'}_${idx}`} className="border-t border-gray-50">
                             <td className="px-2 py-1 text-center font-black text-purple-700">{p.lorong}</td>
-                            <td className="px-2 py-1 font-semibold text-gray-800">{sekolahMap[p.kodSekolah] || p.kodSekolah}</td>
+                            <td className="px-2 py-1 font-semibold text-gray-800">
+                              {sekolahMap[p.kodSekolah] || p.kodSekolah}
+                              {p.pasukanRelay && <span className="ml-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">Pskmn {p.pasukanRelay}</span>}
+                            </td>
                             <td className="px-2 py-1 text-center text-gray-500">{(p.ahliPasukan||[]).length} atlet</td>
                           </tr>
                         ) : (
@@ -673,13 +679,15 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
   const bilLorong = acara.bilanganLorong
     || (console.warn(`StartList: acara ${acara.aceraId} tiada bilanganLorong — guna default 8`), 8)
 
-  // ── RELAY: group by kodSekolah → 1 pasukan per sekolah ────────────────────
+  // ── RELAY: group by kodSekolah + pasukanRelay ─────────────────────────────
   if (isRelay) {
     const pasukanMap = {}
     peserta.forEach(p => {
-      const ks = p.kodSekolah || 'UNKNOWN'
-      if (!pasukanMap[ks]) pasukanMap[ks] = { kodSekolah: ks, ahliPasukan: [] }
-      pasukanMap[ks].ahliPasukan.push(p)
+      const ks  = p.kodSekolah || 'UNKNOWN'
+      const pas = p.pasukanRelay || 'A'
+      const key = `${ks}_${pas}`
+      if (!pasukanMap[key]) pasukanMap[key] = { kodSekolah: ks, pasukanRelay: pas, ahliPasukan: [] }
+      pasukanMap[key].ahliPasukan.push(p)
     })
     let pasukanList = Object.values(pasukanMap)
 
@@ -709,9 +717,10 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
         fasa: h.fasa, noHeat: h.noHeat, status: 'belum_mula',
         windSpeed: null, isWindLegal: null,
         peserta: h.peserta.map(pp => ({
-          kodSekolah:  pp.kodSekolah,
-          lorong:      pp.lorong ?? null,
-          ahliPasukan: (pp.ahliPasukan || []).map(a => ({
+          kodSekolah:   pp.kodSekolah,
+          pasukanRelay: pp.pasukanRelay || 'A',
+          lorong:       pp.lorong ?? null,
+          ahliPasukan:  (pp.ahliPasukan || []).map(a => ({
             noBib:       atletBibMap[a.noKP] || a.noBib || '',
             namaAtlet:   a.namaAtlet   || '',
             kategoriKod: a.kategoriKod || '',
@@ -1041,6 +1050,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   function buatEntryPeserta(p) {
     return isRelay ? ({
       kodSekolah:    p.kodSekolah,
+      pasukanRelay:  p.pasukanRelay || 'A',
       ahliPasukan:   (p.ahliPasukan || []).map(a => ({
         noBib:       atletBibMap[a.noKP] || a.noBib || '',
         namaAtlet:   a.namaAtlet   || '',

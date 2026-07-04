@@ -158,6 +158,17 @@ const WA_CONFIG_DEFAULT = {
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
   'focus:outline-none focus:ring-2 focus:ring-[#003399]/25 focus:border-[#003399] bg-gray-50'
 
+function Tip({ text, children }) {
+  return (
+    <span className="relative group/tip">
+      {children}
+      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-white opacity-0 group-hover/tip:opacity-100 transition-opacity duration-0 z-50">
+        {text}
+      </span>
+    </span>
+  )
+}
+
 // ─── Auto-detect helpers ──────────────────────────────────────────────────────
 
 function detectJenisFromNama(nama) {
@@ -357,7 +368,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
   async function handleSave() {
     setErr('')
     if (!form.namaAcaraPendek.trim()) return setErr('Nama wajib')
-    if (!form.kategoriKod) return setErr('Kategori wajib')
+    if (!isTerbuka && !form.kategoriKod) return setErr('Kategori wajib')
     if (form.peringkatMode === 'separuh_akhir' && !form.parentAcaraId)
       return setErr('Pilih acara QF sebelum SF')
     if (form.peringkatMode === 'final_p' && !form.parentAcaraId)
@@ -453,9 +464,11 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
         </td>
         {/* Max/Skl */}
         <td className="px-1.5 py-1.5">
-          <input type="number" min={1} max={20} value={form.hadAtletPerSekolah}
-            onChange={e => set('hadAtletPerSekolah', e.target.value)}
-            className={ic + ' w-14 text-center'} />
+          <Tip text={form.jenisAcara === 'relay' ? 'Bilangan PASUKAN per sekolah (relay)' : 'Bilangan atlet per sekolah'}>
+            <input type="number" min={1} max={20} value={form.hadAtletPerSekolah}
+              onChange={e => set('hadAtletPerSekolah', e.target.value)}
+              className={ic + ' w-14 text-center' + (form.jenisAcara === 'relay' ? ' border-purple-300 bg-purple-50' : '')} />
+          </Tip>
         </td>
         {/* Peringkat */}
         <td className="px-1.5 py-1.5">
@@ -794,7 +807,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
     const docId = String(form.noAcara).trim()
     if (!docId)                       return setErr('No Acara wajib')
     if (!form.namaAcaraPendek.trim()) return setErr('Nama acara wajib')
-    if (!form.kategoriKod)            return setErr('Kategori wajib')
+    if (!isTerbuka && !form.kategoriKod) return setErr('Kategori wajib')
     if (form.peringkatMode === 'separuh_akhir' && !form.parentAcaraId)
       return setErr('Pilih acara QF sebelum SF')
     if (form.peringkatMode === 'final_p' && !form.parentAcaraId)
@@ -954,9 +967,11 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
         </td>
         {/* Max/Skl */}
         <td className="px-1.5 py-1.5">
-          <input type="number" min={1} max={20} value={form.hadAtletPerSekolah}
-            onChange={e => set('hadAtletPerSekolah', e.target.value)}
-            className={ic + ' w-14 text-center'} />
+          <Tip text={form.jenisAcara === 'relay' ? 'Bilangan PASUKAN per sekolah (relay)' : 'Bilangan atlet per sekolah'}>
+            <input type="number" min={1} max={20} value={form.hadAtletPerSekolah}
+              onChange={e => set('hadAtletPerSekolah', e.target.value)}
+              className={ic + ' w-14 text-center' + (form.jenisAcara === 'relay' ? ' border-purple-300 bg-purple-50' : '')} />
+          </Tip>
         </td>
         {/* Peringkat */}
         <td className="px-1.5 py-1.5">
@@ -1304,7 +1319,7 @@ function HadCell({ acara, schoolId, kejId, onUpdated }) {
       <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       </svg>
-      {acara.hadAtletPerSekolah ?? '?'}
+      {acara.hadAtletPerSekolah ?? '?'}{acara.jenisAcara === 'relay' ? ' pskmn' : ''}
       <svg className="w-2 h-2 text-emerald-400 group-hover:text-[#003399] ml-0.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
       </svg>
@@ -2286,7 +2301,7 @@ function HadPesertaPanel({ acaraList, schoolId, kejId, onRefresh, kategoriList =
                             a.jantina === 'L' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
                           }`}>{a.jantina}</span>
                         </td>
-                        <td className="px-3 py-2 text-center text-gray-400">{a.hadAtletPerSekolah ?? '—'}</td>
+                        <td className="px-3 py-2 text-center text-gray-400">{a.hadAtletPerSekolah ?? '—'}{a.jenisAcara === 'relay' ? <span className="ml-0.5 text-[9px] text-purple-500">pskmn</span> : ''}</td>
                         <td className="px-3 py-2 text-center font-black text-emerald-600">{had}</td>
                       </tr>
                     ))}
@@ -2765,7 +2780,7 @@ function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUp
                                   className="group inline-flex items-center gap-1 hover:text-[#003399] transition-colors"
                                   title="Klik untuk edit">
                                   <span className="text-sm font-black text-gray-800 group-hover:text-[#003399]">
-                                    {a.hadAtletPerSekolah ?? '—'}
+                                    {a.hadAtletPerSekolah ?? '—'}{a.jenisAcara === 'relay' && <span className="ml-0.5 text-[9px] font-normal text-purple-500">pskmn</span>}
                                   </span>
                                   <svg className="w-3 h-3 text-gray-300 group-hover:text-[#003399] opacity-0 group-hover:opacity-100 transition-opacity"
                                     fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -3602,14 +3617,18 @@ export default function AcaraSetup() {
                                   </td>
                                   <td className="px-3 py-2">
                                     <div className="flex justify-center gap-1">
-                                      <button onClick={() => setEditingRow(rowKey)}
-                                        className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Edit baris ini">
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                      </button>
-                                      <button onClick={() => setDelTarget(a)}
-                                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                      </button>
+                                      <Tip text="Edit acara">
+                                        <button onClick={() => setEditingRow(rowKey)}
+                                          className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        </button>
+                                      </Tip>
+                                      <Tip text="Padam acara">
+                                        <button onClick={() => setDelTarget(a)}
+                                          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        </button>
+                                      </Tip>
                                     </div>
                                   </td>
                                 </tr>
@@ -3751,14 +3770,18 @@ export default function AcaraSetup() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex justify-center gap-1">
-                            <button onClick={() => setModal({ mode: 'edit', data: a })}
-                              className="p-1 text-gray-400 hover:text-[#003399] hover:bg-blue-50 rounded transition-colors">
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                            </button>
-                            <button onClick={() => setDelTarget(a)}
-                              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
+                            <Tip text="Edit acara">
+                              <button onClick={() => setModal({ mode: 'edit', data: a })}
+                                className="p-1 text-gray-400 hover:text-[#003399] hover:bg-blue-50 rounded transition-colors">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                              </button>
+                            </Tip>
+                            <Tip text="Padam acara">
+                              <button onClick={() => setDelTarget(a)}
+                                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            </Tip>
                           </div>
                         </td>
                       </tr>

@@ -101,8 +101,10 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       if (bK !== null) return 1
       return 0
     })
-  // Relay guna kodSekolah sebagai key; individu guna noBib (bukan noKP — PDPA)
-  const pKey = p => isRelay ? (p.kodSekolah || p.lorong) : (p.noBib || p.noKP)
+  // Relay guna kodSekolah+pasukanRelay sebagai key; individu guna noBib (bukan noKP — PDPA)
+  const pKey = p => isRelay
+    ? `${p.kodSekolah || p.lorong}_${p.pasukanRelay || 'A'}`
+    : (p.noBib || p.noKP)
   const computedRankMap = new Map()
   // Lompat Tinggi: GUNA kedudukan manual pencatat (count-back rules MSSM)
   // Lain: sequential auto dengan tiebreak masaSebenar → kedudukan manual
@@ -169,8 +171,8 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       const pingat     = NAMA_PINGAT[rank]
       const tId        = `${p.kodSekolah}_${kejId}`
       const tRef       = tPath('medal_tally', tId)
-      // Relay: guna kodSekolah; individu: guna noBib → lorong → rank (bukan noKP — PDPA)
-      const contribKey = `contrib_${heatDoc.id}_${isRelay ? p.kodSekolah : (p.noBib || p.lorong || rank)}`
+      // Relay: guna kodSekolah+pasukanRelay; individu: guna noBib → lorong → rank (bukan noKP — PDPA)
+      const contribKey = `contrib_${heatDoc.id}_${isRelay ? `${p.kodSekolah}_${p.pasukanRelay || 'A'}` : (p.noBib || p.lorong || rank)}`
       try {
         await setDoc(tRef, {
           kodSekolah: p.kodSekolah, namaSekolah: getNamaSekolah(p), kejohananId: kejId,
@@ -514,7 +516,7 @@ export async function rollbackPostRasmi(db, heatDoc, acaraDoc, kejId, config = {
     if (p.kodSekolah) {
       const tId        = `${p.kodSekolah}_${kejId}`
       const tRef       = tPath('medal_tally', tId)
-      const contribKey = `contrib_${heatDoc.id}_${isRelay ? p.kodSekolah : (p.noBib || p.lorong || '')}`
+      const contribKey = `contrib_${heatDoc.id}_${isRelay ? `${p.kodSekolah}_${p.pasukanRelay || 'A'}` : (p.noBib || p.lorong || '')}`
       try {
         const tSnap    = await getDoc(tRef)
         if (tSnap.exists()) {

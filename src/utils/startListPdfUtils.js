@@ -492,12 +492,16 @@ export function buatStartListPDFUnified({
           }
         }
       } else if (isRelay) {
-        const getBib = p => bibPrefixMap[p.kodSekolah] || p.kodSekolah || '—'
+        const getBib     = p => bibPrefixMap[p.kodSekolah] || p.kodSekolah || '—'
+        const getNamaPas = p => {
+          const nama = namaSekolahMap[p.kodSekolah] || p.kodSekolah
+          return p.pasukanRelay ? `${nama} — Pskmn ${p.pasukanRelay}` : nama
+        }
         if (sal.id === 'juruhebah') {
           head = [['Lrg', 'Sekolah / Pasukan', 'No BIB']]
           body = peserta.map(p => [
             p.lorong ?? '—',
-            namaSekolahMap[p.kodSekolah] || p.kodSekolah,
+            getNamaPas(p),
             getBib(p),
           ])
           colStyles = { 0:{halign:'center',cellWidth:14}, 1:{cellWidth:'auto'}, 2:{halign:'center',cellWidth:40,fontStyle:'bold',overflow:'visible'} }
@@ -505,7 +509,7 @@ export function buatStartListPDFUnified({
           head = [['Lrg', 'Sekolah / Pasukan', 'No BIB', 'Hadir (✓ / DNS)']]
           body = peserta.map(p => [
             p.lorong ?? '—',
-            namaSekolahMap[p.kodSekolah] || p.kodSekolah,
+            getNamaPas(p),
             getBib(p),
             '',
           ])
@@ -514,7 +518,7 @@ export function buatStartListPDFUnified({
           head = [['Lrg', 'Sekolah / Pasukan', 'No BIB', 'Masa', 'Keputusan']]
           body = peserta.map(p => [
             p.lorong ?? '—',
-            namaSekolahMap[p.kodSekolah] || p.kodSekolah,
+            getNamaPas(p),
             getBib(p),
             '', '',
           ])
