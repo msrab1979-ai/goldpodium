@@ -235,8 +235,8 @@ function KejohananModal({ mode, initial, onClose, onSaved, schoolId }) {
           mataPingat:             mataPingatObj,
           showJumlahMedalTally:   !!form.showJumlahMedalTally,
           catatanAdmin:           form.catatanAdmin.trim(),
-          statusKejohanan: 'persediaan',
-          isAktif:        false,
+          statusKejohanan: 'aktif',
+          isAktif:        true,
           createdAt:      serverTimestamp(),
           createdBy:      currentUser.uid,
         })

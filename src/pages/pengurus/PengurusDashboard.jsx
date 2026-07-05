@@ -66,6 +66,45 @@ function kiraKategori(tarikhLahir, jantina, tahunKejohanan, kategoriList = []) {
   return null
 }
 
+// Kira kuota Gate 1 dari data tempatan (pendaftaranList + acaraList + kategoriList).
+// Tiada Firestore call — guna data yang dah diload dalam state.
+// Logik sama dengan gate1_hadAcaraAtlet: guna isIndividu field (bukan jenisAcara).
+// Return: { penuh: bool, semasa: number, had: number, namaAcara: string[] }
+function kiraKuotaAtletLocal(noKP, isAcaraBaruIndividu, tarikhLahir, jantina, tahunKej, pendaftaranList, allAcaraList, kategoriList) {
+  const katAtlet = kiraKategori(tarikhLahir, jantina, tahunKej, kategoriList)
+  if (!katAtlet) return { penuh: false, semasa: 0, had: 0, namaAcara: [] }
+
+  const katObj = kategoriList.find(k => (k.kod || k.id) === katAtlet)
+  const hadIndividu = katObj?.hadAcaraIndividu ?? 3
+  const hadBeregu   = katObj?.hadAcaraBeregu   ?? 2
+  const had = isAcaraBaruIndividu ? hadIndividu : hadBeregu
+
+  const pendAtlet = pendaftaranList.filter(p => p.noKP === noKP)
+  const semuaAcaraIds = pendAtlet.flatMap(p => p.acaraIds || [])
+
+  let bilanganIndividu = 0
+  let bilanganBeregu   = 0
+  const namaIndividu = []
+  const namaBeregu   = []
+
+  semuaAcaraIds.forEach(id => {
+    const acaraDoc = allAcaraList.find(a => a.id === id)
+    if (!acaraDoc) return
+    // Ikut gate1: isIndividu === false → beregu, selain itu → individu
+    if (acaraDoc.isIndividu === false) {
+      bilanganBeregu++
+      namaBeregu.push(acaraDoc.namaAcara || id)
+    } else {
+      bilanganIndividu++
+      namaIndividu.push(acaraDoc.namaAcara || id)
+    }
+  })
+
+  const semasa = isAcaraBaruIndividu ? bilanganIndividu : bilanganBeregu
+  const namaAcara = isAcaraBaruIndividu ? namaIndividu : namaBeregu
+  return { penuh: semasa >= had, semasa, had, namaAcara }
+}
+
 function formatNoKP(raw) {
   const digits = String(raw || '').replace(/\D/g, '').slice(0, 12)
   if (digits.length < 12) return null
@@ -341,7 +380,7 @@ function AtletModal({ mode, initial, schoolId, kodSekolah, sekolahData, existing
         noKP: finalNoKP, nama: form.nama.trim(),
         jantina: form.jantina, tarikhLahir: form.tarikhLahir,
         noBib:           finalBib,
-        kodSekolah:      sekolahData?.kodSekolah || kodSekolah || '',
+        kodSekolah:      kodSekolah || '',
         kategoriSekolah: sekolahData?.kategori   || 'SM',
         negeri:          sekolahData?.negeri      || '',
         daerah:          sekolahData?.daerah      || '',
@@ -590,7 +629,7 @@ function ImportAtletModal({ schoolId, kodSekolah, sekolahData, existingBibs, onC
   const [saving,   setSaving]   = useState(false)
   const [fileErr,  setFileErr]  = useState('')
   const [done,     setDone]     = useState(false)
-  const [saveInfo, setSaveInfo] = useState({ ok: 0, skip: 0 })
+  const [saveInfo, setSaveInfo] = useState({ ok: 0, skip: 0, conflict: 0 })
 
   const bibPrefix = (sekolahData?.bibPrefix || '').toUpperCase()
   const bibFormat = Number(sekolahData?.bibFormat) || 3
@@ -665,29 +704,45 @@ function ImportAtletModal({ schoolId, kodSekolah, sekolahData, existingBibs, onC
     const valid = rows.filter(r => r.errs.length === 0)
     if (valid.length === 0) return
     setSaving(true)
-    let ok = 0, skip = 0
     try {
-      for (const r of valid) {
-        const snap = await getDoc(doc(db, 'tenants', schoolId, 'atlet', r.noKP))
-        if (snap.exists()) { skip++; continue }
-        await setDoc(doc(db, 'tenants', schoolId, 'atlet', r.noKP), {
-          noKP:            r.noKP,
-          nama:            r.nama,
-          jantina:         r.jantina,
-          tarikhLahir:     r.tarikhLahir,
-          warganegara:     'MY',
-          noBib:           r.noBib,
-          kodSekolah:      sekolahData?.kodSekolah || kodSekolah || '',
-          kategoriSekolah: sekolahData?.kategori   || '',
-          negeri:          sekolahData?.negeri      || '',
-          daerah:          sekolahData?.daerah      || '',
-          isAktif:         true,
-          createdAt:       serverTimestamp(),
-          updatedAt:       serverTimestamp(),
-        })
-        ok++
-      }
-      setSaveInfo({ ok, skip })
+      // Semak mana yang dah exist — satu batch parallel read
+      const snapshots = await Promise.all(
+        valid.map(r => getDoc(doc(db, 'tenants', schoolId, 'atlet', r.noKP)))
+      )
+      let ok = 0, skip = 0, conflict = 0
+      const batch = writeBatch(db)
+      valid.forEach((r, i) => {
+        const snap = snapshots[i]
+        const ref = doc(db, 'tenants', schoolId, 'atlet', r.noKP)
+        if (snap.exists()) {
+          const existingKod = snap.data().kodSekolah || ''
+          if (existingKod && existingKod !== kodSekolah) {
+            // noKP dimiliki sekolah lain — skip, jangan overwrite
+            conflict++
+            return
+          }
+          // Sekolah sama — update
+          skip++
+          batch.update(ref, {
+            nama: r.nama, jantina: r.jantina, tarikhLahir: r.tarikhLahir,
+            noBib: r.noBib, kodSekolah: kodSekolah || '',
+            kategoriSekolah: sekolahData?.kategori || '',
+            negeri: sekolahData?.negeri || '', daerah: sekolahData?.daerah || '',
+            isAktif: true, updatedAt: serverTimestamp(),
+          })
+        } else {
+          ok++
+          batch.set(ref, {
+            noKP: r.noKP, nama: r.nama, jantina: r.jantina, tarikhLahir: r.tarikhLahir,
+            warganegara: 'MY', noBib: r.noBib, kodSekolah: kodSekolah || '',
+            kategoriSekolah: sekolahData?.kategori || '',
+            negeri: sekolahData?.negeri || '', daerah: sekolahData?.daerah || '',
+            isAktif: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          })
+        }
+      })
+      await batch.commit()
+      setSaveInfo({ ok, skip, conflict })
       setDone(true)
       setTimeout(() => { onSaved(); onClose() }, 2000)
     } catch (e) {
@@ -824,7 +879,7 @@ function ImportAtletModal({ schoolId, kodSekolah, sekolahData, existingBibs, onC
               <div>
                 <p className="text-xs font-bold text-green-800">Import berjaya!</p>
                 <p className="text-[10px] text-green-700 mt-0.5">
-                  {saveInfo.ok} atlet disimpan{saveInfo.skip > 0 ? `, ${saveInfo.skip} dilangkau (noKP sudah wujud)` : ''}.
+                  {saveInfo.ok} atlet disimpan{saveInfo.skip > 0 ? `, ${saveInfo.skip} dikemas kini` : ''}{saveInfo.conflict > 0 ? `, ${saveInfo.conflict} dilangkau (noKP milik sekolah lain)` : ''}.
                 </p>
               </div>
             </div>
@@ -1460,7 +1515,7 @@ function BuangDaftarModal({ atlet, acara, pRec, schoolId, kejohananId, onClose, 
 
 // ─── Tab 1: Urus Atlet ────────────────────────────────────────────────────────
 
-function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, kejohananId, myPendaftaran, onRefreshPend }) {
+function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, kejohananId, myPendaftaran, onRefreshPend, onRefreshAtlet }) {
   const [atletList,      setAtletList]      = useState([])
   const [loading,        setLoading]        = useState(false)
   const [filterJ,        setFilterJ]        = useState('semua')
@@ -1470,6 +1525,8 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
   const [toast,          setToast]          = useState('')
   const [confirmDel,     setConfirmDel]     = useState(null)
   const [tukarKatAtlet,  setTukarKatAtlet]  = useState(null)
+  const [confirmResetAll, setConfirmResetAll] = useState(false)
+  const [resetAllSaving,  setResetAllSaving]  = useState(false)
 
   function showToast(msg) {
     setToast(msg)
@@ -1491,6 +1548,39 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
   }, [schoolId, kodSekolah])
 
   useEffect(() => { fetchAtlet() }, [fetchAtlet])
+
+  async function padamSemuaAtlet() {
+    if (!schoolId || !kodSekolah || !kejohananId) return
+    setResetAllSaving(true)
+    try {
+      // Load atlet + pendaftaran sekolah ini
+      const [atletSnap, pendSnap] = await Promise.all([
+        getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('kodSekolah', '==', kodSekolah))),
+        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran'), where('kodSekolah', '==', kodSekolah))),
+      ])
+      // Batch delete — max 500 per batch
+      const allRefs = [
+        ...atletSnap.docs.map(d => d.ref),
+        ...pendSnap.docs.map(d => d.ref),
+      ]
+      for (let i = 0; i < allRefs.length; i += 490) {
+        const batch = writeBatch(db)
+        allRefs.slice(i, i + 490).forEach(ref => batch.delete(ref))
+        await batch.commit()
+      }
+      // Padam counter
+      const counterRef = doc(db, 'tenants', schoolId, 'pendaftaran_counter', `${kejohananId}_${kodSekolah}`)
+      await deleteDoc(counterRef).catch(() => {})
+      showToast(`${atletSnap.size} atlet + ${pendSnap.size} pendaftaran dipadam.`)
+      setConfirmResetAll(false)
+      fetchAtlet()
+      onRefreshPend()
+    } catch (e) {
+      showToast('Gagal padam: ' + e.message)
+    } finally {
+      setResetAllSaving(false)
+    }
+  }
 
   const filtered = atletList.filter(a => {
     if (filterJ !== 'semua' && a.jantina !== filterJ) return false
@@ -1519,6 +1609,11 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setConfirmResetAll(true)}
+            className="flex items-center gap-2 px-3 py-2 border border-red-300 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            Padam Semua
+          </button>
           <button onClick={() => setShowImport(true)}
             className="flex items-center gap-2 px-4 py-2 border border-[#003399] text-[#003399] text-xs font-bold rounded-lg hover:bg-blue-50">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -1656,7 +1751,7 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
           sekolahData={sekolahData}
           existingBibs={atletList.map(a => a.noBib).filter(Boolean)}
           onClose={() => setShowImport(false)}
-          onSaved={() => { fetchAtlet(); showToast('Import atlet berjaya.') }} />
+          onSaved={() => { fetchAtlet(); onRefreshAtlet?.(); showToast('Import atlet berjaya.') }} />
       )}
       {confirmDel && (
         <PadamAtletModal
@@ -1665,6 +1760,29 @@ function TabAtlet({ schoolId, kodSekolah, sekolahData, tahunKej, kategoriList, k
           kejohananId={kejohananId}
           onClose={() => setConfirmDel(null)}
           onSaved={() => { fetchAtlet(); onRefreshPend(); showToast('Atlet berjaya dipadam.') }} />
+      )}
+      {confirmResetAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-900">Padam Semua Atlet?</p>
+                <p className="text-xs text-gray-500 mt-0.5">Semua atlet + pendaftaran sekolah ini akan dipadam kekal. Tindakan ini tidak boleh dibatalkan.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setConfirmResetAll(false)} disabled={resetAllSaving}
+                className="flex-1 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Batal</button>
+              <button onClick={padamSemuaAtlet} disabled={resetAllSaving}
+                className="flex-1 py-2 text-xs font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
+                {resetAllSaving ? 'Mempadam…' : 'Ya, Padam Semua'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {tukarKatAtlet && kejohananId && (
         <TukarKategoriModal
@@ -1964,69 +2082,122 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                     setInlineSaving(p => ({ ...p, [aceraId]: true }))
                     setInlineErr(p => ({ ...p, [aceraId]: '' }))
                     try {
-                      // Preload data sekali — kurang Firestore round-trips
-                      const [sekolahSnap, pendSnap] = await Promise.all([
+                      // ── Preload SEMUA data sekali — tiada Firestore reads dalam loop ──
+                      const [sekolahSnap, pendSnap, counterSnap, heatSnap] = await Promise.all([
                         getDoc(doc(db, 'tenants', schoolId, 'sekolah', atletSekolah[0]?.kodSekolah || '')),
-                        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran')),
+                        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran'), where('kodSekolah', '==', kodSekolah))),
+                        getDoc(doc(db, 'tenants', schoolId, 'pendaftaran_counter', `${kejohanan.id}_${atletSekolah[0]?.kodSekolah || ''}`)),
+                        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'heat'), where('aceraId', '==', aceraId))),
                       ])
+
+                      // GATE 8 — heat sudah dijana?
+                      if (heatSnap.size > 0) {
+                        setInlineErr(p => ({ ...p, [aceraId]: 'Pendaftaran ditutup — heat sudah dijana untuk acara ini.' }))
+                        setInlineSaving(p => ({ ...p, [aceraId]: false }))
+                        return
+                      }
+
                       const sklData = sekolahSnap.exists() ? sekolahSnap.data() : {}
                       const bibPfx = sklData.bibPrefix || atletSekolah[0]?.kodSekolah || 'BIB'
                       const bibFmt = Number(sklData.bibFormat) || 3
-                      const noBibSedia = pendSnap.docs.map(d => d.data().noBib).filter(Boolean)
-                      const noBibAtlet = atletSekolah.map(a => a.noBib).filter(Boolean)
-                      const senaraiNoBib = [...new Set([...noBibSedia, ...noBibAtlet])]
+
+                      // Build in-memory pendaftaran map — kemas kini setiap kali simpan
                       const pendLiveByKP = {}
                       pendSnap.docs.forEach(d => { const p = d.data(); if (p.noKP) pendLiveByKP[p.noKP] = p })
 
-                      // Validate + simpan satu-satu — Gate 1 baca Firestore live,
-                      // mesti simpan selepas setiap validate supaya kiraan had betul
-                      const counterRef = doc(db, 'tenants', schoolId, 'pendaftaran_counter', `${kejohanan.id}_${atletSekolah[0]?.kodSekolah || bibPfx}`)
-                      let lastNum = 0
-                      const counterSnap = await getDoc(counterRef)
-                      lastNum = counterSnap.exists() ? (counterSnap.data().lastBibNum || 0) : 0
-                      senaraiNoBib.forEach(nb => {
+                      // Kira lastNum dari counter + existing bibs
+                      const noBibSedia = pendSnap.docs.map(d => d.data().noBib).filter(Boolean)
+                      const noBibAtlet = atletSekolah.map(a => a.noBib).filter(Boolean)
+                      let lastNum = counterSnap.exists() ? (counterSnap.data().lastBibNum || 0) : 0
+                      ;[...noBibSedia, ...noBibAtlet].forEach(nb => {
                         if (nb.startsWith(bibPfx)) {
                           const n = parseInt(nb.slice(bibPfx.length), 10)
                           if (!isNaN(n) && n > lastNum) lastNum = n
                         }
                       })
 
+                      const counterRef = doc(db, 'tenants', schoolId, 'pendaftaran_counter', `${kejohanan.id}_${atletSekolah[0]?.kodSekolah || bibPfx}`)
+
+                      // Kira had acara (Gate 2) — relay: hadAtletPerSekolah = pasukan × saizPasukan
+                      const hadPasukan = acara.hadAtletPerSekolah ?? 2
+                      const saizPasukan = isRelayAcara2
+                        ? (kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)?.saizPasukan || 4)
+                        : 1
+                      const hadAcara = isRelayAcara2 ? hadPasukan * saizPasukan : hadPasukan
+                      let bilanganAcara = pendSnap.docs.filter(d => (d.data().acaraIds || []).includes(aceraId) && d.data().kodSekolah === kodSekolah).length
+                      const acaraBaruIsIndividu = acara.isIndividu ?? (acara.jenisAcara !== 'relay')
+
+                      // Untuk relay: kira pasukan sedia dari pendSnap (fresh), bukan pesertaSek (stale)
+                      const pasukanSediaFresh = isRelayAcara2
+                        ? [...new Set(pendSnap.docs.filter(d => (d.data().acaraIds || []).includes(aceraId)).map(d => d.data().pasukanRelay || 'A'))]
+                        : []
+                      const pasukanUntukBatch = isRelayAcara2
+                        ? (PASUKAN_LABELS.find(l => !pasukanSediaFresh.includes(l)) || 'A')
+                        : null
+
+                      // ── Validate semua dulu (in-memory) — baru batch write ──
+                      const batchOps = [] // { type: 'update'|'set', ref, data }
+
                       for (const noKP of selSet) {
                         const atlet = atletSekolah.find(a => a.noKP === noKP)
                         if (!atlet) continue
 
-                        // Gate check — baca live dari Firestore (penting untuk Gate 1)
-                        const hasil = await validasiPendaftaran({
-                          schoolId, noKP,
-                          tarikhLahir:    atlet.tarikhLahir,
-                          jantina:        atlet.jantina,
-                          kodSekolah:     atlet.kodSekolah,
-                          kejohananId:    kejohanan.id,
-                          aceraId,
-                          kategoriId:     acara.kategoriKod,
-                          jenisAcara:     acara.jenisAcara,
-                          tahunKejohanan: tahunKej,
-                          bypassHeat:     false,
-                        })
-                        if (!hasil.valid) {
-                          setInlineErr(p => ({ ...p, [aceraId]: `${atlet.nama || noKP} — [${hasil.gate}] ${hasil.mesej}` }))
+                        // GATE 6 — duplikasi
+                        const pSedia = pendLiveByKP[noKP]
+                        if (pSedia && (pSedia.acaraIds || []).includes(aceraId)) {
+                          setInlineErr(p => ({ ...p, [aceraId]: `${atlet.nama || noKP} — sudah berdaftar untuk acara ini.` }))
                           setInlineSaving(p => ({ ...p, [aceraId]: false }))
                           return
                         }
 
-                        // Simpan terus — supaya atlet seterusnya nampak kiraan terkini
-                        const pRec = pendLiveByKP[noKP]
-                        const pendSedia = pendaftaranList.find(p => p.noKP === noKP)
-                        const overrideKat = pendSedia?.kategoriOverride || null
-                        const katEfektif = overrideKat || kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
-                        if (pRec) {
-                          const acaraIds = [...new Set([...(pRec.acaraIds || []), aceraId])]
-                          await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran', noKP), { acaraIds, updatedAt: serverTimestamp() })
-                          pendLiveByKP[noKP] = { ...pRec, acaraIds }
+                        // GATE 2 — had atlet sekolah per acara
+                        if (bilanganAcara >= hadAcara) {
+                          setInlineErr(p => ({ ...p, [aceraId]: `Had atlet sekolah untuk acara ini sudah penuh (maks ${hadAcara}).` }))
+                          setInlineSaving(p => ({ ...p, [aceraId]: false }))
+                          return
+                        }
+
+                        // GATE 1 — had acara per atlet (guna kategoriList dari props)
+                        const katAtlet = kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
+                        if (!katAtlet) {
+                          setInlineErr(p => ({ ...p, [aceraId]: `${atlet.nama || noKP} — kategori tidak dapat ditentukan. Semak tarikh lahir.` }))
+                          setInlineSaving(p => ({ ...p, [aceraId]: false }))
+                          return
+                        }
+                        const katObj = kategoriList.find(k => (k.kod || k.id) === katAtlet)
+                        const hadIndividu = katObj?.hadAcaraIndividu ?? 3
+                        const hadBeregu   = katObj?.hadAcaraBeregu   ?? 2
+                        const had1 = acaraBaruIsIndividu ? hadIndividu : hadBeregu
+                        const semuaAcaraIds = (pendLiveByKP[noKP]?.acaraIds || [])
+                        let bilanganIndividu = 0, bilanganBeregu = 0
+                        semuaAcaraIds.forEach(id => {
+                          const aDoc = acaraList.find(a => a.id === id)
+                          if (!aDoc) return
+                          if (aDoc.isIndividu === false) bilanganBeregu++
+                          else bilanganIndividu++
+                        })
+                        const semasa1 = acaraBaruIsIndividu ? bilanganIndividu : bilanganBeregu
+                        if (semasa1 >= had1) {
+                          const jenis = acaraBaruIsIndividu ? 'individu' : 'berkumpulan'
+                          setInlineErr(p => ({ ...p, [aceraId]: `${atlet.nama || noKP} — had ${had1} acara ${jenis} sudah penuh (Kat ${katAtlet}).` }))
+                          setInlineSaving(p => ({ ...p, [aceraId]: false }))
+                          return
+                        }
+
+                        // Queue batch op
+                        const overrideKat = pSedia?.kategoriOverride || null
+                        const katEfektif = overrideKat || katAtlet
+                        const pendRef = doc(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran', noKP)
+                        if (pSedia) {
+                          const acaraIds = [...new Set([...(pSedia.acaraIds || []), aceraId])]
+                          const updateData = { acaraIds, updatedAt: serverTimestamp() }
+                          if (isRelayAcara2) { updateData.pasukanRelay = pasukanUntukBatch; updateData.isRelay = true }
+                          batchOps.push({ type: 'update', ref: pendRef, data: updateData })
+                          pendLiveByKP[noKP] = { ...pSedia, acaraIds, ...(isRelayAcara2 ? { pasukanRelay: pasukanUntukBatch } : {}) }
                         } else {
                           lastNum++
                           const noBib = bibPfx + String(lastNum).padStart(bibFmt, '0')
-                          await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran', noKP), {
+                          batchOps.push({ type: 'set', ref: pendRef, data: {
                             noBib, noKP: atlet.noKP, namaAtlet: atlet.nama,
                             jantina: atlet.jantina, tarikhLahir: atlet.tarikhLahir,
                             kodSekolah: atlet.kodSekolah,
@@ -2034,15 +2205,24 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                             kategoriKod: katEfektif,
                             ...(overrideKat ? { kategoriOverride: overrideKat } : {}),
                             acaraIds: [aceraId], isAktif: true, isRelay: isRelayAcara2,
-                            ...(isRelayAcara2 ? { pasukanRelay: pasukanSediaTambah } : {}),
+                            ...(isRelayAcara2 ? { pasukanRelay: pasukanUntukBatch } : {}),
                             createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-                          })
+                          }})
                           pendLiveByKP[noKP] = { noKP, acaraIds: [aceraId] }
                         }
+                        bilanganAcara++
                       }
 
-                      // Update counter sekali di akhir
-                      await setDoc(counterRef, { lastBibNum: lastNum, bibPrefix: bibPfx, kodSekolah: atletSekolah[0]?.kodSekolah || bibPfx, kejohananId: kejohanan.id, updatedAt: serverTimestamp() })
+                      // ── Satu batch write — semua atlet serentak ──
+                      if (batchOps.length > 0) {
+                        const batch = writeBatch(db)
+                        batchOps.forEach(op => {
+                          if (op.type === 'update') batch.update(op.ref, op.data)
+                          else batch.set(op.ref, op.data)
+                        })
+                        batch.set(counterRef, { lastBibNum: lastNum, bibPrefix: bibPfx, kodSekolah: atletSekolah[0]?.kodSekolah || bibPfx, kejohananId: kejohanan.id, updatedAt: serverTimestamp() })
+                        await batch.commit()
+                      }
 
                       setInlineSelected(p => ({ ...p, [aceraId]: new Set() }))
                       onRefresh()
@@ -2139,29 +2319,47 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                               <div className="space-y-1">
                                 {atletLayak.map(a => {
                                   const kat = isAcaraTerbuka2 ? null : kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-                                  const isChosen  = selSet.has(a.noKP)
+                                  const isChosen   = selSet.has(a.noKP)
                                   const willExceed = !isChosen && selSet.size >= maxPilihInline
+                                  const isAcaraBaruIndividu = acara.isIndividu ?? (acara.jenisAcara !== 'relay')
+                                  const kuota = kiraKuotaAtletLocal(a.noKP, isAcaraBaruIndividu, a.tarikhLahir, a.jantina, tahunKej, pendaftaranList, acaraList, kategoriList)
+                                  const kuotaPenuh = kuota.penuh && !isChosen
+                                  const isDisabled = willExceed || kuotaPenuh
                                   return (
-                                    <button key={a.noKP} type="button"
-                                      onClick={() => !willExceed && toggleAtlet(a.noKP)}
-                                      disabled={willExceed}
-                                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-all ${
-                                        isChosen ? 'border-[#003399] bg-blue-50'
-                                        : willExceed ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
-                                        : 'border-gray-200 hover:border-[#003399]/40 hover:bg-blue-50/30'
-                                      }`}>
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${isChosen ? 'border-[#003399] bg-[#003399]' : 'border-gray-300'}`}>
-                                          {isChosen && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                    <div key={a.noKP}>
+                                      <button type="button"
+                                        onClick={() => !isDisabled && toggleAtlet(a.noKP)}
+                                        disabled={isDisabled}
+                                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-all ${
+                                          isChosen    ? 'border-[#003399] bg-blue-50'
+                                          : kuotaPenuh ? 'border-orange-200 bg-orange-50/60 cursor-not-allowed'
+                                          : willExceed ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
+                                          : 'border-gray-200 hover:border-[#003399]/40 hover:bg-blue-50/30'
+                                        }`}>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${isChosen ? 'border-[#003399] bg-[#003399]' : kuotaPenuh ? 'border-orange-300' : 'border-gray-300'}`}>
+                                            {isChosen && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                            {kuotaPenuh && !isChosen && <svg className="w-2.5 h-2.5 text-orange-400" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M18 12H6" /></svg>}
+                                          </div>
+                                          <span className={`text-[9px] font-black font-mono px-1.5 py-0.5 rounded shrink-0 ${kuotaPenuh ? 'text-orange-500 bg-orange-50' : 'text-[#003399] bg-blue-50'}`}>{a.noBib || '—'}</span>
+                                          <p className={`text-xs font-semibold truncate ${kuotaPenuh ? 'text-gray-400' : 'text-gray-800'}`}>{a.nama || <span className="italic text-gray-400">Tiada nama</span>}</p>
                                         </div>
-                                        <span className="text-[9px] font-black font-mono text-[#003399] bg-blue-50 px-1.5 py-0.5 rounded shrink-0">{a.noBib || '—'}</span>
-                                        <p className="text-xs font-semibold text-gray-800 truncate">{a.nama || <span className="italic text-gray-400">Tiada nama</span>}</p>
-                                      </div>
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        {kat && <KategoriBadge kat={kat} kategoriList={kategoriList} />}
-                                        <JantinaBadge j={a.jantina} />
-                                      </div>
-                                    </button>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          {kuotaPenuh && (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 border border-orange-200 whitespace-nowrap">
+                                              Kuota Penuh {kuota.semasa}/{kuota.had}
+                                            </span>
+                                          )}
+                                          {kat && <KategoriBadge kat={kat} kategoriList={kategoriList} />}
+                                          <JantinaBadge j={a.jantina} />
+                                        </div>
+                                      </button>
+                                      {kuotaPenuh && kuota.namaAcara.length > 0 && (
+                                        <p className="text-[9px] text-orange-500 px-3 pt-0.5 pb-1 truncate">
+                                          Sudah daftar: {kuota.namaAcara.slice(0, 3).join(', ')}{kuota.namaAcara.length > 3 ? ` +${kuota.namaAcara.length - 3} lagi` : ''}
+                                        </p>
+                                      )}
+                                    </div>
                                   )
                                 })}
                               </div>
@@ -2476,7 +2674,7 @@ export default function PengurusDashboard() {
 
       const [acaraSnap, pendSnap, katSnap, atletSnap] = await Promise.all([
         getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara')),
-        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'pendaftaran')),
+        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'pendaftaran'), where('kodSekolah', '==', kodSekolah))),
         getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'kategori')),
         getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('kodSekolah', '==', kodSekolah))),
       ])
@@ -2556,10 +2754,20 @@ export default function PengurusDashboard() {
   const refreshPend = useCallback(async () => {
     if (!schoolId || !kejohanan?.id) return
     try {
-      const snap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran'))
+      const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'pendaftaran'), where('kodSekolah', '==', kodSekolah)))
       setPendaftaranList(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (e) { console.error('refreshPend:', e) }
   }, [schoolId, kejohanan])
+
+  const refreshAtlet = useCallback(async () => {
+    if (!schoolId || !kodSekolah) return
+    try {
+      const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('kodSekolah', '==', kodSekolah)))
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      data.sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'ms'))
+      setAtletSekolah(data)
+    } catch (e) { console.error('refreshAtlet:', e) }
+  }, [schoolId, kodSekolah])
 
   const myPendaftaran = pendaftaranList.filter(p => p.kodSekolah === kodSekolah)
 
@@ -3239,6 +3447,7 @@ export default function PengurusDashboard() {
           kejohananId={kejohanan?.id || null}
           myPendaftaran={myPendaftaran}
           onRefreshPend={refreshPend}
+          onRefreshAtlet={refreshAtlet}
         />
       )}
       {activeTab === 'daftar' && (

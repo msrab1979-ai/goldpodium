@@ -192,6 +192,37 @@ allow write: if canAccessSchool(schoolId) || isPencatat(schoolId);
 
 **TODO: Fix Firestore rules sebelum deploy ke peringkat daerah/negeri**
 
+## PP Dashboard — Fixes Kritikal (2026-07-05)
+
+### Pendaftaran Atlet (PengurusDashboard.jsx)
+- `handleDaftar` — batch write (1 commit) gantikan sequential await per atlet
+- `pendSnap` dalam `handleDaftar` filter `where('kodSekolah', '==', kodSekolah)` — elak pasukan sekolah lain affect label pasukan
+- `pasukanUntukBatch` dikira dari `pendSnap` fresh (bukan `pesertaSek` stale) — relay Pasukan B dapat label betul
+- Bila relay update (atlet dah ada doc), simpan `pasukanRelay` dalam updateDoc
+- Had relay: `hadAcara = hadPasukan × saizPasukan` (bukan raw `hadAtletPerSekolah`)
+
+### Import Excel
+- Batch parallel read + batch write (gantikan sequential loop)
+- Atlet dah exist + sekolah sama → update (bukan skip)
+- Atlet dah exist + sekolah lain → skip + report "X dilangkau (noKP milik sekolah lain)"
+- `kodSekolah` dalam atlet doc guna `kodSekolah` dari props (bukan `sekolahData?.kodSekolah`)
+
+### Multi-tenant isolation
+- Query `pendaftaranList` filter `where('kodSekolah', '==', kodSekolah)` — PP hanya nampak data sekolah sendiri
+- `refreshPend` juga filter by `kodSekolah`
+
+### Tambah button "Padam Semua" dalam Tab Atlet PP
+- Hard delete semua atlet + pendaftaran sekolah sendiri (batch delete)
+- Confirm dialog sebelum padam
+
+### Admin
+- Dashboard: buang button "Sekolah" dan "Buat Kejohanan" — superadmin yang create
+- KejohananSetup: create kejohanan terus `statusKejohanan: 'aktif'` (bukan `'persediaan'`)
+
+### Auth isolation
+- PP (Anonymous Auth) dan Admin (Firebase Auth) kongsi localStorage — jangan buka dalam tab browser yang sama
+- Guna incognito/InPrivate untuk PP
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`
@@ -200,3 +231,4 @@ allow write: if canAccessSchool(schoolId) || isPencatat(schoolId);
 - Jangan guna `h.peringkat` dalam heat doc — field itu tidak wujud, guna `h.fasa`
 - Jangan simpan `noKP` dalam heat docs, rekod, medal_tally, tuntutan (PDPA — public readable)
 - Jangan deploy ke peringkat daerah/negeri sebelum Firestore rules diketatkan
+- **Jangan ubah kod tanpa izin user**

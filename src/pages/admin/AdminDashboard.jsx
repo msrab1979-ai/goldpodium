@@ -317,15 +317,6 @@ export default function AdminDashboard() {
             </p>
           </div>
           <div className="shrink-0 flex items-center gap-2">
-            <button onClick={() => navigate('/admin/sekolah')}
-              className="flex items-center gap-1.5 border border-gray-200 hover:border-[#003399] text-gray-600 hover:text-[#003399] font-bold px-3 py-2.5 rounded-xl text-xs transition-colors">
-              🏫 Sekolah
-            </button>
-            <button onClick={() => setModalBuat(true)}
-              className="flex items-center gap-2 bg-[#003399] hover:bg-[#002277] text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-sm">
-              {Ikon.tambah}
-              Buat Kejohanan
-            </button>
           </div>
         </div>
 

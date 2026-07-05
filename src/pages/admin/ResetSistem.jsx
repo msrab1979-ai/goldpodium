@@ -22,9 +22,9 @@ const TOGGLES = [
   {
     id: 'pendaftaran',
     label: 'Pendaftaran Atlet',
-    desc: 'Clear No. BIB semua atlet + padam rekod pendaftaran kejohanan',
-    collections: ['atlet (field noBib)', 'kejohanan/.../pendaftaran'],
-    level: 'sederhana', // safe | sederhana | bahaya
+    desc: 'Padam rekod pendaftaran + master atlet (noKP, nama, noBib) — deep delete',
+    collections: ['kejohanan/.../pendaftaran', 'atlet'],
+    level: 'bahaya',
     icon: '👤',
   },
   {
@@ -90,14 +90,6 @@ const TOGGLES = [
     collections: ['sekolah'],
     level: 'bahaya',
     icon: '🏫',
-  },
-  {
-    id: 'atlet',
-    label: 'Padam Master Atlet',
-    desc: 'Padam SEMUA rekod atlet dari sistem (noKP, nama, noBib). Tidak boleh undur!',
-    collections: ['atlet'],
-    level: 'bahaya',
-    icon: '🗑️',
   },
 ]
 
@@ -276,30 +268,23 @@ export default function ResetSistem() {
     }
 
     try {
-      // ── Pendaftaran ──
+      // ── Pendaftaran + Master Atlet (deep delete) ──
       if (selected.has('pendaftaran')) {
-        log('Memuatkan data atlet…')
+        log('Memuatkan data pendaftaran & atlet…')
         const [atletSnap, pendSnap, counterSnap] = await Promise.all([
-          getDocs(query(collection(db, 'tenants', schoolId, 'atlet'), where('noBib', '!=', ''))),
+          getDocs(collection(db, 'tenants', schoolId, 'atlet')),
           getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran')),
           getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran_counter')),
         ])
-        // Clear noBib field — batch update
-        const SIZE = 400
-        const atletDocs = atletSnap.docs
-        for (let i = 0; i < atletDocs.length; i += SIZE) {
-          const b = writeBatch(db)
-          atletDocs.slice(i, i + SIZE).forEach(d => {
-            b.update(d.ref, { noBib: '', noBibPrefix: '', updatedAt: new Date() })
-          })
-          await b.commit()
-        }
-        // Delete pendaftaran docs + counter (supaya noBib mula semula dari 1)
+        // Padam rekod pendaftaran + counter
         await Promise.all([
           batchDelete(pendSnap.docs.map(d => d.ref)),
           batchDelete(counterSnap.docs.map(d => d.ref)),
         ])
-        log(`✓ Pendaftaran — ${atletDocs.length} BIB dikosongkan, ${pendSnap.size} rekod dipadam, ${counterSnap.size} counter diset semula`, true)
+        log(`✓ Pendaftaran — ${pendSnap.size} rekod dipadam, ${counterSnap.size} counter dipadam`)
+        // Padam master atlet
+        await batchDelete(atletSnap.docs.map(d => d.ref))
+        log(`✓ Master Atlet — ${atletSnap.size} rekod dipadam`, true)
       }
 
       // ── Jadual ──
@@ -388,13 +373,6 @@ export default function ResetSistem() {
         log(`✓ Sekolah — ${kodSet.size} sekolah unik (sekolah dikesan dari atlet, tiada koleksi sekolah berasingan)`, true)
       }
 
-      // ── Padam Master Atlet ──
-      if (selected.has('atlet')) {
-        log('Memadam semua rekod atlet…')
-        const snap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
-        await batchDelete(snap.docs.map(d => d.ref))
-        log(`✓ Master Atlet — ${snap.size} rekod dipadam`, true)
-      }
 
       // ── Audit log ──
       log('Menyimpan log audit…')
