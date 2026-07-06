@@ -1768,17 +1768,17 @@ export default function StartList() {
     try {
       const [pendSnap, heatSnap, rekod] = await Promise.all([
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pendaftaran'))),
-        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aceraKey), orderBy('noHeat'))),
+        getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aceraKey))),
         cariRekodUntukAcara(selectedAcara),
       ])
       const peserta = pendSnap.docs
         .map(d => d.data())
         .filter(p => (p.acaraIds || []).some(id => aceraAliases.has(id)))
       setPesertaList(peserta)
-      setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0)))
       setRekodAcara(rekod)
       setHeatCountTick(t => t + 1)
-    } catch { } finally { setLoading(false) }
+    } catch (e) { console.error('fetchAcaraData error:', e) } finally { setLoading(false) }
   }, [selectedAcara, selectedKej, schoolId])
 
   useEffect(() => { fetchAcaraData() }, [fetchAcaraData])
@@ -1960,11 +1960,11 @@ export default function StartList() {
     setHariHeatLoading(aid)
     try {
       const snap = await getDocs(
-        query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid))
       )
       setHariHeatMap(prev => ({
         ...prev,
-        [aid]: snap.docs.map(d => ({ id: d.id, ...d.data() })),
+        [aid]: snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0)),
       }))
     } catch {}
     finally { setHariHeatLoading(null) }
@@ -2053,9 +2053,9 @@ export default function StartList() {
         acaraHari.map(async a => {
           const aid = a.aceraId || a.id
           const snap = await getDocs(
-            query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat'))
+            query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid))
           )
-          return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })), jadual: jadualMap[aid] || {} }
+          return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0)), jadual: jadualMap[aid] || {} }
         })
       )
 
@@ -2371,9 +2371,9 @@ export default function StartList() {
     try {
       // Fetch heat untuk acara ini
       const heatSnap = await getDocs(
-        query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat'))
+        query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid))
       )
-      const heats = heatSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const heats = heatSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0))
       if (heats.length === 0) { alert('Heat belum dijana untuk acara ini.'); return }
 
       // Logo dari tetapan/home
@@ -2600,8 +2600,8 @@ export default function StartList() {
       const acaraWithHeats = await Promise.all(
         acaraBalapan.map(async a => {
           const aid = a.aceraId || a.id
-          const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat')))
-          return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })), jadual: jadualMap[aid] || {} }
+          const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid)))
+          return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0)), jadual: jadualMap[aid] || {} }
         })
       )
       const acaraAdaHeat = acaraWithHeats.filter(a => a.heats.length > 0)
@@ -2717,8 +2717,8 @@ export default function StartList() {
       const acaraWithHeats = await Promise.all(
         acaraPadang.map(async a => {
           const aid = a.aceraId || a.id
-          const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid), orderBy('noHeat')))
-          return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })), jadual: jadualMap[aid] || {} }
+          const snap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid)))
+          return { ...a, heats: snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0)), jadual: jadualMap[aid] || {} }
         })
       )
       const acaraAdaHeat = acaraWithHeats.filter(a => a.heats.length > 0)

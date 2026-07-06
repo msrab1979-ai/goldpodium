@@ -701,11 +701,11 @@ function AcaraHeatPanel({ acara, schoolId, kejId, namaKej, kategoriList, atletMa
     setLoading(true)
     try {
       const [heatSnap, pendSnap, setupSnap] = await Promise.all([
-        getDocs(query(collection(db, heatColPath(schoolId, kejId)), where('aceraId', '==', aceraKey), orderBy('noHeat'))),
+        getDocs(query(collection(db, heatColPath(schoolId, kejId)), where('aceraId', '==', aceraKey))),
         getDocs(collection(db, pendColPath(schoolId, kejId))),
         getDoc(doc(db, `tenants/${schoolId}/kejohanan/${kejId}/tetapan`, 'finalSetup')),
       ])
-      setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0)))
       const allPend = pendSnap.docs.map(d => d.data())
       setPeserta(allPend.filter(p => (p.acaraIds || []).includes(aceraKey)))
       setFinalSetup(setupSnap.exists() ? setupSnap.data() : null)
