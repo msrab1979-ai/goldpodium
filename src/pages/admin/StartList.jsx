@@ -2111,9 +2111,9 @@ export default function StartList() {
         const katLbl = katLabel(a.kategoriKod, kategoriList)
         const masa   = a.jadual?.masaMula || '—'
         const lokasi = a.jadual?.lokasi   || '—'
-        const peringkatLabel = ['saringan_qf','saringan_sf'].includes(a.peringkat) ? 'Saringan'
-          : a.parentAcaraId ? `Final (← Acara #${a.parentAcaraId})`
-          : 'Terus Final'
+        const peringkatLabel = a.peringkat === 'saringan_qf' ? 'Suku Akhir'
+          : a.peringkat === 'saringan_sf' ? 'Separuh Akhir'
+          : 'Akhir'
 
         // New page if near bottom
         if (!isFirst && curY > 240) {
@@ -2396,11 +2396,10 @@ export default function StartList() {
       const tarikhLabel = jadual.tarikhAcara
         ? new Date(jadual.tarikhAcara + 'T00:00:00').toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
         : '—'
-      const peringkatLabel = acara.peringkat === 'saringan_qf' ? 'Saringan/QF'
-        : acara.peringkat === 'saringan_sf' ? 'Saringan/SF'
+      const peringkatLabel = acara.peringkat === 'saringan_qf' ? 'Suku Akhir'
+        : acara.peringkat === 'saringan_sf' ? 'Separuh Akhir'
         : acara.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
-        : acara.parentAcaraId ? `Final (← #${acara.parentAcaraId})`
-        : 'Terus Final'
+        : 'Akhir'
 
       function buatHeader() {
         let y = 10
@@ -2640,9 +2639,9 @@ export default function StartList() {
         const katLbl = katLabel(a.kategoriKod, kategoriList)
         const masa   = a.jadual?.masaMula || '—'
         const lokasi = a.jadual?.lokasi   || '—'
-        const peringkatLabel = ['saringan_qf','saringan_sf'].includes(a.peringkat) ? 'Saringan'
-          : a.parentAcaraId ? `Final (← #${a.parentAcaraId})`
-          : 'Terus Final'
+        const peringkatLabel = a.peringkat === 'saringan_qf' ? 'Suku Akhir'
+          : a.peringkat === 'saringan_sf' ? 'Separuh Akhir'
+          : 'Akhir'
 
         if (!isFirst && curY > 240) { pdf.addPage(); curY = buatHeader() }
         isFirst = false
@@ -2757,9 +2756,9 @@ export default function StartList() {
         const katLbl = katLabel(a.kategoriKod, kategoriList)
         const masa   = a.jadual?.masaMula || '—'
         const lokasi = a.jadual?.lokasi   || '—'
-        const peringkatLabel = ['saringan_qf','saringan_sf'].includes(a.peringkat) ? 'Saringan'
-          : a.parentAcaraId ? `Final (← #${a.parentAcaraId})`
-          : 'Terus Final'
+        const peringkatLabel = a.peringkat === 'saringan_qf' ? 'Suku Akhir'
+          : a.peringkat === 'saringan_sf' ? 'Separuh Akhir'
+          : 'Akhir'
 
         if (!isFirst && curY > H - 30) { pdf.addPage(); curY = buatHeader() }
         isFirst = false
