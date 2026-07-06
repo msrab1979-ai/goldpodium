@@ -161,11 +161,10 @@ export function buatStartListPDFUnified({
     ? new Date(jadual.tarikhAcara + 'T00:00:00').toLocaleDateString('ms-MY',
         { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     : '—'
-  const peringkatLabel = acara.peringkat === 'saringan_qf' ? 'Saringan / QF'
-    : acara.peringkat === 'saringan_sf' ? 'Saringan / SF'
+  const peringkatLabel = acara.peringkat === 'saringan_qf' ? 'Suku Akhir'
+    : acara.peringkat === 'saringan_sf' ? 'Separuh Akhir'
     : acara.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
-    : acara.parentAcaraId ? `Final (← #${acara.parentAcaraId})`
-    : 'Final'
+    : 'Akhir'
 
   function imgFmt(b64) {
     if (!b64) return 'PNG'
