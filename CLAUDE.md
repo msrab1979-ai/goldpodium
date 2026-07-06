@@ -81,15 +81,36 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 `{NAMAACARA}_{JANTINA}_{KATEGORIKOD}_{S/D/N/K}` — uppercase, non-alphanumeric → `_`
 
 ### Flow Pecah Rekod
-1. Pencatat input → `runPostRasmi()` → `peringkatKej` dari `kej.peringkat` (`sekolah→S`, `daerah→D`, dll)
+1. Pencatat/Admin input → `runPostRasmi()` → `peringkatKej` dari `kej.peringkat` (`sekolah→S`, `daerah→D`, dll)
 2. Bandingkan prestasi: larian `newR < oldR`, padang `newR > oldR`
-3. Pecah → tulis `rekod/{key}_tuntutan` (pending)
+3. Pecah → tulis `rekod/{key}_tuntutan` (pending) + simpan `rekod_{acaraId}` dalam `mata_olahragawan`
 4. Admin sahkan → `rekod/{key}` aktif
 
 ### Syarat Pecah Rekod
 - `rank === 1` sahaja
-- Bukan relay, ada `noKP`, ada `keputusan`
+- Bukan relay, ada `keputusan`
 - Berlaku di **SEMUA fasa** (saringan, SF, final)
+
+### peringkatKej Mapping (WAJIB)
+```js
+const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
+```
+- Field Firestore: `kej.peringkat` (string lowercase: `'sekolah'`, `'daerah'`, dll)
+- **JANGAN** guna `kej.peringkatKej` — field itu tidak wujud
+
+### Data Rekod — 3 Tempat Paparan
+| Tempat | Sumber | Siapa |
+|---|---|---|
+| SchoolLanding badge RBK | `heat.peserta[].pecahRekod` + fetch `rekod/_tuntutan` | Public |
+| Olahragawan badge 🏆R | `mata_olahragawan.rekod_*` | Admin |
+| Rekod page Tab Tuntutan | `rekod/{key}_tuntutan` | Admin |
+
+### Rekod — Bug Fixes (2026-07-06)
+- `RekodModal` perlu `schoolId` prop — tanpanya throw `indexOf` error (Firebase path undefined)
+- Kategori load: wajib `kod: data.kod || d.id` — sama seperti AcaraSetup.jsx
+- Sort `localeCompare` perlu null-guard: `(a.namaAcara || '').localeCompare(...)`
+- `AnalisisPendaftaran`: sekolahList dari koleksi `sekolah` dulu, fallback ke atlet
 
 ## SchoolLanding — Badge & Features
 - **RBK badge** — boleh klik → `RekodModal` (rekod lama vs baru + delta)
