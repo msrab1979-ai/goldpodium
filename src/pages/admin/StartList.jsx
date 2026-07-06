@@ -655,8 +655,10 @@ function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMa
 
 async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap = {}, atletBibMap = {} }) {
   const aceraKey = acara.aceraId || acara.id
-  // Tapis peserta untuk acara ini
-  const peserta = pesertaAll.filter(p => (p.acaraIds || []).includes(aceraKey))
+  // Kumpul semua alias — aceraId field dan doc id
+  const aceraAliases = new Set([acara.aceraId, acara.id].filter(Boolean))
+  // Tapis peserta untuk acara ini (guna aliases supaya match walaupun aceraId ≠ doc id)
+  const peserta = pesertaAll.filter(p => (p.acaraIds || []).some(id => aceraAliases.has(id)))
   if (peserta.length === 0) return { status: 'skip', sebab: 'tiada peserta' }
 
   // Semak heat sedia ada
@@ -1340,7 +1342,8 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
     getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran'))
       .then(snap => {
         const all = snap.docs.map(d => d.data())
-        setPeserta(all.filter(p => (p.acaraIds || []).includes(acara.aceraId)))
+        const aliases = new Set([acara.aceraId, acara.id].filter(Boolean))
+        setPeserta(all.filter(p => (p.acaraIds || []).some(id => aliases.has(id))))
       })
       .catch(() => {})
       .finally(() => setLoadingP(false))
@@ -1757,6 +1760,11 @@ export default function StartList() {
     }
     setLoading(true)
     const aceraKey = selectedAcara.aceraId || selectedAcara.id
+    // Kumpul semua alias yang mungkin — aceraId field, doc id, dan noAcara
+    const aceraAliases = new Set([
+      selectedAcara.aceraId,
+      selectedAcara.id,
+    ].filter(Boolean))
     try {
       const [pendSnap, heatSnap, rekod] = await Promise.all([
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pendaftaran'))),
@@ -1765,7 +1773,7 @@ export default function StartList() {
       ])
       const peserta = pendSnap.docs
         .map(d => d.data())
-        .filter(p => (p.acaraIds || []).includes(aceraKey))
+        .filter(p => (p.acaraIds || []).some(id => aceraAliases.has(id)))
       setPesertaList(peserta)
       setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setRekodAcara(rekod)
