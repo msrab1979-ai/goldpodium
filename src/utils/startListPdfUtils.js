@@ -491,9 +491,9 @@ export function buatStartListPDFUnified({
           }
         }
       } else if (isRelay) {
-        const getBib     = p => bibPrefixMap[p.kodSekolah] || p.kodSekolah || '—'
+        const getBib = p => bibPrefixMap[p.kodSekolah] || '—'
         const getNamaPas = p => {
-          const nama = namaSekolahMap[p.kodSekolah] || p.kodSekolah
+          const nama = namaSekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah
           return p.pasukanRelay ? `${nama} — Pskmn ${p.pasukanRelay}` : nama
         }
         if (sal.id === 'juruhebah') {

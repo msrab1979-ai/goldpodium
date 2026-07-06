@@ -16,18 +16,6 @@ const PERINGKAT_OPTIONS = [
   { value: 'kebangsaan', label: 'Kebangsaan' },
 ]
 
-const TEMPO_BANTAHAN = [
-  { value: 30,  label: '30 Minit' },
-  { value: 60,  label: '1 Jam' },
-  { value: 120, label: '2 Jam' },
-]
-
-const TIMER_AUTO_RASMI = [
-  { value: 10,  label: '10 Minit' },
-  { value: 15,  label: '15 Minit' },
-  { value: 30,  label: '30 Minit' },
-  { value: 60,  label: '1 Jam' },
-]
 
 const NEGERI_LIST = [
   'Johor','Kedah','Kelantan','Melaka','Negeri Sembilan',
@@ -60,8 +48,6 @@ const EMPTY_FORM = {
   lokasi: '',
   negeri: 'Terengganu',
   daerah: 'Kemaman',
-  tempoBantahan: 60,
-  timerAutoRasmi: 15,
   bilanganKedudukan: 3,       // tempat 1,2,3 (emas/perak/gangsa) dapat masuk medal tally
   mataPingat1: 5,             // mata untuk tempat 1
   mataPingat2: 3,             // mata untuk tempat 2
@@ -70,6 +56,7 @@ const EMPTY_FORM = {
   mataPingat5: 0,             // mata untuk tempat 5 (dipapar jika bilanganKedudukan >= 5)
   showJumlahMedalTally: false, // tunjuk kolum Jumlah (E+P+G) dalam Medal Tally
   catatanAdmin: '',
+  defaultLorong: 8,
 }
 
 function generateKejohananId(tahun) {
@@ -208,12 +195,11 @@ function KejohananModal({ mode, initial, onClose, onSaved, schoolId }) {
           lokasi:             form.lokasi.trim(),
           negeri:             form.negeri,
           daerah:             form.daerah.trim(),
-          tempoBantahan:      Number(form.tempoBantahan),
-          timerAutoRasmi:     Number(form.timerAutoRasmi) || 15,
           bilanganKedudukan:      bilKed,
           mataPingat:             mataPingatObj,
           showJumlahMedalTally:   !!form.showJumlahMedalTally,
           catatanAdmin:           form.catatanAdmin.trim(),
+          defaultLorong:          Math.min(8, Math.max(4, Number(form.defaultLorong) || 8)),
           updatedAt:          serverTimestamp(),
         })
       } else {
@@ -229,12 +215,11 @@ function KejohananModal({ mode, initial, onClose, onSaved, schoolId }) {
           lokasi:             form.lokasi.trim(),
           negeri:             form.negeri,
           daerah:             form.daerah.trim(),
-          tempoBantahan:      Number(form.tempoBantahan),
-          timerAutoRasmi:     Number(form.timerAutoRasmi) || 15,
           bilanganKedudukan:      bilKed,
           mataPingat:             mataPingatObj,
           showJumlahMedalTally:   !!form.showJumlahMedalTally,
           catatanAdmin:           form.catatanAdmin.trim(),
+          defaultLorong:          Math.min(8, Math.max(4, Number(form.defaultLorong) || 8)),
           statusKejohanan: 'aktif',
           isAktif:        true,
           createdAt:      serverTimestamp(),
@@ -373,31 +358,16 @@ function KejohananModal({ mode, initial, onClose, onSaved, schoolId }) {
             <SectionHeader title="Tetapan Sistem" />
             <div className="space-y-3">
               <FormField
-                label="Tempoh Bantahan Keputusan"
-                hint="Masa yang dibenarkan untuk sekolah hantar bantahan selepas keputusan dipaparkan."
+                label="Bilangan Lorong (Default)"
+                hint="Default lorong untuk semua acara larian. Boleh override per acara dalam setup acara."
               >
                 <select
                   className={inputCls}
-                  value={form.tempoBantahan}
-                  onChange={e => set('tempoBantahan', e.target.value)}
+                  value={form.defaultLorong}
+                  onChange={e => set('defaultLorong', Number(e.target.value))}
                 >
-                  {TEMPO_BANTAHAN.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField
-                label="Timer Auto-Rasmi (Default)"
-                hint="Masa selepas pencatat klik HANTAR sebelum keputusan auto jadi Rasmi. Boleh override per acara."
-              >
-                <select
-                  className={inputCls}
-                  value={form.timerAutoRasmi}
-                  onChange={e => set('timerAutoRasmi', e.target.value)}
-                >
-                  {TIMER_AUTO_RASMI.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
+                  {[4,5,6,7,8].map(n => (
+                    <option key={n} value={n}>{n} Lorong</option>
                   ))}
                 </select>
               </FormField>
@@ -568,10 +538,6 @@ function KejohananCard({ k, onEdit, onStatusChange }) {
               <span className="text-gray-400">Daerah: </span>{k.daerah}
             </div>
           )}
-          <div>
-            <span className="text-gray-400">Tempo bantahan: </span>
-            {TEMPO_BANTAHAN.find(t => t.value === k.tempoBantahan)?.label || `${k.tempoBantahan} min`}
-          </div>
           {k.tarikhTamatDaftar ? (
             <div className="col-span-2">
               <span className="text-gray-400">Tutup daftar: </span>
@@ -722,8 +688,6 @@ export default function KejohananSetup() {
         lokasi:             k.lokasi || '',
         negeri:         k.negeri || '',
         daerah:         k.daerah || '',
-        tempoBantahan:  k.tempoBantahan || 60,
-        timerAutoRasmi: k.timerAutoRasmi || 15,
         bilanganKedudukan: k.bilanganKedudukan ?? 3,
         mataPingat1:    mp[1] ?? mp['1'] ?? 5,
         mataPingat2:    mp[2] ?? mp['2'] ?? 3,
@@ -732,6 +696,7 @@ export default function KejohananSetup() {
         mataPingat5:          mp[5] ?? mp['5'] ?? 0,
         showJumlahMedalTally: k.showJumlahMedalTally ?? false,
         catatanAdmin:   k.catatanAdmin || '',
+        defaultLorong:  k.defaultLorong ?? 8,
       },
     })
   }

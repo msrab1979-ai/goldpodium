@@ -294,13 +294,13 @@ function FasaBadge({ fasa }) {
 
 // ─── Modal: Tetapan Generate Heat ─────────────────────────────────────────────
 
-function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, schoolId = '', atletBibMap = {} }) {
+function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, schoolId = '', atletBibMap = {}, kejDefaultLorong = 8 }) {
   const isPadang  = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass    = acara.jenisAcara === 'mass_start'
   const isRelay   = acara.jenisAcara === 'relay'
   const isLorong  = !isPadang && !isMass && !isRelay
 
-  const [bilanganLorong, setBL]   = useState(acara.bilanganLorong || 8)
+  const [bilanganLorong, setBL]   = useState(acara.bilanganLorong || kejDefaultLorong)
   const [caraDraw, setCaraDraw]   = useState('random') // random | manual | seeding
   const [generating, setGen]      = useState(false)
   const [preview, setPreview]     = useState(null)
@@ -653,7 +653,7 @@ function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMa
 
 // ─── Helper: Jana heat untuk satu acara (boleh guna batch atau individual) ────
 
-async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap = {}, atletBibMap = {} }) {
+async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap = {}, atletBibMap = {}, defaultLorong = 8 }) {
   const aceraKey = acara.aceraId || acara.id
   // Kumpul semua alias — aceraId field dan doc id
   const aceraAliases = new Set([acara.aceraId, acara.id].filter(Boolean))
@@ -679,7 +679,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
   const isMass   = acara.jenisAcara === 'mass_start'
   const isRelay  = acara.jenisAcara === 'relay'
   const bilLorong = acara.bilanganLorong
-    || (console.warn(`StartList: acara ${acara.aceraId} tiada bilanganLorong — guna default 8`), 8)
+    || (console.warn(`StartList: acara ${acara.aceraId} tiada bilanganLorong — guna kej default ${defaultLorong}`), defaultLorong)
 
   // ── RELAY: group by kodSekolah + pasukanRelay ─────────────────────────────
   if (isRelay) {
@@ -787,7 +787,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
 
 // ─── Modal: Jana Semua Heat ───────────────────────────────────────────────────
 
-function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolahMap = {}, atletBibMap = {}, onClose, onDone, schoolId = '' }) {
+function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolahMap = {}, atletBibMap = {}, onClose, onDone, schoolId = '', defaultLorong = 8 }) {
   const [caraDraw,    setCaraDraw]    = useState('random')
   const [skipJikaAda, setSkip]       = useState(true)
   const [running,     setRunning]    = useState(false)
@@ -818,7 +818,7 @@ function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolah
       const acara = acaraAktif[i]
       const label = `${acara.namaAcara} Kat${katLabel(acara.kategoriKod, kategoriList)} ${acara.jantina}`
       try {
-        const result = await generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap, atletBibMap })
+        const result = await generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap, atletBibMap, defaultLorong })
         if (result.status === 'ok') {
           berjaya++
           log.push({ status:'ok', msg:`✓ ${label} — ${result.heatCount} heat, ${result.pesertaCount} peserta` })
@@ -987,7 +987,7 @@ function JanaSemuaModal({ kejohananId, acaraList, kategoriList = [], namaSekolah
 
 // ─── Modal: Jana Final dari Heat ─────────────────────────────────────────────
 
-function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, sekolahMap = {}, acaraList = [], schoolId = '', atletBibMap = {} }) {
+function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, sekolahMap = {}, acaraList = [], schoolId = '', atletBibMap = {}, kejDefaultLorong = 8 }) {
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
   const isRelay  = acara.jenisAcara === 'relay'
@@ -1332,7 +1332,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
 
   const [peserta,       setPeserta]  = useState([])
   const [loadingP,      setLoadingP] = useState(true)
-  const [bilanganLorong,setBL]       = useState(acara.bilanganLorong || 8)
+  const [bilanganLorong,setBL]       = useState(acara.bilanganLorong || kejDefaultLorong)
   const [caraDraw,      setCaraDraw] = useState('random')
   const [preview,       setPreview]  = useState(null)
   const [saving,        setSaving]   = useState(false)
@@ -1546,6 +1546,7 @@ export default function StartList() {
 
   const [selectedKej, setSelectedKej]    = useState('')
   const [namaKej, setNamaKej]            = useState('')
+  const [kejDefaultLorong, setKejDefaultLorong] = useState(8)
   const [acaraList, setAcaraList]        = useState([])
   const [selectedAcara, setSelectedAcara]= useState(null)
   const [pesertaList, setPesertaList]    = useState([])  // dari pendaftaran
@@ -1612,23 +1613,30 @@ export default function StartList() {
   // Fetch sekolah + kategori once
   useEffect(() => {
     if (!schoolId) return
-    // Derive sekolah from atlet collection
-    getDocs(collection(db, 'tenants', schoolId, 'atlet'))
-      .then(atletSnap => {
-        const sklMap = {}
-        const bibMap = {}
-        atletSnap.docs.forEach(d => {
-          const a = d.data()
-          if (a.kodSekolah && !sklMap[a.kodSekolah]) {
-            sklMap[a.kodSekolah] = { kodSekolah: a.kodSekolah, namaSekolah: a.namaSekolah || a.kodSekolah, kategori: a.kategoriSekolah || '' }
-          }
-          if (d.id && a.noBib) bibMap[d.id] = a.noBib
-        })
-        const sekolahList = Object.values(sklMap).sort((a, b) => a.kodSekolah.localeCompare(b.kodSekolah))
-        setSekolahList(sekolahList)
-        setAtletBibMap(bibMap)
+    Promise.all([
+      getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+      getDocs(collection(db, 'tenants', schoolId, 'sekolah')).catch(() => ({ docs: [] })),
+    ]).then(([atletSnap, sekolahSnap]) => {
+      const sklMap = {}
+      // Sumber 1: koleksi 'sekolah' (lebih tepat, ada namaSekolah + bibPrefix)
+      sekolahSnap.docs.forEach(d => {
+        const s = d.data()
+        const kod = s.kodSekolah || d.id
+        if (kod) sklMap[kod] = { kodSekolah: kod, namaSekolah: s.namaSekolah || s.nama || kod, bibPrefix: s.bibPrefix || '', kategori: s.kategoriSekolah || '' }
       })
-      .catch(() => {})
+      // Sumber 2: koleksi 'atlet' — fallback jika sekolah tiada dalam koleksi sekolah
+      const bibMap = {}
+      atletSnap.docs.forEach(d => {
+        const a = d.data()
+        if (a.kodSekolah && !sklMap[a.kodSekolah]) {
+          sklMap[a.kodSekolah] = { kodSekolah: a.kodSekolah, namaSekolah: a.namaSekolah || a.kodSekolah, bibPrefix: '', kategori: a.kategoriSekolah || '' }
+        }
+        if (d.id && a.noBib) bibMap[d.id] = a.noBib
+      })
+      const sekolahList = Object.values(sklMap).sort((a, b) => a.kodSekolah.localeCompare(b.kodSekolah))
+      setSekolahList(sekolahList)
+      setAtletBibMap(bibMap)
+    }).catch(() => {})
   }, [schoolId])
 
   // Fetch kategori bila selectedKej berubah (per-kejohanan)
@@ -1648,6 +1656,7 @@ export default function StartList() {
           const d = snap.docs[0]
           setSelectedKej(d.id)
           setNamaKej(d.data().namaKejohanan || '')
+          setKejDefaultLorong(d.data().defaultLorong || 8)
         }
       }).catch(() => {})
   }, [schoolId])
@@ -4012,6 +4021,7 @@ export default function StartList() {
           namaSekolahMap={namaSekolahMap}
           atletBibMap={atletBibMap}
           schoolId={schoolId}
+          defaultLorong={kejDefaultLorong}
           onClose={() => setModal(null)}
           onDone={fetchAcaraData}
         />
@@ -4025,6 +4035,7 @@ export default function StartList() {
           sekolahMap={namaSekolahMap}
           atletBibMap={atletBibMap}
           schoolId={schoolId}
+          kejDefaultLorong={kejDefaultLorong}
         />
       )}
       {modal?.type === 'editlorong' && selectedAcara && (
@@ -4049,6 +4060,7 @@ export default function StartList() {
           acaraList={acaraList}
           atletBibMap={atletBibMap}
           schoolId={schoolId}
+          kejDefaultLorong={kejDefaultLorong}
         />
       )}
 
