@@ -1769,7 +1769,7 @@ export default function StartList() {
       const [pendSnap, heatSnap, rekod] = await Promise.all([
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pendaftaran'))),
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aceraKey))),
-        cariRekodUntukAcara(selectedAcara),
+        cariRekodUntukAcara(schoolId, selectedAcara),
       ])
       const peserta = pendSnap.docs
         .map(d => d.data())
@@ -1977,7 +1977,7 @@ export default function StartList() {
     try {
       const [cfgSnap, rekodDNK, allHeatsSnap] = await Promise.all([
         getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
-        cariRekodUntukAcara(a),
+        cariRekodUntukAcara(schoolId, a),
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid))),
       ])
       const cfg = cfgSnap.exists() ? cfgSnap.data() : {}

@@ -1665,7 +1665,7 @@ export default function Home() {
     try {
       const [snap, rekod] = await Promise.all([
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kId, 'heat'), where('aceraId', '==', aceraKey))),
-        cariRekodUntukAcara(acara).catch(() => ({ D: null, N: null, K: null })),
+        cariRekodUntukAcara(schoolId, acara).catch(() => ({ D: null, N: null, K: null })),
       ])
       const heats = snap.docs
         .map(d => ({ heatId: d.id, ...d.data() }))
