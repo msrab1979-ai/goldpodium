@@ -236,10 +236,10 @@ function cetakRekodPDF(rekodList, kategoriList, selectedPeringkat) {
     groupKeys.forEach(katKod => {
       const kat  = katMap[katKod]
       const rows = grouped[katKod]
-        .sort((a, b) => a.namaAcara.localeCompare(b.namaAcara) || a.jantina.localeCompare(b.jantina))
+        .sort((a, b) => (a.namaAcara || '').localeCompare(b.namaAcara || '') || (a.jantina || '').localeCompare(b.jantina || ''))
         .map(r => [
-          r.namaAcara,
-          r.jantina,
+          r.namaAcara || '—',
+          r.jantina || '—',
           r.namaAtlet || '—',
           r[lokasiField] || '—',
           formatPrestasi(r.prestasi, r.unit) + (r.jenisRekod === 'manual' ? ' *' : ''),
@@ -749,7 +749,7 @@ function RekodModal({ initial, kategoriList, acaraList, onClose, onSaved, school
                 onChange={e => { set('kategoriKod', e.target.value); set('namaAcara', '') }}>
                 <option value="">— Pilih —</option>
                 {kategoriList.map(k => (
-                  <option key={k.id} value={k.kod}>{k.kod} — {k.nama}</option>
+                  <option key={k.id} value={k.kod}>{k.label || k.kod}</option>
                 ))}
               </select>
             </div>
@@ -972,7 +972,10 @@ export default function Rekod() {
         const acaraDocs = aSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         acaraDocs.sort((a, b) => (a.kategoriKod || '').localeCompare(b.kategoriKod || ''))
         setAcaraList(acaraDocs)
-        setKategoriList(katSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+        setKategoriList(katSnap.docs.map(d => {
+          const data = d.data()
+          return { id: d.id, ...data, kod: data.kod || d.id }
+        }))
       }
     } catch (e) { console.error('load kejohanan:', e) }
 
@@ -2029,7 +2032,7 @@ export default function Rekod() {
                         </thead>
                         <tbody>
                           {rows
-                            .sort((a, b) => a.namaAcara.localeCompare(b.namaAcara) || a.jantina.localeCompare(b.jantina))
+                            .sort((a, b) => (a.namaAcara || '').localeCompare(b.namaAcara || '') || (a.jantina || '').localeCompare(b.jantina || ''))
                             .map(r => (
                             <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50 group">
                               <td className="px-4 py-2.5 font-semibold text-gray-800">{r.namaAcara}</td>
@@ -2927,6 +2930,7 @@ export default function Rekod() {
           initial={modal.initial}
           kategoriList={kategoriList}
           acaraList={acaraList}
+          schoolId={schoolId}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); setMsg({ type: 'ok', text: 'Rekod disimpan.' }); load() }}
         />

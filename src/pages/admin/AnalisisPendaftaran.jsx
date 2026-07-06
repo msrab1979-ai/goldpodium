@@ -575,9 +575,10 @@ function TabRingkasanAcara({ analisis, totalAtlet, namaKej }) {
 // ─── Tab 2: Analisis Sekolah ──────────────────────────────────────────────────
 
 function TabAnalisisSekolah({ sekolahList, acaraList, pendaftaranDocs, kategoriList, namaKej }) {
-  const jenisOptions = [...new Set(
-    kategoriList.map(k => k.jenisSekolah).filter(Boolean)
-  )].sort()
+  // Kumpul jenisSekolah dari kategori — fallback ke sekolahList.kategori jika tiada
+  const jenisFromKat = [...new Set(kategoriList.map(k => k.jenisSekolah).filter(Boolean))].sort()
+  const jenisFromSkl = [...new Set(sekolahList.map(s => s.kategori).filter(Boolean))].sort()
+  const jenisOptions = jenisFromKat.length > 0 ? jenisFromKat : jenisFromSkl
 
   const [jenisSekolah, setJenisSekolah] = useState(() => jenisOptions[0] || 'SR')
   const [statusFilter, setStatusFilter] = useState('semua')
@@ -900,16 +901,41 @@ export default function AnalisisPendaftaran() {
         const kejId  = kejDoc.id
         setNamaKej(kejDoc.data().namaKejohanan || '')
 
-        // 2. Kategori + derive sekolah dari atlet (GP: tiada sekolah collection)
-        const [katSnap, atletSnap] = await Promise.all([
+        // 2. Kategori + sekolah (cuba koleksi sekolah dulu, fallback ke atlet)
+        const [katSnap, atletSnap, sekolahSnap] = await Promise.all([
           getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori'), orderBy('urutan'))),
           getDocs(collection(db, 'tenants', schoolId, 'atlet')),
+          getDocs(collection(db, 'tenants', schoolId, 'sekolah')),
         ])
         if (cancelled) return
-        const katList   = katSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        const sklMap    = {}
-        atletSnap.docs.forEach(d => { const k = d.data().kodSekolah; if (k) sklMap[k] = { id: k, kodSekolah: k, namaSekolah: d.data().namaSekolah || k, kategori: d.data().kategoriSekolah || '' } })
-        const sklList   = Object.values(sklMap)
+        const katList = katSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+        // Bina sekolahMap dari koleksi 'sekolah' (ada namaSekolah + jenisSekolah betul)
+        const sklMap = {}
+        if (!sekolahSnap.empty) {
+          sekolahSnap.docs.forEach(d => {
+            const data = d.data()
+            const k = data.kodSekolah || d.id
+            if (k) sklMap[k] = {
+              id: k,
+              kodSekolah: k,
+              namaSekolah: data.namaSekolah || data.nama || k,
+              kategori: data.jenisSekolah || data.kategoriSekolah || data.kategori || '',
+            }
+          })
+        }
+        // Fallback: tambah sekolah dari atlet jika tiada dalam sklMap
+        atletSnap.docs.forEach(d => {
+          const k = d.data().kodSekolah
+          if (k && !sklMap[k]) sklMap[k] = {
+            id: k,
+            kodSekolah: k,
+            namaSekolah: d.data().namaSekolah || k,
+            kategori: d.data().kategoriSekolah || d.data().jenisSekolah || '',
+          }
+        })
+
+        const sklList = Object.values(sklMap)
         setKategoriList(katList)
         setSekolahList(sklList)
 
