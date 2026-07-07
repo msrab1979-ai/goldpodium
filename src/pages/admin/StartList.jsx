@@ -411,6 +411,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
             noBib:       atletBibMap[p.noKP] || p.noBib,
             namaAtlet:   p.namaAtlet,
             kodSekolah:  p.kodSekolah,
+            namaSekolah: sekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '',
             kategoriKod: p.kategoriKod || '',
             lorong:      p.lorong      ?? null,
             giliran:     p.giliran     ?? null,
@@ -1003,10 +1004,12 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
   const [lorongKumpulan, setLorongKumpulan] = useState(WA_LORONG_KUMPULAN_DEFAULT)
   const [bilHeatSF,      setBilHeatSF]      = useState(2)  // untuk suku_akhir → SF sahaja
 
-  // Load tetapan/finalSetup + wa_config serentak
+  // Load tetapan/finalSetup (per-kejohanan) + wa_config (global) serentak
   useEffect(() => {
     Promise.all([
-      getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup')),
+      kejohananId && schoolId
+        ? getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'tetapan', 'finalSetup'))
+        : Promise.resolve({ exists: () => false }),
       schoolId ? getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'waConfig')) : Promise.resolve({ exists: () => false }),
     ])
       .then(([fsSnap, waSnap]) => {
@@ -1067,7 +1070,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       noBib:         p.noBib || '',
       namaAtlet:     p.namaAtlet,
       kodSekolah:    p.kodSekolah,
-      namaSekolah:   p.namaSekolah || '',
+      namaSekolah:   sekolahMap[p.kodSekolah]?.namaSekolah || sekolahMap[p.kodSekolah] || p.namaSekolah || '',
       kategoriKod:   p.kategoriKod || '',
       lorong:        p.lorong      ?? null,
       giliran:       p.giliran     ?? null,
@@ -1326,7 +1329,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
 
 // ─── Modal: Jana Heat Individu (dari Status Panel) ───────────────────────────
 
-function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', atletBibMap = {} }) {
+function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', atletBibMap = {}, namaSekolahMap = {}, kejDefaultLorong = 8 }) {
   const isPadang = ['padang_lompat','padang_balin'].includes(acara.jenisAcara)
   const isMass   = acara.jenisAcara === 'mass_start'
 
@@ -1397,6 +1400,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
           peserta: h.peserta.map(p => ({
             noBib: atletBibMap[p.noKP] || p.noBib,
             namaAtlet: p.namaAtlet, kodSekolah: p.kodSekolah,
+            namaSekolah: namaSekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '',
             kategoriKod: p.kategoriKod || '',
             lorong: p.lorong ?? null, giliran: p.giliran ?? null,
             keputusan: null, status: 'belum', cubaan: [], rankDalamHeat: null,
@@ -3727,8 +3731,8 @@ export default function StartList() {
                           Paparan Sahaja
                         </span>
                       )}
-                      {/* Cetak Semua Heat — tunjuk bila ada heat */}
-                      {canEdit && heatList.length > 0 && (
+                      {/* Cetak Semua Heat — tunjuk bila ada heat (admin & pencatat) */}
+                      {heatList.length > 0 && (
                         <button onClick={cetakSemuaHeat}
                           disabled={cetakLoading || cetakHeatId !== null}
                           className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold border border-[#003399] text-[#003399] rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
@@ -4007,6 +4011,8 @@ export default function StartList() {
           kejohananId={selectedKej}
           schoolId={schoolId}
           atletBibMap={atletBibMap}
+          namaSekolahMap={namaSekolahMap}
+          kejDefaultLorong={kejDefaultLorong}
           onClose={() => setQuickJanaAcara(null)}
           onDone={() => { setHeatCountTick(t => t + 1); setQuickJanaAcara(null) }}
         />

@@ -250,6 +250,79 @@ allow write: if canAccessSchool(schoolId) || isPencatat(schoolId);
 - PP (Anonymous Auth) dan Admin (Firebase Auth) kongsi localStorage — jangan buka dalam tab browser yang sama
 - Guna incognito/InPrivate untuk PP
 
+## finalSetup Path — WAJIB Per-Kejohanan (2026-07-07)
+
+**Path betul:** `tenants/{schoolId}/kejohanan/{kejId}/tetapan/finalSetup`
+**JANGAN guna:** `tenants/{schoolId}/tetapan/finalSetup` (global — kosong, salah)
+
+### Fields dalam finalSetup
+- `overrideByAcara{}` — key = **acara aceraId**
+- `sukuKeSeparuhByAcara{}` — key = **QF aceraId** (untuk QF → SF)
+- `separuhKeAkhirByAcara{}` — key = **SF aceraId** (BUKAN QF aceraId!) — untuk SF → Final
+
+### getFinalistSetup lookup
+- Semak `separuhKeAkhirByAcara[aceraId]` DAHULU (SF aceraId) sebelum `overrideByAcara`
+- `aceraKeys` semak SEMUA — `noAcara`, `aceraId`, `acaraId`, `id`
+- Kalau `fasa === 'sukuKeSeparuh'` → guna `sukuKeSeparuhByAcara` sahaja
+
+### KategoriSetup migration
+- Bila load `separuhKeAkhirByAcara` dari Firestore, migrate key lama (QF aceraId) → key baru (SF aceraId) guna `sfAceraIdMap`
+- Auto-save migration ke Firestore supaya SchoolLanding dapat key betul
+
+### Files yang baca finalSetup (semua per-kejohanan)
+| File | Path |
+|---|---|
+| `admin/KategoriSetup.jsx` | SIMPAN `kejohanan/{kejId}/tetapan/finalSetup` |
+| `SchoolLanding.jsx` | BACA — load bila kej bertukar |
+| `Home.jsx` | BACA — load bila kejohanan aktif dijumpai |
+| `admin/StartList.jsx` | BACA — guna `kejohananId` prop |
+| `pencatat/CetakanHadiah.jsx` | BACA — load dari kejohanan aktif |
+| `pencatat/InputKeputusan.jsx` | BACA — guna `kejId` dari URL |
+
+## Cetak Hadiah Inline dalam InputKeputusan (2026-07-07)
+
+- Butang **"Cetak Keputusan (Juruhebah / Hadiah / Fail)"** muncul dalam pencatat InputKeputusan
+- Syarat: `isRasmi && isFinalHeatType && !isSaringanAcara`
+- Toggle **3/4/5 pemenang** (default 3, sokong tie via `rank ≤ cetakBilangan`)
+- PDF 3 salinan: JURUHEBAH (biru), HADIAH (hijau), FAIL (kelabu)
+- Header logo + nama kejohanan + KEPUTUSAN RASMI + tarikh
+- Jadual medal (EMAS/PERAK/GANGSA/T4/T5) + Q/q untuk saringan
+- Kotak RBK (rekod baru) / rujukan rekod semasa
+- Kotak MRKL (menyamai rekod)
+- Filename: `Keputusan_No{noAcara}_{kategori}.pdf`
+- Load `homeCfg` (logo) dari `tenants/{schoolId}/tetapan/home`
+- Load `kategoriMap` dari `tenants/{schoolId}/kejohanan/{kejId}/kategori`
+
+## Fixes Kritikal SF/Final (2026-07-07)
+
+### 1. SF heat carry-over keputusan dari QF
+- `handleJanaFinal` dalam pencatat: bila tulis heat SF/Final baru, WAJIB reset peserta:
+  ```js
+  const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null,
+    rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
+  ```
+- Admin `StartList.jsx` guna `buatEntryPeserta` yang set `keputusan: null` — betul
+
+### 2. isBetter check untuk rekod
+- `rollbackPostRasmi` dan `runPostRasmi`: JANGAN semak `statusRekod === 'aktif'` — rekod lama (manual import) mungkin tiada field ini
+- Guna: `rekodSnap.exists()` sahaja
+
+### 3. rollbackPostRasmi lengkap
+- Rollback: medal_tally, mata_olahragawan (rekod_ field), tuntutan, badge (pecahRekod/samaiRekod)
+- Parameter `grantMedal` — kawal apa yang di-rollback (medal only untuk Final, badge/tuntutan untuk semua fasa)
+- Rollback DIPANGGIL bila edit ATAU padam heat rasmi
+
+### 4. buildUpdatedPeserta clear badges
+- Tambah `pecahRekod: null, samaiRekod: null` dalam entry — clear badge lama semasa edit
+
+### 5. JanaFinalPanel label BH/BT
+- `getFinalistSetup(acara, finalSetup, fasaJana)` — WAJIB pass `fasaJana` supaya label tunjuk nilai yang betul
+
+## AnalisaPingat Sekolah Map (2026-07-07)
+
+- Load `skolMap` dari koleksi `sekolah` dulu, fallback ke `atlet`
+- Key = `data.kodSekolah || d.id`, value = `data.namaSekolah || data.nama || kod`
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`

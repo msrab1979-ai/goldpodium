@@ -587,6 +587,7 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
   const [overrides,    setOverrides]    = useState({})   // SF/biasa → Final
   const [sukuOv,       setSukuOv]       = useState({})   // QF → SF
   const [separuhOv,    setSeparuhOv]    = useState({})   // SF → Final (untuk acara QF)
+  const [sfAceraIdMap, setSfAceraIdMap] = useState({})   // QF aceraId → SF aceraId
   const [filterKat,    setFilterKat]    = useState('semua')
   const [expandedKat,  setExpandedKat]  = useState({})
 
@@ -596,18 +597,41 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
       setLoading(true)
       try {
         const tetapanPath = `tenants/${schoolId}/kejohanan/${kejId}/tetapan`
+        const acaraPath = `tenants/${schoolId}/kejohanan/${kejId}/acara`
+        const acaraSnap = await getDocs(collection(db, acaraPath))
+        const semuaAcara = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        // Bina map: QF aceraId → SF aceraId (SF ada parentAcaraId + peringkat separuh_akhir)
+        const sfMap = {}
+        semuaAcara.forEach(a => {
+          if (a.peringkat === 'separuh_akhir' && a.parentAcaraId) {
+            sfMap[String(a.parentAcaraId)] = a.aceraId || a.id
+          }
+        })
+        setSfAceraIdMap(sfMap)
+
         const snap = await getDoc(doc(db, tetapanPath, 'finalSetup'))
         if (snap.exists()) {
           setOverrides(snap.data().overrideByAcara || {})
           setSukuOv(snap.data().sukuKeSeparuhByAcara || {})
-          setSeparuhOv(snap.data().separuhKeAkhirByAcara || {})
+          // Migrate: key lama (QF aceraId) → key baru (SF aceraId)
+          const rawSep = snap.data().separuhKeAkhirByAcara || {}
+          const migratedSep = {}
+          let needsMigration = false
+          Object.entries(rawSep).forEach(([k, v]) => {
+            const sfKey = sfMap[k] || k
+            if (sfKey !== k) needsMigration = true
+            migratedSep[sfKey] = v
+          })
+          setSeparuhOv(migratedSep)
+          // Auto-save migration ke Firestore supaya SchoolLanding dapat key betul
+          if (needsMigration) {
+            setDoc(doc(db, `tenants/${schoolId}/kejohanan/${kejId}/tetapan`, 'finalSetup'), {
+              separuhKeAkhirByAcara: migratedSep,
+            }, { merge: true }).catch(() => {})
+          }
         }
-
-        const acaraPath = `tenants/${schoolId}/kejohanan/${kejId}/acara`
-        const acaraSnap = await getDocs(collection(db, acaraPath))
         // Tapis: exclude acara final child (ada parentAcaraId) — acara biasa (peringkat=akhir, tiada parent) kekal
-        const senarai = acaraSnap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
+        const senarai = semuaAcara
           .filter(a => !a.parentAcaraId &&
             a.jenisAcara !== 'mass_start' &&
             a.jenisAcara !== 'padang_lompat' &&
@@ -813,10 +837,14 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
                   const sukuTotal = n > 0 ? n * sukuBH + sukuBT : null
                   const sukuOk    = sukuTotal === 8
 
-                  // SF→Final (untuk acara QF — set selepas jana SF heat)
-                  const sepRow = separuhOv[aceraKey] || {}
-                  const sepBH  = sepRow.bestHeat !== undefined ? Number(sepRow.bestHeat) : 1
-                  const sepBT  = sepRow.bestTime !== undefined ? Number(sepRow.bestTime) : 3
+                  // SF→Final (untuk acara QF — kira bilangan heat SF dari heatCountMap)
+                  const sfAceraId = sfAceraIdMap[aceraKey] || sfAceraIdMap[String(a.noAcara)] || null
+                  const sepRow    = sfAceraId ? (separuhOv[sfAceraId] || {}) : {}
+                  const sepBH     = sepRow.bestHeat !== undefined ? Number(sepRow.bestHeat) : 1
+                  const sepBT     = sepRow.bestTime !== undefined ? Number(sepRow.bestTime) : 3
+                  const nSF       = sfAceraId ? (heatCountMap[sfAceraId] || 0) : 0
+                  const sepTotal  = nSF > 0 ? nSF * sepBH + sepBT : null
+                  const sepOk     = sepTotal === 8
 
                   // SF/biasa → Final
                   const ov      = overrides[aceraKey] || {}
@@ -888,16 +916,19 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] text-gray-500 w-16">BH / heat</span>
                               <input type="number" min={0} max={99} value={sepBH}
-                                onChange={e => setSeparuhOvField(aceraKey, 'bestHeat', e.target.value)}
-                                className={numCls + (separuhOv[aceraKey] ? ' border-indigo-300' : '')} />
+                                onChange={e => sfAceraId && setSeparuhOvField(sfAceraId, 'bestHeat', e.target.value)}
+                                className={numCls + (sfAceraId && separuhOv[sfAceraId] ? ' border-indigo-300' : '')} />
                             </div>
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] text-gray-500 w-6">BT</span>
                               <input type="number" min={0} max={99} value={sepBT}
-                                onChange={e => setSeparuhOvField(aceraKey, 'bestTime', e.target.value)}
-                                className={numCls + (separuhOv[aceraKey] ? ' border-indigo-300' : '')} />
+                                onChange={e => sfAceraId && setSeparuhOvField(sfAceraId, 'bestTime', e.target.value)}
+                                className={numCls + (sfAceraId && separuhOv[sfAceraId] ? ' border-indigo-300' : '')} />
                             </div>
-                            <span className="text-[9px] text-gray-400">set selepas jana heat SF</span>
+                            {sepTotal !== null
+                              ? <span className={`font-black text-sm ${sepOk ? 'text-green-600' : 'text-amber-500'}`}>{sepTotal}</span>
+                              : <span className="text-[9px] text-gray-400">{nSF === 0 ? 'Jana heat SF dahulu' : '—'}</span>
+                            }
                           </div>
                         ) : (
                           // Acara SF / biasa: guna overrides

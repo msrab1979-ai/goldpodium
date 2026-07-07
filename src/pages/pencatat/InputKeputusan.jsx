@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  collection, getDocs, getDoc, doc, updateDoc, setDoc,
+  collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc,
   query, where, orderBy, serverTimestamp, onSnapshot, runTransaction,
 } from 'firebase/firestore'
 import { selectFinalists, getFinalistSetup, serpentineSeed } from '../../utils/finalistUtils'
@@ -25,6 +25,8 @@ import { runPostRasmi, rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate, useParams } from 'react-router-dom'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -316,8 +318,8 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
       const ka = `${a._heatId}_${a.lorong ?? a.noBib}`
       const kb = `${b._heatId}_${b.lorong ?? b.noBib}`
       if (carianBib) {
-        const matchA = (a.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
-        const matchB = (b.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchA = matchCarian(a, carianBib, sekolahMap) ? 0 : 1
+        const matchB = matchCarian(b, carianBib, sekolahMap) ? 0 : 1
         if (matchA !== matchB) return matchA - matchB
       }
       const ma = Number(keputusanSemua[ka]?.keputusan) || 0
@@ -348,7 +350,7 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
         const rank = idx + 1
         const hasMasa = Number(kp.keputusan) > 0 && !flagged
-        const isCarian = carianBib && (p.noBib || '').toUpperCase().includes(carianBib)
+        const isCarian = carianBib && matchCarian(p, carianBib, sekolahMap)
         const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset'
           : flagged ? 'bg-red-50'
           : hasMasa && rank === 1 ? 'bg-yellow-50'
@@ -419,8 +421,8 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
   const slotsAsal   = Array.from({ length: bilLorong }, (_, i) => i + 1)
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
-        const matchA = (keputusan[a]?.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
-        const matchB = (keputusan[b]?.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap) ? 0 : 1
+        const matchB = matchCarian(keputusan[b] || {}, carianBib, sekolahMap) ? 0 : 1
         return matchA - matchB
       })
     : slotsAsal
@@ -463,7 +465,7 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
           const isKosong = !kp.namaAtlet && !kp.noBib && !kp.kodSekolah && !kp.keputusan && !kp.status
           const rank     = rankMap[lorong]
           const flagged  = ['DNS', 'DNF', 'DQ'].includes(kp.status)
-          const isCarian = carianBib && (kp.noBib || '').toUpperCase().includes(carianBib)
+          const isCarian = carianBib && matchCarian(kp, carianBib, sekolahMap)
           const isKonflik = konflikSlots.has(lorong)
           const usedByOthers = new Set(
             slotsAsal.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
@@ -570,8 +572,8 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
 
   const pesertaSorted = carianBib
     ? [...peserta].sort((a, b) => {
-        const matchA = (a.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
-        const matchB = (b.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchA = matchCarian(a, carianBib, sekolahMap) ? 0 : 1
+        const matchB = matchCarian(b, carianBib, sekolahMap) ? 0 : 1
         return matchA - matchB
       })
     : peserta
@@ -625,7 +627,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
           const kp      = keputusan[key] || {}
           const rank    = rankMap[key]
           const flagged = ['DQ', 'DNS', 'DNF'].includes(kp.status)
-          const isCarian = carianBib && (p.noBib || '').toUpperCase().includes(carianBib)
+          const isCarian = carianBib && matchCarian(p, carianBib, sekolahMap)
           const usedByOthers = new Set(
             peserta.filter((_, i) => i !== idx).map(pp => keputusan[pp.noBib]?.kedudukan).filter(v => v !== '' && v != null)
           )
@@ -701,8 +703,8 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, carianBib 
     ? [...slotsAsal].sort((a, b) => {
         const kpA = keputusan[a] || {}
         const kpB = keputusan[b] || {}
-        const matchA = (kpA.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
-        const matchB = (kpB.noBib || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchA = matchCarian(kpA, carianBib, sekolahMap) ? 0 : 1
+        const matchB = matchCarian(kpB, carianBib, sekolahMap) ? 0 : 1
         return matchA - matchB
       })
     : slotsAsal
@@ -725,7 +727,7 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, carianBib 
         const kp      = keputusan[slot] || {}
         const rank    = rankMap[slot]
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
-        const isCarian   = carianBib && (kp.noBib || '').toUpperCase().includes(carianBib)
+        const isCarian   = carianBib && matchCarian(kp, carianBib, sekolahMap)
         const isKonflik  = konflikSlots.has(slot)
         const usedByOthers = new Set(
           slotsAsal.filter(s => s !== slot).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
@@ -814,8 +816,8 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianB
   const slotsAsal  = Array.from({ length: bilPasukan }, (_, i) => i + 1)
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
-        const matchA = (keputusan[a]?.kodSekolah || '').toUpperCase().includes(carianBib) ? 0 : 1
-        const matchB = (keputusan[b]?.kodSekolah || '').toUpperCase().includes(carianBib) ? 0 : 1
+        const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap) ? 0 : 1
+        const matchB = matchCarian(keputusan[b] || {}, carianBib, sekolahMap) ? 0 : 1
         return matchA - matchB
       })
     : slotsAsal
@@ -838,7 +840,7 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianB
         const isKosong = !kp.kodSekolah && !kp.keputusan && !kp.status
         const rank    = rankMap[lorong]
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
-        const isCarian  = carianBib && (kp.kodSekolah || '').toUpperCase().includes(carianBib)
+        const isCarian  = carianBib && matchCarian(kp, carianBib, sekolahMap)
         const isKonflik = konflikSlots.has(lorong)
         const usedByOthers = new Set(
           slotsAsal.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
@@ -937,8 +939,8 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianB
 
 // ─── Jana Final Panel ─────────────────────────────────────────────────────────
 
-function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup }) {
-  const { bestHeat, bestTime } = getFinalistSetup(acara || {}, finalSetup)
+function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup, fasaJana }) {
+  const { bestHeat, bestTime } = getFinalistSetup(acara || {}, finalSetup, fasaJana)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
 
   return (
@@ -946,7 +948,9 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className={`text-xs font-black uppercase tracking-widest ${finalDijanaKe ? 'text-green-700' : 'text-[#003399]'}`}>
-            {finalDijanaKe ? `✓ Final Dijana → Acara #${finalDijanaKe}` : 'Semua Heat Rasmi'}
+            {finalDijanaKe
+              ? `✓ ${fasaJana === 'sukuKeSeparuh' ? 'Separuh Akhir' : 'Final'} Dijana → Acara #${finalDijanaKe}`
+              : 'Semua Heat Rasmi'}
           </p>
           <p className="text-[10px] text-gray-600 mt-0.5 font-semibold">{finalists.length} finalis</p>
           <p className="text-[10px] text-gray-400 mt-0.5">
@@ -958,7 +962,9 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
           className={`shrink-0 px-4 py-2.5 text-white text-sm font-bold rounded-xl disabled:opacity-50 transition-all active:scale-95 ${
             finalDijanaKe ? 'bg-green-600 hover:bg-green-700' : 'bg-[#003399] hover:bg-[#002277]'
           }`}>
-          {loading ? 'Menjana…' : finalDijanaKe ? '↺ Jana Semula' : 'Jana Final ▶'}
+          {loading ? 'Menjana…' : finalDijanaKe
+            ? '↺ Jana Semula'
+            : fasaJana === 'sukuKeSeparuh' ? 'Jana Separuh Akhir ▶' : 'Jana Final ▶'}
         </button>
       </div>
 
@@ -999,6 +1005,16 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
   )
 }
 
+function matchCarian(p, q, sekolahMap = {}) {
+  if (!q) return false
+  const u = q.toUpperCase()
+  const namaSekolah = sekolahMap[p.kodSekolah] || p.namaSekolah || ''
+  return (p.noBib        || '').toUpperCase().includes(u)
+      || (p.namaAtlet    || '').toUpperCase().includes(u)
+      || namaSekolah.toUpperCase().includes(u)
+      || (p.kodSekolah   || '').toUpperCase().includes(u)
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PencatatInputKeputusan() {
@@ -1025,9 +1041,13 @@ export default function PencatatInputKeputusan() {
   const [acaraList,     setAcaraList]     = useState([])
   const [finalSetup,    setFinalSetup]    = useState(null)
   const [sekolahMap,    setSekolahMap]    = useState({})
+  const [kategoriMap,   setKategoriMap]   = useState({})
+  const [homeCfg,       setHomeCfg]       = useState({})
   const [loading,       setLoading]       = useState(true)
   const [lorongKumpulan, setLorongKumpulan] = useState(WA_LORONG_KUMPULAN_DEFAULT)
   const [bilHeatSF,      setBilHeatSF]     = useState(2)
+  const [cetakLoading,   setCetakLoading]  = useState(false)
+  const [cetakBilangan,  setCetakBilangan] = useState(3)
 
   // Accordion open state — key = kategoriKod
   const [accordionOpen, setAccordionOpen] = useState({})
@@ -1107,9 +1127,21 @@ export default function PencatatInputKeputusan() {
           setSekolahMap(map)
         }).catch(() => {})
 
+        // Load kategori map (untuk PDF label)
+        getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'kategori')).then(snap => {
+          const km = {}
+          snap.docs.forEach(d => { km[d.id] = d.data().nama || d.data().label || d.id })
+          setKategoriMap(km)
+        }).catch(() => {})
+
+        // Load home config (logo untuk PDF header)
+        getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')).then(s => {
+          if (s.exists()) setHomeCfg(s.data())
+        }).catch(() => {})
+
         const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
         const acaraDocs = acaraSnap.docs
-          .map(d => ({ acaraId: d.id, ...d.data() }))
+          .map(d => ({ acaraId: d.id, aceraId: d.data().aceraId || d.id, ...d.data() }))
           .sort((a, b) => (a.noAcara ?? 999) - (b.noAcara ?? 999))
 
         const heatSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'))
@@ -1125,9 +1157,9 @@ export default function PencatatInputKeputusan() {
 
         const acaraWithCounts = acaraDocs.map(a => ({
           ...a,
-          _totalHeat: countMap[a.acaraId]?.total || 0,
-          _rasmiHeat: countMap[a.acaraId]?.rasmi || 0,
-          _drafHeat:  countMap[a.acaraId]?.draf  || 0,
+          _totalHeat: countMap[a.aceraId]?.total || 0,
+          _rasmiHeat: countMap[a.aceraId]?.rasmi || 0,
+          _drafHeat:  countMap[a.aceraId]?.draf  || 0,
         }))
         setAcaraList(acaraWithCounts)
 
@@ -1155,7 +1187,7 @@ export default function PencatatInputKeputusan() {
     if (!schoolId || !kejId) return []
     const snap = await getDocs(query(
       collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'),
-      where('aceraId', '==', acara.acaraId)
+      where('aceraId', '==', acara.aceraId)
     ))
     return snap.docs
       .map(d => ({ heatId: d.id, ...d.data() }))
@@ -1424,6 +1456,8 @@ export default function PencatatInputKeputusan() {
       ...p,
       rankDalamHeat: (p.status === 'selesai' && p.keputusan != null)
         ? (autoRankMap.get(rankKey(p)) || null) : null,
+      pecahRekod: null,
+      samaiRekod: null,
     }))
   }
 
@@ -1472,6 +1506,20 @@ export default function PencatatInputKeputusan() {
       const heatRef  = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId)
       const acaraRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', selectedAcara.acaraId)
       const acara    = selectedAcara
+      const PKOD0    = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const peringkatKejAwal = PKOD0[((kejData || {}).peringkat || '').toLowerCase()] || 'D'
+
+      // Rollback dulu jika heat sudah rasmi — supaya medal/rekod tidak berganda
+      if (['rasmi', 'diterima'].includes(selectedHeat.statusKeputusan)) {
+        const isSaringanLocal = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
+        const wasGrantMedal = !isSaringanLocal && (['final', 'terus_final'].includes(selectedHeat.fasa) || heats.length === 1)
+        await rollbackPostRasmi(db,
+          { id: selectedHeat.heatId, peserta: selectedHeat.peserta || [] },
+          { ...acara, id: acara.acaraId },
+          kejId,
+          { schoolId, isRelay: acara.jenisAcara === 'relay', peringkatKej: peringkatKejAwal, grantMedal: wasGrantMedal }
+        ).catch(e => console.warn('rollback sebelum hantar:', e.message))
+      }
       const kpMap    = keputusan
       const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([k, v]) => !k.startsWith('_') && v !== undefined))
       const windSpeedVal = acara.isWindReading && windSpeed !== '' ? (Number(windSpeed) || null) : undefined
@@ -1669,7 +1717,7 @@ export default function PencatatInputKeputusan() {
         collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'),
         where('aceraId', '==', nextAcaraId)
       ))
-      await Promise.all(oldHeats.docs.map(d => d.ref.delete()))
+      await Promise.all(oldHeats.docs.map(d => deleteDoc(d.ref)))
 
       if (fasaJana === 'sukuKeSeparuh') {
         // ── QF → SF: serpentine seeding ke bilHeatSF heat ────────────────────
@@ -1684,9 +1732,10 @@ export default function PencatatInputKeputusan() {
           const sorted  = [...kumpulan].sort((a, b) =>
             isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
           )
-          const peserta = isPadang || isMass
+          const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
+          const peserta = (isPadang || isMass
             ? kumpulan
-            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
+            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)).map(resetPeserta)
           await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
             heatId, aceraId: nextAcaraId, noHeat, fasa: fasaHeat,
             statusKeputusan: 'belum_mula', peserta, createdAt: serverTimestamp(),
@@ -1699,9 +1748,10 @@ export default function PencatatInputKeputusan() {
         const sorted = [...finalistList].sort((a, b) =>
           isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
         )
-        const peserta = isPadang || isMass
+        const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
+        const peserta = (isPadang || isMass
           ? finalistList
-          : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
+          : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)).map(resetPeserta)
         await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
           heatId, aceraId: nextAcaraId, noHeat: 1, fasa: fasaHeat,
           statusKeputusan: 'belum_mula', peserta, createdAt: serverTimestamp(),
@@ -1722,6 +1772,350 @@ export default function PencatatInputKeputusan() {
       showToast('Ralat jana: ' + e.message, 'err', 5000)
     } finally {
       setJanaFinalLoading(false)
+    }
+  }
+
+  // ── Cetak Keputusan Rasmi (PDF 3 salinan: Juruhebah / Hadiah / Fail) ────────
+  async function handleCetakHasil() {
+    if (!selectedAcara || !selectedHeat || !schoolId) return
+    setCetakLoading(true)
+    try {
+      const isPadangAcara = ['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara)
+      const isRelayAcara  = selectedAcara.jenisAcara === 'relay'
+
+      // Fetch rekod aktif + tuntutan
+      const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const peringkatKej = PKOD[((kejData || {}).peringkat || '').toLowerCase()] || 'D'
+      const rekodNamaCetak = selectedAcara.namaAcaraPendek || selectedAcara.namaAcara
+      const rKey = [rekodNamaCetak, selectedAcara.jantina, selectedAcara.kategoriKod, peringkatKej]
+        .join('_').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+
+      const [rSnap, rTuntSnap] = await Promise.all([
+        getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey)).catch(() => null),
+        getDoc(doc(db, 'tenants', schoolId, 'rekod', rKey + '_tuntutan')).catch(() => null),
+      ])
+
+      let rekodDoc = null
+      let isRekodBaru = false
+      if (rTuntSnap?.exists() && rTuntSnap.data().kejohananId === kejId) {
+        rekodDoc = rTuntSnap.data()
+        isRekodBaru = true
+      } else if (rSnap?.exists() && rSnap.data().statusRekod === 'aktif') {
+        rekodDoc = rSnap.data()
+      }
+
+      function imgFmt(b64) {
+        if (!b64) return 'PNG'
+        return (b64.startsWith('data:image/jpeg') || b64.startsWith('data:image/jpg')) ? 'JPEG' : 'PNG'
+      }
+
+      // Peserta final — had kepada rank ≤ cetakBilangan (sokong tie)
+      const pesertaFinal = (selectedHeat.peserta || [])
+        .filter(p => p.rankDalamHeat && (p.status === 'selesai' || p.keputusan != null))
+        .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
+        .filter(p => p.rankDalamHeat <= cetakBilangan)
+
+      // Q/q map — hanya untuk heat saringan
+      const isSaringanHeat = !['final', 'terus_final'].includes(selectedHeat?.fasa) && selectedHeat?.peringkat !== 'final'
+      const cetakQMap = new Map()
+      if (isSaringanHeat && selectedAcara) {
+        const _fasaParam = selectedAcara?.peringkat === 'saringan_qf' ? 'sukuKeSeparuh' : 'toFinal'
+        const raw = selectFinalists(heats, selectedAcara, finalSetup, _fasaParam)
+        raw.forEach(f => {
+          const key = isRelayAcara ? f.kodSekolah : f.noBib
+          if (key) cetakQMap.set(key, f.qualifyType || 'q')
+        })
+      }
+
+      function fmtPrestasi(val) {
+        if (val == null || val === '') return '—'
+        const n = Number(val)
+        if (isNaN(n)) return String(val)
+        if (isPadangAcara) return `${n.toFixed(2)} m`
+        const min = Math.floor(n / 60)
+        const sek = (n % 60).toFixed(2).padStart(5, '0')
+        return min > 0 ? `${min}:${sek}` : `${Number(sek).toFixed(2)}s`
+      }
+
+      function fmtTarikh(t) {
+        if (!t) return '—'
+        try {
+          return new Date(t + 'T00:00:00').toLocaleDateString('ms-MY', {
+            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+          })
+        } catch { return String(t) }
+      }
+
+      const namaKej  = homeCfg?.tajukUtama || kejData?.namaKejohanan || 'Kejohanan Olahraga'
+      const katLabel = kategoriMap[selectedAcara.kategoriKod] || selectedAcara.kategoriKod || '—'
+      const tarikh   = fmtTarikh(selectedAcara.tarikhAcara)
+      const now      = new Date().toLocaleString('ms-MY')
+
+      const SALINAN = [
+        { label: 'JURUHEBAH', clr: [0, 51, 153],  tblSize: 11 },
+        { label: 'HADIAH',    clr: [0, 120, 50],  tblSize: 11 },
+        { label: 'FAIL',      clr: [70, 70, 70],  tblSize: 11 },
+      ]
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const M = 15
+      const W = pdf.internal.pageSize.getWidth()
+      const H = pdf.internal.pageSize.getHeight()
+      let isFirst = true
+
+      function buatHeader(clr) {
+        let y = 10
+        const logoW = 18, logoH = 18
+        if (homeCfg.logoKiriBase64) {
+          try { pdf.addImage(homeCfg.logoKiriBase64, imgFmt(homeCfg.logoKiriBase64), M, y, logoW, logoH) } catch {}
+        }
+        if (homeCfg.logoKananBase64) {
+          try { pdf.addImage(homeCfg.logoKananBase64, imgFmt(homeCfg.logoKananBase64), W - M - logoW, y, logoW, logoH) } catch {}
+        }
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(11)
+        pdf.setTextColor(0, 0, 0)
+        pdf.text(namaKej, W / 2, y + 7, { align: 'center' })
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(8.5)
+        pdf.setTextColor(60, 60, 60)
+        pdf.text('KEPUTUSAN RASMI', W / 2, y + 13, { align: 'center' })
+        pdf.setFontSize(7.5)
+        pdf.setTextColor(120, 120, 120)
+        pdf.text(tarikh, W / 2, y + 18.5, { align: 'center' })
+        pdf.setDrawColor(...clr)
+        pdf.setLineWidth(0.7)
+        pdf.line(M, y + 22, W - M, y + 22)
+        return y + 28
+      }
+
+      for (const sal of SALINAN) {
+        if (!isFirst) pdf.addPage()
+        isFirst = false
+
+        let y = buatHeader(sal.clr)
+
+        // Label salinan
+        const lblW = 36, lblH = 8
+        const lblX = W - M - lblW
+        pdf.setFillColor(...sal.clr)
+        pdf.rect(lblX, y, lblW, lblH, 'F')
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(8)
+        pdf.setTextColor(255, 255, 255)
+        pdf.text(sal.label, lblX + lblW / 2, y + 5.5, { align: 'center' })
+        pdf.setTextColor(0, 0, 0)
+        y += 12
+
+        pdf.setDrawColor(200, 200, 200)
+        pdf.setLineWidth(0.3)
+        pdf.line(M, y, W - M, y)
+        y += 6
+
+        // Info acara
+        const col2 = M + 32
+        const infoRows = [
+          ['No. Acara', String(selectedAcara.noAcara || '—')],
+          ['Kategori',  katLabel],
+          ['Acara',     selectedAcara.namaAcara || '—'],
+        ]
+        pdf.setFontSize(9.5)
+        infoRows.forEach(([lbl, val]) => {
+          pdf.setFont('helvetica', 'normal')
+          pdf.setTextColor(110, 110, 110)
+          pdf.text(lbl, M, y)
+          pdf.text(':', col2 - 4, y)
+          pdf.setFont('helvetica', 'bold')
+          pdf.setTextColor(0, 0, 0)
+          pdf.text(val, col2, y)
+          y += 6.5
+        })
+        y += 4
+
+        pdf.setDrawColor(200, 200, 200)
+        pdf.setLineWidth(0.3)
+        pdf.line(M, y, W - M, y)
+        y += 4
+
+        // Jadual keputusan
+        const MEDAL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5' }
+        const tblHead = isRelayAcara
+          ? [['No.', 'Pasukan / Sekolah', 'Ahli Pasukan', 'Masa', 'Status']]
+          : [['No.', 'Nama Atlet', 'Sekolah', 'Prestasi', 'Status']]
+        const tblBody = pesertaFinal.map(p => {
+          const flagged = ['DNS', 'DNF', 'DQ'].includes(p.status)
+          const qType   = !flagged && isSaringanHeat
+            ? (cetakQMap.get(isRelayAcara ? p.kodSekolah : p.noBib) || null)
+            : null
+          const statusLabel = flagged ? p.status : (qType || (MEDAL[p.rankDalamHeat] || ''))
+          const prestasi = flagged ? '—' : fmtPrestasi(p.keputusan)
+          if (isRelayAcara) {
+            const ahli = (p.ahliPasukan || []).map(a => a.namaAtlet || a.noBib || '').filter(Boolean).join(', ')
+            return [
+              String(p.rankDalamHeat),
+              sekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '—',
+              ahli || '—',
+              prestasi,
+              statusLabel,
+            ]
+          }
+          return [
+            String(p.rankDalamHeat),
+            p.namaAtlet || '—',
+            sekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '—',
+            prestasi,
+            statusLabel,
+          ]
+        })
+        autoTable(pdf, {
+          startY: y,
+          head: tblHead,
+          body: tblBody,
+          styles: {
+            fontSize: sal.tblSize, cellPadding: 2, minCellHeight: 8,
+            overflow: 'linebreak', valign: 'middle',
+          },
+          headStyles: {
+            fillColor: sal.clr, textColor: [255, 255, 255],
+            fontStyle: 'bold', fontSize: sal.tblSize - 1,
+            halign: 'center', minCellHeight: 8,
+          },
+          columnStyles: isRelayAcara ? {
+            0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+            1: { cellWidth: 50, overflow: 'linebreak' },
+            2: { cellWidth: 'auto', overflow: 'linebreak' },
+            3: { halign: 'center', cellWidth: 24, fontStyle: 'bold', textColor: [0, 51, 153] },
+            4: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [180, 60, 60] },
+          } : {
+            0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+            1: { cellWidth: 75, overflow: 'linebreak' },
+            2: { cellWidth: 'auto', overflow: 'linebreak' },
+            3: { halign: 'center', cellWidth: 24, fontStyle: 'bold', textColor: [0, 51, 153] },
+            4: { halign: 'center', cellWidth: 22, fontStyle: 'bold', textColor: [180, 60, 60] },
+          },
+          alternateRowStyles: { fillColor: [248, 248, 252] },
+          margin: { left: M, right: M },
+          didParseCell: (data) => {
+            if (data.section === 'body') {
+              const rank = pesertaFinal[data.row.index]?.rankDalamHeat
+              if (rank === 1) data.cell.styles.fillColor = [255, 248, 210]
+              else if (rank === 2) data.cell.styles.fillColor = [242, 242, 248]
+              else if (rank === 3) data.cell.styles.fillColor = [255, 244, 232]
+            }
+          },
+        })
+
+        y = pdf.lastAutoTable.finalY + 5
+
+        // Kotak rekod
+        if (rekodDoc) {
+          const PLAB = { S: 'Sekolah', D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
+          const pLabel = PLAB[peringkatKej] || peringkatKej
+          pdf.setLineWidth(0.3)
+          pdf.setFontSize(8)
+
+          if (isRekodBaru) {
+            const hasLama = rekodDoc.prestasiLama != null
+            const boxH = hasLama ? 18 : 14
+            pdf.setFillColor(255, 248, 215)
+            pdf.setDrawColor(200, 145, 30)
+            pdf.rect(M, y, W - M * 2, boxH, 'FD')
+
+            pdf.setFont('helvetica', 'bold')
+            pdf.setTextColor(130, 60, 0)
+            const newNama = rekodDoc.namaAtlet   || '—'
+            const newSkol = rekodDoc.namaSekolah || sekolahMap[rekodDoc.kodSekolah] || ''
+            pdf.text(
+              '[RBK — REKOD BARU KEJOHANAN]  ' + fmtPrestasi(rekodDoc.prestasi) +
+              '  --  ' + newNama + (newSkol ? ' (' + newSkol + ')' : ''),
+              M + 3, y + 5.5
+            )
+
+            pdf.setFont('helvetica', 'normal')
+            pdf.setFontSize(7.5)
+            pdf.setTextColor(100, 70, 20)
+            if (hasLama) {
+              const oldP    = fmtPrestasi(rekodDoc.prestasiLama)
+              const oldNama = rekodDoc.namaLama   || '—'
+              const oldLok  = rekodDoc.lokasiLama || ''
+              const oldThn  = rekodDoc.tahunLama  || ''
+              pdf.text(
+                'Rekod Lama: ' + oldP + '  --  ' + oldNama +
+                (oldLok ? ' (' + oldLok + ')' : '') +
+                (oldThn ? '  ' + oldThn : ''),
+                M + 3, y + 12
+              )
+            } else {
+              pdf.text('Rekod Pertama Ditetapkan', M + 3, y + 12)
+            }
+
+            pdf.setTextColor(0, 0, 0)
+            y += boxH + 4
+          } else {
+            pdf.setFillColor(235, 242, 255)
+            pdf.setDrawColor(150, 170, 220)
+            pdf.rect(M, y, W - M * 2, 10, 'FD')
+
+            pdf.setFont('helvetica', 'normal')
+            pdf.setTextColor(40, 60, 130)
+            const rP    = fmtPrestasi(rekodDoc.prestasi)
+            const rNama = rekodDoc.namaAtlet   || '—'
+            const rSkol = rekodDoc.namaSekolah || sekolahMap[rekodDoc.kodSekolah] || ''
+            const rThn  = rekodDoc.tarikhRekod ? String(rekodDoc.tarikhRekod).slice(0, 4) : ''
+            pdf.text(
+              'Rekod ' + pLabel + ':  ' + rP + '  --  ' + rNama +
+              (rSkol ? ' (' + rSkol + ')' : '') + (rThn ? '  ' + rThn : ''),
+              M + 3, y + 7
+            )
+
+            pdf.setTextColor(0, 0, 0)
+            y += 14
+          }
+        }
+
+        // Kotak MRKL
+        const mrkl = pesertaFinal.find(p => p.samaiRekod)
+        if (mrkl) {
+          const mrklNama = mrkl.namaAtlet || (sekolahMap[mrkl.kodSekolah] || mrkl.kodSekolah) || '—'
+          const mrklSkol = isRelayAcara ? '' : (sekolahMap[mrkl.kodSekolah] || mrkl.kodSekolah || '')
+          const mrklPrestasi = fmtPrestasi(mrkl.keputusan)
+          pdf.setLineWidth(0.3)
+          pdf.setFontSize(8)
+          pdf.setFillColor(209, 250, 229)
+          pdf.setDrawColor(20, 150, 100)
+          pdf.rect(M, y, W - M * 2, 10, 'FD')
+          pdf.setFont('helvetica', 'bold')
+          pdf.setTextColor(10, 80, 50)
+          pdf.text(
+            '[MRKL — MENYAMAI REKOD KEJOHANAN LEPAS]  ' + mrklPrestasi +
+            '  --  ' + mrklNama + (mrklSkol ? ' (' + mrklSkol + ')' : ''),
+            M + 3, y + 7
+          )
+          pdf.setTextColor(0, 0, 0)
+          y += 14
+        }
+
+        // Footer
+        const footY = H - 18
+        pdf.setDrawColor(...sal.clr)
+        pdf.setLineWidth(0.4)
+        pdf.line(M, footY, W - M, footY)
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(8)
+        pdf.setTextColor(80, 80, 80)
+        pdf.text('Pegawai Teknikal: _______________________', M, footY + 6)
+        pdf.text('Tandatangan: _______________________', W / 2, footY + 6)
+        pdf.setFontSize(7)
+        pdf.setTextColor(170, 170, 170)
+        pdf.text(`Dicetak: ${now}`, M, footY + 12)
+        pdf.setTextColor(0, 0, 0)
+      }
+
+      pdf.save(`Keputusan_No${selectedAcara.noAcara || 'Acara'}_${katLabel}.pdf`)
+    } catch (e) {
+      showToast('Ralat cetak: ' + e.message, 'err', 5000)
+    } finally {
+      setCetakLoading(false)
     }
   }
 
@@ -1796,7 +2190,7 @@ export default function PencatatInputKeputusan() {
   const namaKej = kejData?.namaKejohanan || 'Kejohanan'
   const isRasmi = ['rasmi', 'diterima'].includes(selectedHeat?.statusKeputusan)
   const isDalamBantahan = selectedHeat?.statusKeputusan === 'dalam_bantahan'
-  const bolehInputSekarang = bolehEdit && !isRasmi && !sistemTutup
+  const bolehInputSekarang = bolehEdit && !sistemTutup
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -2122,7 +2516,7 @@ export default function PencatatInputKeputusan() {
                   </svg>
                   <input type="text" value={carianBib}
                     onChange={e => setCarianBib(e.target.value.toUpperCase())}
-                    placeholder="Cari No. BIB…"
+                    placeholder="Cari BIB / Nama / Sekolah…"
                     className="w-full pl-8 pr-4 py-2 border border-amber-200 rounded-xl text-xs bg-amber-50 focus:outline-none focus:border-amber-400 focus:bg-white transition-colors" />
                 </div>
 
@@ -2183,12 +2577,14 @@ export default function PencatatInputKeputusan() {
                                   ['final', 'terus_final'].includes(selectedHeat.fasa) || heats.length === 1
                                 )
                                 const isRelayAcara = selectedAcara.jenisAcara === 'relay'
-                                if (wasGrantMedal) {
+                                {
+                                  const PKOD_P = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+                                  const peringkatKejP = PKOD_P[((kejData || {}).peringkat || '').toLowerCase()] || 'D'
                                   await rollbackPostRasmi(db,
                                     { id: selectedHeat.heatId, peserta: selectedHeat.peserta || [] },
                                     { ...selectedAcara, id: selectedAcara.acaraId },
                                     kejId,
-                                    { schoolId, isRelay: isRelayAcara }
+                                    { schoolId, isRelay: isRelayAcara, peringkatKej: peringkatKejP, grantMedal: wasGrantMedal }
                                   ).catch(e => console.warn('rollback:', e.message))
                                 }
                                 const freshPeserta = (selectedHeat.peserta || []).map(p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null }))
@@ -2247,9 +2643,9 @@ export default function PencatatInputKeputusan() {
                       </button>
                       <button
                         onClick={() => modSemua ? handleSaveSemuaPeserta({ danHantar: true }) : handleHantar()}
-                        disabled={saving || (!modSemua && isRasmi)}
+                        disabled={saving}
                         className="bg-[#003399] hover:bg-[#002277] text-white font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-40 shadow-lg shadow-[#003399]/20">
-                        {saving ? 'Menghantar…' : (!modSemua && isRasmi) ? '✓ Sudah Rasmi' : 'HANTAR ▶'}
+                        {saving ? 'Menghantar…' : 'HANTAR ▶'}
                       </button>
                     </div>
                     <p className="text-[10px] text-gray-400 text-center">
@@ -2262,6 +2658,45 @@ export default function PencatatInputKeputusan() {
                   <p className="text-center text-xs text-green-600 font-semibold">✓ Berjaya disimpan</p>
                 )}
 
+                {/* Cetak Keputusan Rasmi — hanya untuk Final rasmi */}
+                {(() => {
+                  const isFinalHeatType = ['final', 'terus_final'].includes(selectedHeat?.fasa) || selectedHeat?.peringkat === 'final'
+                  const bolehCetak = isRasmi && isFinalHeatType && !isSaringanAcara
+                  if (!bolehCetak) return null
+                  return (
+                    <div className="pb-1">
+                      <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-green-800">✓ Keputusan Rasmi — Sedia untuk Cetak</p>
+                          <div className="flex items-center gap-1 bg-white border border-green-200 rounded-lg p-0.5">
+                            {[3, 4, 5].map(n => (
+                              <button key={n} onClick={() => setCetakBilangan(n)}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${
+                                  cetakBilangan === n ? 'bg-[#003399] text-white' : 'text-gray-500 hover:text-gray-700'
+                                }`}>
+                                {n} pemenang
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button onClick={handleCetakHasil} disabled={cetakLoading}
+                          className="w-full py-3 text-sm font-bold rounded-xl bg-[#003399] hover:bg-[#002277] text-white disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                          {cetakLoading ? (
+                            <span>Menjana PDF…</span>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                              </svg>
+                              <span>Cetak Keputusan (Juruhebah / Hadiah / Fail)</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 {/* Jana Final */}
                 {isSaringanAcara && allHeatsDone && finalists.length > 0 && (
                   <JanaFinalPanel
@@ -2271,6 +2706,7 @@ export default function PencatatInputKeputusan() {
                     loading={janaFinalLoading}
                     finalDijanaKe={finalDijanaKe}
                     finalSetup={finalSetup}
+                    fasaJana={fasaJana}
                   />
                 )}
               </div>

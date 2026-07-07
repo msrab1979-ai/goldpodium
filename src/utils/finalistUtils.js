@@ -30,22 +30,38 @@ export function getFinalistSetup(acara, finalSetup, fasa = 'toFinal') {
   const FALLBACK = { bestHeat: 1, bestTime: 3 }
   if (!finalSetup) return FALLBACK
 
-  const aceraId = String(acara.noAcara || acara.acaraId || acara.aceraId || acara.id || '')
+  // Build all possible keys for this acara (noAcara, aceraId field, Firestore doc id)
+  const aceraKeys = [...new Set([
+    String(acara.noAcara  || ''),
+    String(acara.aceraId  || ''),
+    String(acara.acaraId  || ''),
+    String(acara.id       || ''),
+  ].filter(Boolean))]
+  const aceraId = aceraKeys[0] // primary key (noAcara first)
+
+  const findInMap = (map) => {
+    if (!map) return null
+    for (const k of aceraKeys) {
+      const v = map[k]
+      if (v && (v.bestHeat != null || v.bestTime != null)) return v
+    }
+    return null
+  }
 
   // Suku akhir → separuh akhir: baca field berasingan
   if (fasa === 'sukuKeSeparuh') {
-    const ovr = finalSetup.sukuKeSeparuhByAcara?.[aceraId]
-    if (ovr && (ovr.bestHeat != null || ovr.bestTime != null)) {
-      return { bestHeat: ovr.bestHeat ?? 1, bestTime: ovr.bestTime ?? 0 }
-    }
+    const ovr = findInMap(finalSetup.sukuKeSeparuhByAcara)
+    if (ovr) return { bestHeat: ovr.bestHeat ?? 1, bestTime: ovr.bestTime ?? 0 }
     return FALLBACK
   }
 
-  // 1. Override per acara (→ akhir)
-  const ovr = finalSetup.overrideByAcara?.[aceraId]
-  if (ovr && (ovr.bestHeat != null || ovr.bestTime != null)) {
-    return { bestHeat: ovr.bestHeat ?? 1, bestTime: ovr.bestTime ?? 3 }
-  }
+  // 1a. SF → Akhir override (SF aceraId sebagai key)
+  const sepOvr = findInMap(finalSetup.separuhKeAkhirByAcara)
+  if (sepOvr) return { bestHeat: sepOvr.bestHeat ?? 1, bestTime: sepOvr.bestTime ?? 3 }
+
+  // 1b. Override per acara (→ akhir)
+  const ovr = findInMap(finalSetup.overrideByAcara)
+  if (ovr) return { bestHeat: ovr.bestHeat ?? 1, bestTime: ovr.bestTime ?? 3 }
 
   // 2. Default per kategori
   const jenisTab = getJenisTab(acara)

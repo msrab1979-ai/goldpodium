@@ -82,10 +82,23 @@ export default function AnalisaPingat() {
         if (katList.length > 0) setSelKat(katList[0].kod)
         setActiveTab(katList.length > 0 ? katList[0].kod : 'atletTerbaik')
 
-        // 3. Sekolah map dari atlet (GP: tiada sekolah collection berasingan)
-        const skolSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+        // 3. Sekolah map — dari koleksi 'sekolah' dulu, fallback ke atlet
         const skolMap  = {}
-        skolSnap.docs.forEach(d => { const k = d.data().kodSekolah; if (k) skolMap[k] = d.data().namaSekolah || k })
+        try {
+          const skolColSnap = await getDocs(collection(db, 'tenants', schoolId, 'sekolah'))
+          skolColSnap.docs.forEach(d => {
+            const data = d.data()
+            const kod  = data.kodSekolah || d.id
+            const nama = data.namaSekolah || data.nama || kod
+            if (kod) skolMap[kod] = nama
+          })
+        } catch {}
+        // Fallback: isi dari koleksi atlet untuk kod yang tiada
+        const skolSnap = await getDocs(collection(db, 'tenants', schoolId, 'atlet'))
+        skolSnap.docs.forEach(d => {
+          const k = d.data().kodSekolah
+          if (k && !skolMap[k]) skolMap[k] = d.data().namaSekolah || k
+        })
 
         // 4. Rekod dipecah dari mata_olahragawan
         const mataSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan'), where('kejohananId', '==', kejId)))

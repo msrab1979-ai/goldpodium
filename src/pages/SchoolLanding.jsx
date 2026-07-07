@@ -373,10 +373,10 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
                       {!isRelay && <td className="py-1 text-gray-400 text-[10px]">{p.noBib || '—'}</td>}
                       <td className="py-1">
                         {isRelay
-                          ? <span className="font-semibold text-gray-800">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || p.kodSekolah || '—'}</span>
+                          ? <span className="font-semibold text-gray-800">{sekolahMap?.[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '—'}</span>
                           : <span>
                               <span className="font-semibold text-gray-800">{p.namaAtlet || '—'}</span>
-                              <span className="text-gray-400 ml-1 text-[9px]">{p.namaSekolah || sekolahMap?.[p.kodSekolah] || ''}</span>
+                              <span className="text-gray-400 ml-1 text-[9px]">{sekolahMap?.[p.kodSekolah] || p.namaSekolah || ''}</span>
                             </span>
                         }
                       </td>
@@ -427,7 +427,7 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
               const kddk       = isLompatTinggi ? _ked : (_ked || _rank)
               const hasilBundar = isPadang ? fmtJarak(p.keputusan) : fmtMasa(p.keputusan)
               const medal      = isFinalHeat && (kddk === 1 ? '🥇' : kddk === 2 ? '🥈' : kddk === 3 ? '🥉' : null)
-              const namaSkl    = p.namaSekolah || sekolahMap?.[p.kodSekolah] || p.kodSekolah || '—'
+              const namaSkl    = sekolahMap?.[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '—'
               const layakFinal = showCatatanCol && !flagged && finalistBibs.has(isRelay ? p.kodSekolah : p.noBib)
               return (
                 <tr key={idx} className={`border-t border-gray-50 ${
@@ -1342,13 +1342,16 @@ export default function SchoolLanding() {
   // ── Load sekolah map + kategori + finalSetup sekali ──
   useEffect(() => {
     if (!schoolId) return
-    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup'))
-      .then(s => { if (s.exists()) setFinalSetup(s.data()) })
-      .catch(() => {})
+    // finalSetup diload semula bila kej bertukar (lihat useEffect kej di bawah)
     getDocs(collection(db, 'tenants', schoolId, 'sekolah'))
       .then(snap => {
         const m = {}
-        snap.docs.forEach(d => { m[d.id] = d.data().namaSekolah || d.id })
+        snap.docs.forEach(d => {
+          const data = d.data()
+          const nama = data.namaSekolah || d.id
+          m[d.id] = nama
+          if (data.kodSekolah && data.kodSekolah !== d.id) m[data.kodSekolah] = nama
+        })
         setSekolahMap(m)
       }).catch(() => {})
     getDocs(collection(db, 'tenants', schoolId, 'kejohanan',
@@ -1356,6 +1359,14 @@ export default function SchoolLanding() {
       ...([] /* noop — kategori akan di-resolve via acara doc */)))
       .catch(() => {})
   }, [schoolId])
+
+  // ── Load finalSetup per kejohanan bila kej bertukar ──
+  useEffect(() => {
+    if (!schoolId || !kej?.id) return
+    getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kej.id, 'tetapan', 'finalSetup'))
+      .then(s => { if (s.exists()) setFinalSetup(s.data()) })
+      .catch(() => {})
+  }, [schoolId, kej?.id])
 
   // ── Load acara realtime bila kej bertukar ──
   useEffect(() => {

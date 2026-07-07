@@ -381,12 +381,11 @@ export default function CetakanHadiah() {
       getDocs(collection(db, 'tenants', schoolId, 'sekolah')),
       getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif'))),
       getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home')),
-      getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup')),
-    ]).then(([sekolahSnap, kejAktifSnap, homeSnap, fsSnap]) => {
+    ]).then(([sekolahSnap, kejAktifSnap, homeSnap]) => {
       const sm = {}
       sekolahSnap.docs.forEach(d => { sm[d.id] = d.data().namaSekolah || d.data().nama || d.id })
       setSekolahMap(sm)
-      // Load kategori from active kejohanan
+      // Load kategori + finalSetup from active kejohanan
       if (!kejAktifSnap.empty) {
         const akKejId = kejAktifSnap.docs[0].id
         getDocs(collection(db, 'tenants', schoolId, 'kejohanan', akKejId, 'kategori'))
@@ -394,9 +393,11 @@ export default function CetakanHadiah() {
             const km = {}; katSnap.docs.forEach(d => { km[d.id] = d.data().nama || d.id })
             setKategoriMap(km)
           }).catch(() => {})
+        getDoc(doc(db, 'tenants', schoolId, 'kejohanan', akKejId, 'tetapan', 'finalSetup'))
+          .then(fsSnap => { if (fsSnap.exists()) setFinalSetup(fsSnap.data()) })
+          .catch(() => {})
       }
       if (homeSnap.exists()) setHomeCfg(homeSnap.data())
-      if (fsSnap.exists())   setFinalSetup(fsSnap.data())
     })
   }, [schoolId])
 

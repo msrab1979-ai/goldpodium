@@ -1058,9 +1058,19 @@ export default function Rekod() {
         updatedAt:    serverTimestamp(),
       })
 
-      // Padam tuntutan
+      // Padam tuntutan yang disahkan
       await deleteDoc(tuntutanRef)
-      setMsg({ type: 'ok', text: 'Rekod baru disahkan.' })
+
+      // Auto-tolak tuntutan lain untuk acara yang sama (rekodAsal sama)
+      // JANGAN panggil autoCleanKesanRekod — badge atlet yang sah perlu kekal
+      const tuntutanLain = tuntutanList.filter(t =>
+        t.id !== tuntutan.id && t.rekodAsal === tuntutan.rekodAsal
+      )
+      await Promise.all(
+        tuntutanLain.map(t => deleteDoc(doc(db, 'tenants', schoolId, 'rekod', t.id)).catch(() => {}))
+      )
+
+      setMsg({ type: 'ok', text: `Rekod baru disahkan.${tuntutanLain.length > 0 ? ` ${tuntutanLain.length} tuntutan lain ditolak automatik.` : ''}` })
       load()
     } catch (e) {
       console.error('handleSahkan error:', e)
@@ -1097,7 +1107,27 @@ export default function Rekod() {
     setBulkSaving(true); setBulkResult(null); setMsg(null)
     let berjaya = 0, gagal = 0
 
-    for (const tuntutan of tuntutanList) {
+    // Kumpul tuntutan by rekodAsal — pilih 1 terbaik per acara sahaja
+    const byRekodAsal = {}
+    for (const t of tuntutanList) {
+      const key = t.rekodAsal
+      if (!byRekodAsal[key]) { byRekodAsal[key] = []; }
+      byRekodAsal[key].push(t)
+    }
+    // Pilih terbaik: larian = masa terkecil, padang = jarak terbesar
+    const terbaik = Object.values(byRekodAsal).map(group => {
+      if (group.length === 1) return group[0]
+      const isPadang = group[0].unit === 'm'
+      return group.reduce((best, t) =>
+        isPadang ? Number(t.prestasi) > Number(best.prestasi) ? t : best
+                 : Number(t.prestasi) < Number(best.prestasi) ? t : best
+      )
+    })
+    // ID tuntutan yang akan ditolak (bukan terbaik)
+    const sahkanIds = new Set(terbaik.map(t => t.id))
+    const tolakList = tuntutanList.filter(t => !sahkanIds.has(t.id))
+
+    for (const tuntutan of terbaik) {
       try {
         const rekodRef    = doc(db, 'tenants', schoolId, 'rekod', tuntutan.rekodAsal)
         const tuntutanRef = doc(db, 'tenants', schoolId, 'rekod', tuntutan.id)
@@ -1129,7 +1159,7 @@ export default function Rekod() {
           updatedAt:    serverTimestamp(),
         })
 
-        // Padam tuntutan
+        // Padam tuntutan yang disahkan
         await deleteDoc(tuntutanRef)
         berjaya++
       } catch (e) {
@@ -1138,6 +1168,11 @@ export default function Rekod() {
       }
     }
 
+    // Auto-tolak tuntutan yang bukan terbaik — padam sahaja, tanpa autoClean
+    await Promise.all(tolakList.map(t =>
+      deleteDoc(doc(db, 'tenants', schoolId, 'rekod', t.id)).catch(() => {})
+    ))
+
     setBulkResult({ berjaya, gagal })
     setMsg({
       type: gagal === 0 ? 'ok' : 'warn',
@@ -1145,6 +1180,142 @@ export default function Rekod() {
     })
     setBulkSaving(false)
     load()
+  }
+
+  // ── Jana Semula Tuntutan ─────────────────────────────────────────────────────
+
+  const [janaTuntutanLoading, setJanaTuntutanLoading] = useState(false)
+
+  async function handleJanaSemulaTuntutan(item) {
+    if (!aktifKejId || janaTuntutanLoading) return
+    setJanaTuntutanLoading(true)
+    try {
+      const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const kejDoc     = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', aktifKejId))
+      const peringkatKej = PKOD[(kejDoc.data()?.peringkat || '').toLowerCase()] || 'D'
+
+      // Cari acara yang match
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'acara'))
+      const matchAcara = acaraSnap.docs.find(d => {
+        const a = d.data()
+        const nama = a.namaAcaraPendek || a.namaAcara || ''
+        return nama.trim().toUpperCase() === (item.namaAcara || '').trim().toUpperCase() &&
+               a.kategoriKod === item.kategoriKod &&
+               a.jantina === item.jantina
+      })
+      if (!matchAcara) { setMsg({ type: 'err', text: 'Acara tidak dijumpai.' }); return }
+
+      const acaraDoc  = { id: matchAcara.id, ...matchAcara.data() }
+      const isPadang  = ['padang_lompat', 'padang_balin'].includes(acaraDoc.jenisAcara)
+      const unit      = isPadang ? 'm' : 's'
+      const rekodNama = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
+      const primaryKey = rekodKey(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod, peringkatKej)
+
+      // Ambil rekod aktif semasa (untuk baseline comparison)
+      const rekodRef   = doc(db, 'tenants', schoolId, 'rekod', primaryKey)
+      const rekodSnap  = await getDoc(rekodRef)
+      const rekodSedia = rekodSnap.exists() ? rekodSnap.data() : null
+
+      // Cari semua heat rasmi untuk acara ini
+      const heatSnap = await getDocs(
+        query(collection(db, 'tenants', schoolId, 'kejohanan', aktifKejId, 'heat'),
+          where('aceraId', '==', acaraDoc.id))
+      )
+
+      let bestPeserta = null
+      let bestHeatId  = null
+      let bestPrestasi = rekodSedia ? Number(rekodSedia.prestasi) : null
+
+      for (const hDoc of heatSnap.docs) {
+        const heat = hDoc.data()
+        if (!['rasmi', 'diterima'].includes(heat.statusKeputusan)) continue
+        const finishers = (heat.peserta || []).filter(p =>
+          !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0
+        )
+        const sorted = finishers.sort((a, b) =>
+          isPadang ? Number(b.keputusan) - Number(a.keputusan)
+                   : Number(a.keputusan) - Number(b.keputusan)
+        )
+        const rank1 = sorted[0]
+        if (!rank1) continue
+        const newP = Number(rank1.keputusan)
+        const isBetter = bestPrestasi === null
+          ? true
+          : isPadang ? newP > bestPrestasi : newP < bestPrestasi
+        if (isBetter) {
+          bestPrestasi = newP
+          bestPeserta  = rank1
+          bestHeatId   = hDoc.id
+        }
+      }
+
+      // Bersih badge — kekal badge pada pemegang rekod aktif (match heatId + noBib), buang yang lain
+      const rekodAktifNoBib  = rekodSedia?.atletId || null
+      const rekodAktifHeatId = rekodSedia?.heatId  || null
+      await Promise.all(heatSnap.docs.map(async hDoc => {
+        const peserta = hDoc.data().peserta || []
+        let changed = false
+        const patched = peserta.map(p => {
+          // Pemegang rekod aktif — match noBib (+ heatId jika ada)
+          const isPemegang = rekodAktifNoBib && p.noBib === rekodAktifNoBib &&
+            (!rekodAktifHeatId || hDoc.id === rekodAktifHeatId)
+          if (isPemegang) {
+            if (!p.pecahRekod) { changed = true; return { ...p, pecahRekod: peringkatKej } }
+            return p
+          }
+          // Semua yang lain — buang badge
+          if (p.pecahRekod || p.samaiRekod) {
+            changed = true
+            const { pecahRekod: _pr, samaiRekod: _sr, ...rest } = p
+            return rest
+          }
+          return p
+        })
+        if (changed) await updateDoc(hDoc.ref, { peserta: patched, updatedAt: serverTimestamp() })
+      }))
+
+      if (!bestPeserta) {
+        setMsg({ type: 'ok', text: `Badge dibersihkan. Tiada prestasi lebih baik dari rekod semasa.` })
+        load()
+        return
+      }
+
+      const today = new Date().toISOString().split('T')[0]
+      const tuntutanRef = doc(db, 'tenants', schoolId, 'rekod', primaryKey + '_tuntutan')
+      await setDoc(tuntutanRef, {
+        rekodId:      primaryKey + '_tuntutan',
+        rekodAsal:    primaryKey,
+        namaAcara:    acaraDoc.namaAcara,
+        jantina:      acaraDoc.jantina,
+        kategoriKod:  acaraDoc.kategoriKod,
+        peringkat:    peringkatKej,
+        atletId:      bestPeserta.noBib   || '',
+        namaAtlet:    bestPeserta.namaAtlet || '',
+        kodSekolah:   bestPeserta.kodSekolah || '',
+        namaSekolah:  bestPeserta.namaSekolah || bestPeserta.kodSekolah || '',
+        prestasi:     bestPrestasi,
+        unit,
+        jenisRekod:   'elektronik',
+        statusRekod:  'aktif',
+        tarikhRekod:  today,
+        kejohananId:  aktifKejId,
+        acaraId:      acaraDoc.id,
+        heatId:       bestHeatId,
+        prestasiLama: rekodSedia ? Number(rekodSedia.prestasi) : null,
+        tahunLama:    rekodSedia ? String(rekodSedia.tarikhRekod || '').slice(0, 4) : null,
+        namaLama:     rekodSedia?.namaAtlet   || null,
+        lokasiLama:   rekodSedia?.namaSekolah || null,
+        updatedAt:    serverTimestamp(),
+      })
+
+      setMsg({ type: 'ok', text: `Tuntutan berjaya dijana semula untuk ${acaraDoc.namaAcara}.` })
+      setAuditResult(null)
+      load()
+    } catch (e) {
+      setMsg({ type: 'err', text: 'Ralat: ' + e.message })
+    } finally {
+      setJanaTuntutanLoading(false)
+    }
   }
 
   // ── Audit Rekod Tertinggal ───────────────────────────────────────────────────
@@ -1731,7 +1902,8 @@ export default function Rekod() {
       const rKeyPrimary = rekodKey(c.namaKey, c.jantina, c.kategoriKod, semakPeringkat)
       const rekodPrimary = rekodList.find(r => (r.id || r.rekodId) === rKeyPrimary)
       if (rekodPrimary) {
-        return { ...c, rKey: rKeyPrimary, hasRekod: true, rekodItem: rekodPrimary, connectionType: 'kuat' }
+        const hasTuntutan = tuntutanList.some(t => t.rekodAsal === rKeyPrimary)
+        return { ...c, rKey: rKeyPrimary, hasRekod: true, rekodItem: rekodPrimary, connectionType: 'kuat', hasTuntutan }
       }
 
       // ── Sambungan Lemah: key fallback (format lama — kelasDariNama L12/P12) ───
@@ -1757,7 +1929,7 @@ export default function Rekod() {
       // ── Tiada Sambungan ──────────────────────────────────────────────────────
       return { ...c, rKey: rKeyPrimary, hasRekod: false, rekodItem: null, connectionType: 'tiada' }
     })
-  }, [acaraList, rekodList, semakPeringkat])
+  }, [acaraList, rekodList, semakPeringkat, tuntutanList])
 
   // Rekod orphan — ada dalam rekodList tapi tiada padanan dalam acaraList
   const semakOrphan = useMemo(() => {
@@ -2325,9 +2497,19 @@ export default function Rekod() {
                           </td>
                           <td className="px-3 py-2.5 text-right font-black text-red-700">{formatPrestasi(x.prestasi, x.unit)}</td>
                           <td className="px-3 py-2.5">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${x.libExists ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                              {x.libExists ? 'Rekod ada, tuntutan tiada' : 'Rekod baru — tiada dalam library'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${x.libExists ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                {x.libExists ? 'Rekod ada, tuntutan tiada' : 'Rekod baru — tiada dalam library'}
+                              </span>
+                              {x.libExists && (
+                                <button
+                                  onClick={() => handleJanaSemulaTuntutan(x)}
+                                  disabled={janaTuntutanLoading}
+                                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#003399] text-white hover:bg-[#002277] disabled:opacity-50 transition-colors">
+                                  {janaTuntutanLoading ? '…' : '↺ Jana Semula'}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2336,7 +2518,7 @@ export default function Rekod() {
                 </div>
                 <div className="px-4 py-2.5 bg-red-50 border-t border-red-200">
                   <p className="text-[10px] text-red-600">
-                    Hantar semula keputusan heat berkenaan untuk Jana semula rekod, atau tambah tuntutan secara manual.
+                    Klik "↺ Jana Semula" untuk jana tuntutan dari prestasi terbaik heat, atau hantar semula keputusan heat berkenaan.
                   </p>
                 </div>
               </div>
@@ -2866,7 +3048,17 @@ export default function Rekod() {
                                       </button>
                                     )}
                                     {x.connectionType === 'kuat' && (
-                                      <div className="flex items-center justify-center gap-1">
+                                      <div className="flex items-center justify-center gap-1 flex-wrap">
+                                        {!x.hasTuntutan && (
+                                          <button
+                                            onClick={() => handleJanaSemulaTuntutan({ ...x, namaAcara: x.namaKey })}
+                                            disabled={janaTuntutanLoading}
+                                            className="text-[10px] px-2 py-1 bg-[#003399] hover:bg-[#002277] text-white rounded font-semibold transition-colors disabled:opacity-50"
+                                            title="Jana semula tuntutan dari prestasi terbaik heat"
+                                          >
+                                            {janaTuntutanLoading ? '…' : '↺ Jana Tuntutan'}
+                                          </button>
+                                        )}
                                         <button
                                           onClick={() => setModal({ mode: 'edit', initial: {
                                             ...EMPTY_FORM,

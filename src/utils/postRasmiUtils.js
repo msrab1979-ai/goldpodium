@@ -260,9 +260,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         const tuntutanRef = rekodP(primaryKey + '_tuntutan')
         const newPrestasi = Number(p.keputusan)
 
-        // Semak rekod sedia ada — dari rekodRef (aktif) atau tuntutanRef (pending)
-        // Exclude tuntutan dari heat yang sama supaya tidak compare dengan diri sendiri
-        const rekodSedia = rekodSnap.exists() && rekodSnap.data().statusRekod === 'aktif'
+        // Semak rekod sedia ada — rekod aktif dulu, fallback ke tuntutan pending
+        // Guna rekodSnap tanpa syarat statusRekod — rekod import manual mungkin tiada field itu
+        const rekodSedia = rekodSnap.exists()
           ? rekodSnap.data()
           : tuntutanSnap.exists() && tuntutanSnap.data().heatId !== heatDoc.id
             ? tuntutanSnap.data()
@@ -401,7 +401,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         const tuntutanRef = rekodP(primaryKeyR + '_tuntutan')
         const newPrestasi = Number(p.keputusan)
 
-        const rekodSediaRelay = rekodSnap.exists() && rekodSnap.data().statusRekod === 'aktif'
+        const rekodSediaRelay = rekodSnap.exists()
           ? rekodSnap.data()
           : tuntutanSnap.exists() && tuntutanSnap.data().heatId !== heatDoc.id
             ? tuntutanSnap.data()
@@ -496,24 +496,26 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
 }
 
 /**
- * Rollback kesan postRasmi untuk heat yang dipadam.
- * Padam contrib_{heatId}_* dari medal_tally dan acaraDetail dari mata_olahragawan.
- * Rekod tuntutan TIDAK dirollback (tuntutan belum tentu diluluskan).
+ * Rollback kesan postRasmi untuk heat yang dipadam atau diedit semula.
+ * - Padam contrib_{heatId}_* dari medal_tally
+ * - Padam acaraDetail + rekod_ field dari mata_olahragawan
+ * - Padam rekod/{key}_tuntutan jika ditulis oleh heat ini (dan belum diluluskan admin)
  */
 export async function rollbackPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   const { deleteField } = await import('firebase/firestore')
-  const { schoolId = '', isRelay = false } = config
+  const { schoolId = '', isRelay = false, grantMedal = true } = config
   if (!schoolId) return
 
   const tPath   = (col, id) => doc(db, 'tenants', schoolId, 'kejohanan', kejId, col, id)
+  const rekodP  = (key)     => doc(db, 'tenants', schoolId, 'rekod', key)
   const peserta = heatDoc.peserta || []
   const batch   = writeBatch(db)
 
   for (const p of peserta) {
     if (['DNS', 'DNF', 'DQ'].includes(p.status)) continue
 
-    // Rollback medal_tally contrib
-    if (p.kodSekolah) {
+    // Rollback medal_tally contrib — hanya jika heat ini grant medal
+    if (grantMedal && p.kodSekolah) {
       const tId        = `${p.kodSekolah}_${kejId}`
       const tRef       = tPath('medal_tally', tId)
       const contribKey = `contrib_${heatDoc.id}_${isRelay ? `${p.kodSekolah}_${p.pasukanRelay || 'A'}` : (p.noBib || p.lorong || '')}`
@@ -535,22 +537,28 @@ export async function rollbackPostRasmi(db, heatDoc, acaraDoc, kejId, config = {
       } catch (e) { console.warn('rollback medal_tally:', e.message) }
     }
 
-    // Rollback mata_olahragawan acaraDetail
-    if (!isRelay && p.noBib) {
+    // Rollback mata_olahragawan acaraDetail + rekod_ field — hanya jika heat ini grant medal/mata
+    if (grantMedal && !isRelay && p.noBib) {
       const mRef     = tPath('mata_olahragawan', `${p.noBib}_${kejId}`)
       const acaraKey = `acaraDetail_${acaraDoc.id}`
+      const rekodKey = `rekod_${acaraDoc.id}`
       try {
         const mSnap = await getDoc(mRef)
         if (mSnap.exists()) {
-          const prevDetail = mSnap.data()[acaraKey]
+          const data       = mSnap.data()
+          const prevDetail = data[acaraKey]
+          const patch      = {}
           if (prevDetail) {
             const { mata = 0, pingat = '' } = prevDetail
-            batch.update(mRef, {
-              [acaraKey]:  deleteField(),
-              jumlahMata:  increment(-mata),
-              ...(pingat ? { [`pingat_${pingat}`]: increment(-1) } : {}),
-            })
+            patch[acaraKey]  = deleteField()
+            patch.jumlahMata = increment(-mata)
+            if (pingat) patch[`pingat_${pingat}`] = increment(-1)
           }
+          // Padam rekod_ field jika ada (simpan oleh runPostRasmi semasa isBetter)
+          if (data[rekodKey] !== undefined) {
+            patch[rekodKey] = deleteField()
+          }
+          if (Object.keys(patch).length > 0) batch.update(mRef, patch)
         }
       } catch (e) { console.warn('rollback mata_olahragawan:', e.message) }
     }
@@ -559,4 +567,28 @@ export async function rollbackPostRasmi(db, heatDoc, acaraDoc, kejId, config = {
   try {
     await batch.commit()
   } catch (e) { console.warn('rollback batch commit:', e.message) }
+
+  // Rollback rekod tuntutan — padam jika ditulis oleh heat ini dan belum diluluskan admin
+  if (acaraDoc.jantina && acaraDoc.kategoriKod && (acaraDoc.namaAcaraPendek || acaraDoc.namaAcara)) {
+    try {
+      const rekodNama  = acaraDoc.namaAcaraPendek || acaraDoc.namaAcara
+      const primaryKey = rekodKeyStr(rekodNama, acaraDoc.jantina, acaraDoc.kategoriKod,
+        config.peringkatKej || 'D')
+      const tuntutanRef = rekodP(primaryKey + '_tuntutan')
+      const [aktifSnap, tuntutanSnap] = await Promise.all([
+        getDoc(rekodP(primaryKey)),
+        getDoc(tuntutanRef),
+      ])
+      // Padam tuntutan hanya jika:
+      // 1. Ditulis oleh heat ini (heatId sama)
+      // 2. Rekod aktif belum wujud (admin belum luluskan — kalau dah lulus, biar kekal)
+      if (
+        tuntutanSnap.exists() &&
+        tuntutanSnap.data().heatId === heatDoc.id &&
+        !aktifSnap.exists()
+      ) {
+        await deleteDoc(tuntutanRef).catch(() => {})
+      }
+    } catch (e) { console.warn('rollback rekod_tuntutan:', e.message) }
+  }
 }

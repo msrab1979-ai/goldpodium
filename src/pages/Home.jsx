@@ -1117,15 +1117,15 @@ export default function Home() {
   // Load finalSetup + sekolah + kategori sekali sahaja
   useEffect(() => {
     if (!schoolId) return
-    // tetapan/finalSetup
-    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'finalSetup'))
-      .then(s => { if (s.exists()) setFinalSetup(s.data()) })
-      .catch(() => {})
-    // Kategori — per-kejohanan; load from active kejohanan
+    // Kategori + finalSetup — per-kejohanan; load from active kejohanan
     getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', '==', 'aktif')))
       .then(async kejSnap => {
         const kej = kejSnap.docs[0]
         if (!kej) return
+        // finalSetup per-kejohanan
+        getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kej.id, 'tetapan', 'finalSetup'))
+          .then(s => { if (s.exists()) setFinalSetup(s.data()) })
+          .catch(() => {})
         const katSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'kategori'))
         const map = {}
         const jMap = {}
