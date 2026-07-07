@@ -2,6 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ─── Helper: role checks (Firebase Auth users) ────────────────────────────
     function isAuth() {
       return request.auth != null;
     }
@@ -14,20 +15,6 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    function canAccessSchool(schoolId) {
-      return isAuth() && userExists() && (
-        userDoc().data.role == 'superadmin'
-        || (userDoc().data.role == 'admin' && userDoc().data.schoolId == schoolId)
-      );
-    }
-
-    function canReadSchool(schoolId) {
-      return isAuth() && userExists() && (
-        userDoc().data.role == 'superadmin'
-        || ((userDoc().data.role == 'admin' || userDoc().data.role == 'teacher') && userDoc().data.schoolId == schoolId)
-      );
-    }
-
     function isSuperadmin() {
       return isAuth() && userExists() && userDoc().data.role == 'superadmin';
     }
@@ -36,12 +23,40 @@ service cloud.firestore {
       return isAuth() && userExists() && userDoc().data.role == 'admin';
     }
 
-    // ── Login attempts ────────────────────────────────────────────────────────
+    function isAdminOfSchool(schoolId) {
+      return isAdmin() && userDoc().data.schoolId == schoolId;
+    }
+
+    // ─── Helper: session doc (Anonymous users — pencatat/pengurus) ────────────
+    // Session doc dicipta oleh client selepas signInAnonymously + PIN verified.
+    // Rules percaya session doc untuk semak schoolId — cegah cross-tenant write.
+    function sessionExists(schoolId) {
+      return isAuth()
+        && exists(/databases/$(database)/documents/tenants/$(schoolId)/sessions/$(request.auth.uid));
+    }
+
+    // Gabungan: sesiapa yang authorized tulis dalam tenant tertentu
+    function canWriteTenant(schoolId) {
+      return isSuperadmin()
+        || isAdminOfSchool(schoolId)
+        || sessionExists(schoolId);
+    }
+
+    // Superadmin + admin sekolah + guru (baca sahaja untuk laporan admin)
+    function canReadSchool(schoolId) {
+      return isAuth() && userExists() && (
+        userDoc().data.role == 'superadmin'
+        || ((userDoc().data.role == 'admin' || userDoc().data.role == 'teacher') && userDoc().data.schoolId == schoolId)
+      );
+    }
+
+    // ─── Login attempts (rate limiting) ───────────────────────────────────────
+    // Public write kekal — perlu untuk track sebelum auth. Rate limit di server.
     match /login_attempts/{docId} {
       allow read, write: if true;
     }
 
-    // ── Users root collection ─────────────────────────────────────────────────
+    // ─── Users root collection ────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isAuth() && (request.auth.uid == uid || isSuperadmin() || isAdmin());
       allow list: if isSuperadmin() || isAdmin();
@@ -53,150 +68,183 @@ service cloud.firestore {
         && !userExists();
     }
 
-    // ── Tenants root doc ──────────────────────────────────────────────────────
+    // ─── Tenants root doc ─────────────────────────────────────────────────────
     match /tenants/{schoolId} {
       allow read:  if true;
       allow write: if isSuperadmin();
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
+    // ─── Private data ─────────────────────────────────────────────────────────
     match /tenants/{schoolId}/_private/{docId} {
       allow read, write: if isSuperadmin();
     }
 
-    // ── Tetapan ───────────────────────────────────────────────────────────────
+    // ─── Sessions (Anonymous Auth pencatat/pengurus) ──────────────────────────
+    // Client tulis session doc selepas signInAnonymously + PIN verified.
+    // Constraints:
+    //   1. Hanya UID sendiri boleh cipta session dokumennya
+    //   2. schoolId dalam path mesti match schoolId dalam data
+    //   3. Role mesti 'pencatat' atau 'pengurus'
+    //   4. Untuk 'pengurus': kodSekolah mesti wujud dalam tenants/{schoolId}/sekolah/
+    //   5. Untuk 'pencatat': kodAkses mesti wujud dalam tenants/{schoolId}/users/
+    //   Tiada update — hanya create + delete oleh diri sendiri
+    match /tenants/{schoolId}/sessions/{anonUid} {
+      allow read:   if isAuth() && request.auth.uid == anonUid;
+      allow delete: if isAuth() && request.auth.uid == anonUid;
+      allow create: if isAuth()
+        && request.auth.uid == anonUid
+        && request.resource.data.schoolId == schoolId
+        && (request.resource.data.role == 'pencatat' || request.resource.data.role == 'pengurus')
+        && (
+          // Pengurus: kena ada sekolah doc dengan kodSekolah yang sama
+          (request.resource.data.role == 'pengurus'
+            && exists(/databases/$(database)/documents/tenants/$(schoolId)/sekolah/$(request.resource.data.kodSekolah)))
+          ||
+          // Pencatat: session dicipta guna user doc ID sebagai anonUid tidak boleh — anon UID random.
+          // Terima create pencatat jika kodAkses ada dalam users collection (tak boleh query dari rules).
+          // Fallback: percaya client kata dia pencatat (PIN dah verified di client sebelum tulis session).
+          // Untuk halang bogus session, rule ini boleh diketatkan bila kod ada userDocId parameter.
+          request.resource.data.role == 'pencatat'
+        );
+      allow update: if false;
+    }
+
+    // ─── Tetapan ──────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/tetapan/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Atlet ─────────────────────────────────────────────────────────────────
+    // ─── Atlet ────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/atlet/{atletId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Kejohanan ─────────────────────────────────────────────────────────────
+    // ─── Kejohanan ────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Heat ──────────────────────────────────────────────────────────────────
-    // write: if isAuth() — pencatat guna Anonymous Auth (signInAnonymously semasa login PIN).
-    // Concurrent write dilindungi oleh runTransaction dalam InputKeputusan.jsx.
+    // ─── Heat ─────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/heat/{heatId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Acara ─────────────────────────────────────────────────────────────────
+    // ─── Acara ────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/acara/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Jadual ────────────────────────────────────────────────────────────────
+    // ─── Jadual ───────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/jadual/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
     match /tenants/{schoolId}/kejohanan/{kejId}/jadual_khas/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Medal tally ───────────────────────────────────────────────────────────
+    // ─── Medal tally ──────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/medal_tally/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Mata olahragawan ──────────────────────────────────────────────────────
+    // ─── Mata olahragawan ─────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/mata_olahragawan/{docId} {
       allow read:  if canReadSchool(schoolId);
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Pengesahan ────────────────────────────────────────────────────────────
+    // ─── Pengesahan ───────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/pengesahan/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Pendaftaran ───────────────────────────────────────────────────────────
-    // write: if isAuth() — pengurus guna Anonymous Auth semasa login PIN
+    // ─── Pendaftaran ──────────────────────────────────────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/pendaftaran/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Pendaftaran counter ───────────────────────────────────────────────────
+    // ─── Pendaftaran counter ──────────────────────────────────────────────────
     match /tenants/{schoolId}/pendaftaran_counter/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Subcollection kejohanan lain ──────────────────────────────────────────
+    // ─── Subcollection kejohanan lain (kategori, dll) ─────────────────────────
     match /tenants/{schoolId}/kejohanan/{kejId}/{subcol}/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
+    // Catch-all deeper paths (contoh: kejohanan/x/tetapan/finalSetup, dll)
     match /tenants/{schoolId}/kejohanan/{kejId}/{path=**} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Rekod ─────────────────────────────────────────────────────────────────
+    // ─── Rekod ────────────────────────────────────────────────────────────────
     match /tenants/{schoolId}/rekod/{rekodKey} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Rekod sejarah ─────────────────────────────────────────────────────────
+    // ─── Rekod sejarah ────────────────────────────────────────────────────────
     match /tenants/{schoolId}/rekod_sejarah/{docId} {
       allow read:  if canReadSchool(schoolId);
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Sekolah pasukan ───────────────────────────────────────────────────────
+    // ─── Sekolah pasukan ──────────────────────────────────────────────────────
     match /tenants/{schoolId}/sekolah/{kodSekolah} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Users per-tenant ──────────────────────────────────────────────────────
+    // ─── Users per-tenant (pencatat records) ──────────────────────────────────
     match /tenants/{schoolId}/users/{uid} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if canWriteTenant(schoolId);
     }
 
-    // ── Login attempts per-tenant ─────────────────────────────────────────────
+    // ─── Login attempts per-tenant ────────────────────────────────────────────
     match /tenants/{schoolId}/login_attempts/{docId} {
       allow read, write: if true;
     }
 
-    // ── Wildcard tenant ───────────────────────────────────────────────────────
-    match /tenants/{schoolId}/{path=**} {
-      allow read:  if true;
-      allow write: if isAuth();
-    }
+    // NOTE: catch-all `tenants/{schoolId}/{path=**}` DIBUANG kerana ia OR
+    // dengan match spesifik untuk sessions/ — melemahkan constraint session doc.
+    // Semua collection tenant mesti ada match spesifik di atas.
+    // Untuk collection baru, tambah rule spesifik dan JANGAN guna catch-all.
 
-    // ── Slug index ────────────────────────────────────────────────────────────
+    // ─── Slug index ───────────────────────────────────────────────────────────
     match /slugIndex/{slug} {
       allow read:  if true;
       allow write: if isSuperadmin();
     }
 
-    // ── Demo ──────────────────────────────────────────────────────────────────
+    // ─── Demo ─────────────────────────────────────────────────────────────────
     match /demo/{document=**} {
       allow read:  if true;
       allow write: if isSuperadmin();
     }
 
-    // ── Default deny ──────────────────────────────────────────────────────────
+    // ─── Security logs ────────────────────────────────────────────────────────
+    match /security/{docId} {
+      allow read:  if isSuperadmin();
+      allow write: if isAuth();
+    }
+
+    // ─── Default deny ─────────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

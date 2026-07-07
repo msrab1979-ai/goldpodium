@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   collection, getDocs, doc, addDoc, updateDoc, deleteDoc, deleteField, setDoc,
-  serverTimestamp, query, orderBy,
+  serverTimestamp, Timestamp, query, orderBy,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -309,6 +309,7 @@ export default function UserManagement() {
     try {
       await setDoc(doc(db, 'login_attempts', `pencatat_${schoolId}_${u.kodAkses}`), {
         attempts: 0, lockedUntil: null, lastAttempt: serverTimestamp(),
+        expireAt: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
       })
     } finally {
       setResettingAttempt(null)

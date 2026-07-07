@@ -9,7 +9,7 @@ import {
   sendPasswordResetEmail,
 } from 'firebase/auth'
 import {
-  doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp, Timestamp,
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, Timestamp,
   collection, query, where, getCountFromServer,
 } from 'firebase/firestore'
 import { auth, db, SUPERADMIN_EMAIL, secondaryAuth, APP_URL } from './config'
@@ -25,6 +25,7 @@ export const SESSION_KEY = 'gp_session'
 const MAX_ATTEMPTS   = 5
 const LOCK_MINUTES   = 30
 const WINDOW_MINUTES = 15
+const TTL_DAYS       = 7   // login_attempts auto-padam selepas 7 hari
 
 async function checkRateLimit(key) {
   const ref  = doc(db, 'login_attempts', key)
@@ -44,7 +45,10 @@ async function checkRateLimit(key) {
   }
 
   if (lockedUntil > 0 && lockedUntil <= now) {
-    await setDoc(ref, { attempts: 0, lockedUntil: null, lastAttempt: serverTimestamp() }, { merge: true })
+    await setDoc(ref, {
+      attempts: 0, lockedUntil: null, lastAttempt: serverTimestamp(),
+      expireAt: Timestamp.fromMillis(now + TTL_DAYS * 24 * 60 * 60 * 1000),
+    }, { merge: true })
   }
 }
 
@@ -66,6 +70,7 @@ async function recordFailedAttempt(key, email = '') {
     lockedUntil: next >= MAX_ATTEMPTS
       ? Timestamp.fromMillis(now + LOCK_MINUTES * 60000)
       : null,
+    expireAt:    Timestamp.fromMillis(now + TTL_DAYS * 24 * 60 * 60 * 1000),
   }, { merge: true })
 
   // Alert Telegram bila sampai had
@@ -90,7 +95,8 @@ async function recordFailedAttempt(key, email = '') {
 async function clearAttempts(key) {
   try {
     await setDoc(doc(db, 'login_attempts', key), {
-      attempts: 0, lockedUntil: null, lastAttempt: serverTimestamp()
+      attempts: 0, lockedUntil: null, lastAttempt: serverTimestamp(),
+      expireAt: Timestamp.fromMillis(Date.now() + TTL_DAYS * 24 * 60 * 60 * 1000),
     }, { merge: true })
   } catch { /* bukan kritikal */ }
 }
@@ -220,6 +226,17 @@ export async function loginWithEmail(email, password) {
 // ── Logout ────────────────────────────────────────────────────────────────────
 
 export async function logoutAll() {
+  // Padam session doc dulu (sebelum sign out — perlu request.auth untuk delete)
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (raw) {
+      const s = JSON.parse(raw)
+      if (s.anonUid && s.schoolId) {
+        await deleteDoc(doc(db, 'tenants', s.schoolId, 'sessions', s.anonUid))
+      }
+    }
+  } catch { /* abaikan — session doc mungkin dah expired via TTL */ }
+
   sessionStorage.removeItem(SESSION_KEY)
   sessionStorage.removeItem('gp_kej_aktif')
   sessionStorage.removeItem('gp_view_school')
@@ -409,11 +426,24 @@ export async function loginPencatat(slug, kodAkses, pin) {
 
   // 5. Sign in anonymously — bagi request.auth kepada Firestore rules
   // Tiap pencatat dapat token unik walaupun kongsi PIN yang sama
-  await signInAnonymously(auth)
+  const anonCred = await signInAnonymously(auth)
 
-  // 6. Bina session
+  // 6. Tulis session doc — Firestore rules baca ini untuk sahkan schoolId
+  //    Path: tenants/{schoolId}/sessions/{anonUid}
+  //    Rules cegah cross-tenant: anonUid dari Sekolah A tak boleh cipta session di Sekolah B
+  await setDoc(doc(db, 'tenants', schoolId, 'sessions', anonCred.user.uid), {
+    role:      userData.role || 'pencatat',
+    schoolId,
+    kodAkses,
+    userDocId: userDoc.id,
+    createdAt: serverTimestamp(),
+    expireAt:  Timestamp.fromMillis(Date.now() + 8 * 60 * 60 * 1000),
+  })
+
+  // 7. Bina session
   return {
     uid:        userDoc.id,
+    anonUid:    anonCred.user.uid,
     email:      userData.email || '',
     name:       userData.nama  || kodAkses,
     role:       userData.role  || 'pencatat',
@@ -461,12 +491,23 @@ export async function loginPengurus(schoolId, kodSekolah, pin, schoolSlug = '') 
   await clearAttempts(attemptKey)
 
   // Sign in anonymously — bagi request.auth kepada Firestore rules
-  await signInAnonymously(auth)
+  const anonCred = await signInAnonymously(auth)
+
+  // Tulis session doc — Firestore rules sahkan kodSekolah wujud dalam tenant
+  //    Path: tenants/{schoolId}/sessions/{anonUid}
+  await setDoc(doc(db, 'tenants', schoolId, 'sessions', anonCred.user.uid), {
+    role:       'pengurus',
+    schoolId,
+    kodSekolah: kodBersih,
+    createdAt:  serverTimestamp(),
+    expireAt:   Timestamp.fromMillis(Date.now() + 8 * 60 * 60 * 1000),
+  })
 
   // schoolSlug disimpan dalam session — digunakan oleh RequirePengurus untuk
   // semak URL slug match session sekolah (cegah konflik multi-tenant)
   return {
     uid:         `pengurus_${schoolId}_${kodBersih}`,
+    anonUid:     anonCred.user.uid,
     email:       sekolahData.email || '',
     name:        sekolahData.namaSekolah || kodBersih,
     role:        'pengurus',

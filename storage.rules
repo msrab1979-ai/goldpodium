@@ -1,10 +1,36 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Logos — superadmin boleh tulis, semua boleh baca
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Firebase Auth (email/password) — bukan Anonymous
+    function isFirebaseAuthUser() {
+      return isAuth() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Logos — semua boleh baca, hanya admin/superadmin boleh tulis
+    // (Anonymous pencatat/pengurus TIDAK boleh upload — cegah abuse quota)
     match /logos/{fileName} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read:  if true;
+      allow write: if isFirebaseAuthUser()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Sijil templates (per tenant) — hanya admin boleh upload
+    match /sijil/{schoolId}/{fileName} {
+      allow read:  if true;
+      allow write: if isFirebaseAuthUser()
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }
