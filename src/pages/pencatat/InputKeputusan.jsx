@@ -617,6 +617,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
   const tieMap    = ltData?.tieMap  || {}
   const tieGroups = ltData?.tieGroups || []
   const bilPes    = peserta.length
+  const [editRankMode, setEditRankMode] = useState(false)
 
   const pesertaSorted = carianBib
     ? [...peserta].sort((a, b) => {
@@ -642,22 +643,67 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
     <div className="space-y-3">
       {board.length > 0 && (
         <div className="bg-[#003399]/5 rounded-xl p-3 border border-[#003399]/10">
-          <p className="text-xs font-black text-[#003399] uppercase tracking-widest mb-2">Kedudukan Semasa</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-black text-[#003399] uppercase tracking-widest">Kedudukan Semasa</p>
+            <button
+              type="button"
+              onClick={() => setEditRankMode(v => !v)}
+              className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full transition-colors ${
+                editRankMode
+                  ? 'bg-[#003399] text-white'
+                  : 'bg-white text-[#003399] border border-[#003399]/30 hover:bg-[#003399]/10'
+              }`}
+            >
+              {editRankMode ? '✓ Selesai Edit' : '✎ Edit Manual'}
+            </button>
+          </div>
+          {editRankMode && (
+            <p className="text-[10px] text-gray-500 mb-2 italic">
+              Tukar nombor kedudukan mengikut peraturan tenant (cth: 1, 2, 3, 3, 4 tanpa skip).
+            </p>
+          )}
           <div className="space-y-1.5">
-            {board.map(r => (
-              <div key={r.key} className="flex items-center gap-2">
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
-                  r.rank === 1 ? 'bg-yellow-400 text-yellow-900' : r.rank === 2 ? 'bg-gray-300 text-gray-700' : r.rank === 3 ? 'bg-orange-300 text-orange-900' : 'bg-gray-100 text-gray-500'
-                }`}>{r.status || r.rank || '—'}</span>
-                <span className="text-sm font-semibold text-gray-700 flex-1 truncate">{r.nama}</span>
-                {isLompatTinggi && tieMap[r.key] && (
-                  <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">TIE</span>
-                )}
-                <span className="text-sm font-mono font-bold text-gray-800 shrink-0">
-                  {r.best ? `${r.best.toFixed(2)} m` : <span className="text-red-400">{r.status}</span>}
-                </span>
-              </div>
-            ))}
+            {board.map(r => {
+              const isFlagged = ['DNS', 'DNF', 'DQ'].includes(r.status)
+              const kp       = keputusan[r.key] || {}
+              const manualK  = kp.kedudukan
+              const showRank = manualK != null && manualK !== '' ? Number(manualK) : r.rank
+              const badgeText = isFlagged ? r.status : (showRank || '—')
+              const badgeCls  = isFlagged
+                ? 'bg-red-100 text-red-600 text-[9px]'
+                : showRank === 1 ? 'bg-yellow-400 text-yellow-900'
+                : showRank === 2 ? 'bg-gray-300 text-gray-700'
+                : showRank === 3 ? 'bg-orange-300 text-orange-900'
+                : 'bg-gray-100 text-gray-500'
+              return (
+                <div key={r.key} className="flex items-center gap-2">
+                  {editRankMode && !isFlagged ? (
+                    <input
+                      type="number"
+                      min="1"
+                      max={bilPes}
+                      value={manualK ?? r.rank ?? ''}
+                      onChange={e => onChange(r.key, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
+                      className="w-10 h-6 border-2 border-[#003399] rounded text-xs font-black text-center text-[#003399] focus:outline-none bg-white shrink-0"
+                    />
+                  ) : (
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center font-black shrink-0 ${badgeCls} ${isFlagged ? '' : 'text-xs'}`}>
+                      {badgeText}
+                    </span>
+                  )}
+                  <span className="text-sm font-semibold text-gray-700 flex-1 truncate">{r.nama}</span>
+                  {isLompatTinggi && tieMap[r.key] && (
+                    <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">TIE</span>
+                  )}
+                  {manualK != null && manualK !== '' && !isFlagged && (
+                    <span className="text-[9px] font-bold text-[#003399] bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 shrink-0">MANUAL</span>
+                  )}
+                  <span className="text-sm font-mono font-bold text-gray-800 shrink-0">
+                    {r.best ? `${r.best.toFixed(2)} m` : <span className="text-red-400">{r.status}</span>}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -1524,7 +1570,10 @@ export default function PencatatInputKeputusan() {
         autoRankMap.set(rankKey(p), p.kedudukan ? Number(p.kedudukan) : suggested)
       })
     } else {
-      finishers.forEach((p, i) => autoRankMap.set(rankKey(p), i + 1))
+      // Padang biasa / larian — sequential auto, manual kedudukan override kalau ada
+      finishers.forEach((p, i) => {
+        autoRankMap.set(rankKey(p), p.kedudukan ? Number(p.kedudukan) : i + 1)
+      })
     }
 
     return updatedPeserta.map(p => ({
@@ -1584,7 +1633,9 @@ export default function PencatatInputKeputusan() {
       const PKOD0    = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
       const peringkatKejAwal = PKOD0[((kejData || {}).peringkat || '').toLowerCase()] || 'D'
 
-      // Rollback dulu jika heat sudah rasmi — supaya medal/rekod tidak berganda
+      // Rollback WAJIB await sebelum runPostRasmi — kalau tak, race condition:
+      // rollback -1 dan postRasmi +1 boleh commit dalam order salah,
+      // menyebabkan medal tally salah kira.
       if (['rasmi', 'diterima'].includes(selectedHeat.statusKeputusan)) {
         const isSaringanLocal = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
         const wasGrantMedal = !isSaringanLocal && (['final', 'terus_final'].includes(selectedHeat.fasa) || heats.length === 1)
@@ -1593,7 +1644,7 @@ export default function PencatatInputKeputusan() {
           { ...acara, id: acara.acaraId },
           kejId,
           { schoolId, isRelay: acara.jenisAcara === 'relay', peringkatKej: peringkatKejAwal, grantMedal: wasGrantMedal }
-        ).catch(e => console.warn('rollback sebelum hantar:', e.message))
+        ).catch(e => console.warn('rollback:', e.message))
       }
       const kpMap    = keputusan
       const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([k, v]) => !k.startsWith('_') && v !== undefined))
@@ -1635,13 +1686,17 @@ export default function PencatatInputKeputusan() {
       const heatDocForPost  = { id: selectedHeat.heatId, peserta: pesertaFinal, windSpeed: windSpeedVal ?? selectedHeat.windSpeed ?? '' }
       const acaraDocForPost = { ...acara, id: acara.acaraId }
 
-      // Fire-and-forget postRasmi — UI kembali segera, medal tally / rekod
-      // di-update background (biasanya 5-30 saat untuk 5 pemenang).
-      // Kalau error, log console; user boleh re-hantar untuk retry.
-      runPostRasmi(db, heatDocForPost, acaraDocForPost, kejId, {
-        schoolId, mataPingat, peringkatKej, grantMedal,
-        isRelay: acara.jenisAcara === 'relay',
-      }).catch(e => console.warn('postRasmi (background):', e.message))
+      // Await runPostRasmi — WAJIB tunggu selesai supaya medal tally masuk
+      // sebelum PP tekan Cetak Hadiah. Kalau async, boleh miss data.
+      try {
+        await runPostRasmi(db, heatDocForPost, acaraDocForPost, kejId, {
+          schoolId, mataPingat, peringkatKej, grantMedal,
+          isRelay: acara.jenisAcara === 'relay',
+        })
+      } catch (e) {
+        console.error('postRasmi FAILED:', e)
+        showToast(`⚠ Medal tally gagal dikemas kini: ${e.message}. Sila hantar semula.`, 'err', 8000)
+      }
 
       localPesertaHashRef.current = hashPeserta(pesertaFinal)
       setRemoteKemaskini(false)
@@ -1649,7 +1704,6 @@ export default function PencatatInputKeputusan() {
       setSelectedHeat(prev => ({ ...prev, ...patch }))
       setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, ...patch } : h))
       setSaved(true)
-      showToast('Keputusan dihantar — medal tally & rekod dikemas kini di latar.', 'ok', 3000)
     } catch (e) {
       showToast(`Ralat hantar: ${e.message}`, 'err', 5000)
     } finally {
@@ -1661,6 +1715,7 @@ export default function PencatatInputKeputusan() {
     if (!schoolId || !kejId || !selectedAcara || heats.length === 0 || !bolehEdit) return
     if (sistemTutup) { showToast('Sistem ditutup — input keputusan dihalang.', 'err'); return }
     setSaving(true); setSaved(false)
+    const _t0 = performance.now()
     try {
       const jenisAcara = selectedAcara.jenisAcara
       const isPadang   = ['padang_lompat', 'padang_balin'].includes(jenisAcara)
@@ -1677,9 +1732,8 @@ export default function PencatatInputKeputusan() {
       const kpSemua         = keputusanSemua
       const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([k, v]) => !k.startsWith('_') && v !== undefined))
 
-      const savedHeats = []
-
-      for (const h of heats) {
+      // Parallel semua heats (kalau lebih 1) untuk kelajuan
+      const heatResults = await Promise.all(heats.map(async h => {
         const heatRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', h.heatId)
         let finalPeserta = null
 
@@ -1721,22 +1775,29 @@ export default function PencatatInputKeputusan() {
           tx.update(heatRef, updates)
         })
 
-        if (finalPeserta) savedHeats.push({ heatId: h.heatId, fasa: h.fasa, peserta: finalPeserta })
-      }
+        return finalPeserta ? { heatId: h.heatId, fasa: h.fasa, peserta: finalPeserta } : null
+      }))
+      const savedHeats = heatResults.filter(Boolean)
 
       if (danHantar) {
         await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', selectedAcara.acaraId), {
           statusAcara: 'ada_keputusan', updatedAt: serverTimestamp(),
         }).catch(() => {})
 
-        for (const sh of savedHeats) {
-          const isFinalHeat = ['final', 'terus_final'].includes(sh.fasa)
-          const grantMedal  = !isSaringanAcara && (isFinalHeat || heats.length === 1)
-          const heatDocForPost = { id: sh.heatId, peserta: sh.peserta, windSpeed: '' }
-          const acaraDoc       = { id: selectedAcara.acaraId, ...selectedAcara }
-          await runPostRasmi(db, heatDocForPost, acaraDoc, kejId, {
-            schoolId, mataPingat, peringkatKej, grantMedal, isRelay: isRelayAcara,
-          }).catch(e => console.warn('postRasmi heat', sh.heatId, ':', e.message))
+        // Await postRasmi untuk semua heats (parallel) — pastikan medal masuk
+        try {
+          await Promise.all(savedHeats.map(sh => {
+            const isFinalHeat = ['final', 'terus_final'].includes(sh.fasa)
+            const grantMedal  = !isSaringanAcara && (isFinalHeat || heats.length === 1)
+            const heatDocForPost = { id: sh.heatId, peserta: sh.peserta, windSpeed: '' }
+            const acaraDoc       = { id: selectedAcara.acaraId, ...selectedAcara }
+            return runPostRasmi(db, heatDocForPost, acaraDoc, kejId, {
+              schoolId, mataPingat, peringkatKej, grantMedal, isRelay: isRelayAcara,
+            })
+          }))
+        } catch (e) {
+          console.error('postRasmi FAILED:', e)
+          showToast(`⚠ Medal tally gagal: ${e.message}. Sila hantar semula.`, 'err', 8000)
         }
       }
 
@@ -1747,6 +1808,8 @@ export default function PencatatInputKeputusan() {
       }))
       setRemoteKemaskini(false)
       setSaved(true)
+      const _elapsed = (performance.now() - _t0).toFixed(0)
+      console.log(`[handleSaveSemuaPeserta] ${danHantar ? 'HANTAR' : 'SAVE'} siap dalam ${_elapsed}ms — ${heats.length} heats`)
     } catch (e) {
       console.error('handleSaveSemuaPeserta:', e)
       showToast('Ralat: ' + e.message, 'err', 5000)

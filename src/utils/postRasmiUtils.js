@@ -121,8 +121,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       computedRankMap.set(pKey(p), p.kedudukan ? Number(p.kedudukan) : suggested)
     })
   } else {
+    // Sequential auto — manual kedudukan override kalau ada (untuk tie custom rank)
     finishers.forEach((p, i) => {
-      computedRankMap.set(pKey(p), i + 1)
+      computedRankMap.set(pKey(p), p.kedudukan ? Number(p.kedudukan) : i + 1)
     })
   }
 
@@ -284,17 +285,10 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         let isBetter = false
         let isEqual  = false
         if (rekodSedia) {
-          // Normalise format mm.ss → saat penuh (rekod lama manual < 10 = format mm.ss)
-          const normaliseSaat = v => {
-            const n = Number(v)
-            if (unit === 's' && n > 0 && n < 10) {
-              const m = Math.floor(n)
-              const s = Math.round((n - m) * 100)
-              return m * 60 + s
-            }
-            return n
-          }
-          const oldPrestasi = normaliseSaat(rekodSedia.prestasi)
+          // Tak perlu normalise — sistem simpan prestasi terus sebagai saat penuh
+          // (contoh: 100M 9.58s → simpan 9.58, 800M 1:52.30 → simpan 112.30)
+          // Normalisasi lama (mm.ss < 10) salah untuk larian pendek — buang.
+          const oldPrestasi = Number(rekodSedia.prestasi)
           const newR = Number(newPrestasi.toFixed(2))
           const oldR = Number(oldPrestasi.toFixed(2))
           isBetter = unit === 's' ? newR < oldR : newR > oldR
@@ -515,7 +509,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
  * - Padam rekod/{key}_tuntutan jika ditulis oleh heat ini (dan belum diluluskan admin)
  */
 export async function rollbackPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
-  const { deleteField } = await import('firebase/firestore')
+  const { deleteField, collection, getDocs } = await import('firebase/firestore')
   const { schoolId = '', isRelay = false, grantMedal = true } = config
   if (!schoolId) return
 
@@ -524,31 +518,34 @@ export async function rollbackPostRasmi(db, heatDoc, acaraDoc, kejId, config = {
   const peserta = heatDoc.peserta || []
   const batch   = writeBatch(db)
 
+  // STEP 1: Scan SEMUA medal_tally sekolah — cari contrib_{heatId}_* dan padam.
+  // Ini pastikan contrib stale (dari edit lama) juga dibersihkan, bukan hanya
+  // peserta yang caller pass (yang mungkin tak match peserta lama).
+  if (grantMedal) {
+    try {
+      const tallyColl = collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally')
+      const tallySnap = await getDocs(tallyColl)
+      const contribPrefix = `contrib_${heatDoc.id}_`
+      tallySnap.docs.forEach(tDoc => {
+        const data  = tDoc.data()
+        const patch = {}
+        Object.entries(data).forEach(([k, v]) => {
+          if (!k.startsWith(contribPrefix) || !v) return
+          const { pingat, kategoriKod, jantina } = v
+          const katPingat = `kat_${kategoriKod || ''}_${jantina || acaraDoc.jantina || ''}_${pingat}`
+          patch[k] = deleteField()
+          patch.jumlahPingat = increment(-1)
+          if (pingat) patch[pingat] = increment(-1)
+          if (katPingat) patch[katPingat] = increment(-1)
+        })
+        if (Object.keys(patch).length > 0) batch.update(tDoc.ref, patch)
+      })
+    } catch (e) { console.warn('rollback scan medal_tally:', e.message) }
+  }
+
+  // STEP 2: Rollback mata_olahragawan untuk peserta semasa (guna noBib peserta)
   for (const p of peserta) {
     if (['DNS', 'DNF', 'DQ'].includes(p.status)) continue
-
-    // Rollback medal_tally contrib — hanya jika heat ini grant medal
-    if (grantMedal && p.kodSekolah) {
-      const tId        = `${p.kodSekolah}_${kejId}`
-      const tRef       = tPath('medal_tally', tId)
-      const contribKey = `contrib_${heatDoc.id}_${isRelay ? `${p.kodSekolah}_${p.pasukanRelay || 'A'}` : (p.noBib || p.lorong || '')}`
-      try {
-        const tSnap    = await getDoc(tRef)
-        if (tSnap.exists()) {
-          const prevContr = tSnap.data()[contribKey]
-          if (prevContr) {
-            const { pingat, kategoriKod, jantina } = prevContr
-            const katPingat = `kat_${kategoriKod || ''}_${jantina || acaraDoc.jantina || ''}_${pingat}`
-            batch.update(tRef, {
-              [contribKey]: deleteField(),
-              jumlahPingat: increment(-1),
-              ...(pingat ? { [pingat]: increment(-1) } : {}),
-              ...(katPingat ? { [katPingat]: increment(-1) } : {}),
-            })
-          }
-        }
-      } catch (e) { console.warn('rollback medal_tally:', e.message) }
-    }
 
     // Rollback mata_olahragawan acaraDetail + rekod_ field — hanya jika heat ini grant medal/mata
     if (grantMedal && !isRelay && p.noBib) {

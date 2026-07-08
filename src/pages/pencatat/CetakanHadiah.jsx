@@ -95,13 +95,14 @@ async function cetakHadiahPDF({
       .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
       .filter(p => p.rankDalamHeat <= cetakBilangan)
   } else {
-    // Lain: sequential auto
+    // Lain: sequential auto, manual kedudukan override kalau ada
     pesertaFinal = (finalHeat.peserta || [])
       .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
       .sort((a, b) => isPadangAcaraCH
         ? Number(b.keputusan) - Number(a.keputusan)
         : Number(a.keputusan) - Number(b.keputusan))
-      .map((p, i) => ({ ...p, rankDalamHeat: i + 1 }))
+      .map((p, i) => ({ ...p, rankDalamHeat: p.kedudukan ? Number(p.kedudukan) : i + 1 }))
+      .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
       .filter(p => p.rankDalamHeat <= cetakBilangan)
   }
 
@@ -539,7 +540,8 @@ export default function CetakanHadiah() {
         .sort((a, b) => isPadangAcaraUI
           ? Number(b.keputusan) - Number(a.keputusan)
           : Number(a.keputusan) - Number(b.keputusan))
-        .map((p, i) => ({ ...p, rankDalamHeat: i + 1 }))
+        .map((p, i) => ({ ...p, rankDalamHeat: p.kedudukan ? Number(p.kedudukan) : i + 1 }))
+        .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
         .slice(0, 8)
     }
   }
