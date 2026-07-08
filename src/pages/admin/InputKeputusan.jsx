@@ -159,18 +159,18 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
         statusKeputusan: 'ada_keputusan',
         dikemaskinPada:  serverTimestamp(),
       })
-      // runPostRasmi — kira medal_tally, rekod, mata olahragawan
+      // Fire-and-forget postRasmi — UI kembali segera, tally di-update background
       const PKOD_ADMIN = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
       const isSaringan = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
       const heatDoc  = { id: heat.id, peserta: withRank, windSpeed: windGlobal || '' }
       const acaraDoc = { ...acara, id: acara.id }
-      await runPostRasmi(db, heatDoc, acaraDoc, kejId, {
+      runPostRasmi(db, heatDoc, acaraDoc, kejId, {
         schoolId,
         mataPingat:        kejDoc?.mataPingat        || { 1: 5, 2: 3, 3: 2, 4: 1 },
         peringkatKej:      PKOD_ADMIN[(kejDoc?.peringkat || '').toLowerCase()] || 'D',
         grantMedal:        !isSaringan && (heat.fasa === 'final' || heat.fasa === 'terus_final'),
         isRelay,
-      }).catch(e => console.warn('postRasmi:', e.message))
+      }).catch(e => console.warn('postRasmi (background):', e.message))
       setSimpan({ loading: false, ok: true, err: '' })
       onSimpan()
       setTimeout(onTutup, 700)
@@ -346,18 +346,18 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
         statusKeputusan: 'ada_keputusan',
         dikemaskinPada:  serverTimestamp(),
       })
-      // runPostRasmi — kira medal_tally, rekod, mata olahragawan
+      // Fire-and-forget postRasmi — UI kembali segera, tally di-update background
       const PKOD_ADMIN = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
       const isSaringanPadang = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
       const heatDoc  = { id: heat.id, peserta: withRank }
       const acaraDoc = { ...acara, id: acara.id }
-      await runPostRasmi(db, heatDoc, acaraDoc, kejId, {
+      runPostRasmi(db, heatDoc, acaraDoc, kejId, {
         schoolId,
         mataPingat:   kejDoc?.mataPingat   || { 1: 5, 2: 3, 3: 2, 4: 1 },
         peringkatKej: PKOD_ADMIN[(kejDoc?.peringkat || '').toLowerCase()] || 'D',
         grantMedal:   !isSaringanPadang && (heat.fasa === 'final' || heat.fasa === 'terus_final'),
         isRelay:      false,
-      }).catch(e => console.warn('postRasmi:', e.message))
+      }).catch(e => console.warn('postRasmi (background):', e.message))
       setSimpan({ loading: false, ok: true, err: '' })
       onSimpan()
       setTimeout(onTutup, 700)

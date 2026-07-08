@@ -71,16 +71,27 @@ async function cetakHadiahPDF({
   }
 
   // Peserta final — kira rank on-the-fly
-  // - Lompat Tinggi: TERUS pakai kedudukan pencatat (no fallback)
+  // - Lompat Tinggi: guna kedudukan manual jika ada, fallback ke auto-suggest
+  //   (tinggi sama = rank sama, count-back tie oleh pencatat)
   // - Lain: sequential auto (1,2,3,4,5)
   const isPadangAcaraCH = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
   const isLompatTinggiCH = resolveIsLompatTinggi(acara)
   let pesertaFinal
   if (isLompatTinggiCH) {
-    // Lompat Tinggi: rank = kedudukan (pencatat decide)
-    pesertaFinal = (finalHeat.peserta || [])
-      .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0 && p.kedudukan)
-      .map(p => ({ ...p, rankDalamHeat: Number(p.kedudukan) }))
+    // Auto-suggest LT: sort desc by keputusan, tinggi sama = rank sama
+    const finishers = (finalHeat.peserta || [])
+      .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
+      .sort((a, b) => Number(b.keputusan) - Number(a.keputusan))
+    pesertaFinal = finishers.map((p, i) => {
+      // Manual override menang atas auto
+      if (p.kedudukan) return { ...p, rankDalamHeat: Number(p.kedudukan) }
+      // Auto: tinggi sama dgn sebelum → rank sama
+      const suggested = (i > 0 && Number(finishers[i - 1].keputusan) === Number(p.keputusan))
+        ? finishers[i - 1]._suggestedRank
+        : i + 1
+      p._suggestedRank = suggested
+      return { ...p, rankDalamHeat: suggested }
+    })
       .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
       .filter(p => p.rankDalamHeat <= cetakBilangan)
   } else {
@@ -502,16 +513,24 @@ export default function CetakanHadiah() {
     })
 
   // Kira rank on-the-fly
-  // - Lompat Tinggi: TERUS pakai kedudukan pencatat
+  // - Lompat Tinggi: guna kedudukan manual (override) jika ada, fallback auto-suggest
   // - Lain: sequential auto (1,2,3,4,5)
   const isPadangAcaraUI = ['padang_lompat', 'padang_balin'].includes(selAcara?.jenisAcara)
   const isLompatTinggiUI = resolveIsLompatTinggi(selAcara)
   let pemenang = []
   if (finalHeat) {
     if (isLompatTinggiUI) {
-      pemenang = (finalHeat.peserta || [])
-        .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0 && p.kedudukan)
-        .map(p => ({ ...p, rankDalamHeat: Number(p.kedudukan) }))
+      const finishers = (finalHeat.peserta || [])
+        .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
+        .sort((a, b) => Number(b.keputusan) - Number(a.keputusan))
+      pemenang = finishers.map((p, i) => {
+        if (p.kedudukan) return { ...p, rankDalamHeat: Number(p.kedudukan) }
+        const suggested = (i > 0 && Number(finishers[i - 1].keputusan) === Number(p.keputusan))
+          ? finishers[i - 1]._suggestedRank
+          : i + 1
+        p._suggestedRank = suggested
+        return { ...p, rankDalamHeat: suggested }
+      })
         .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
         .slice(0, 8)
     } else {

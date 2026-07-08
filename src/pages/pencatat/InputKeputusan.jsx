@@ -1514,8 +1514,14 @@ export default function PencatatInputKeputusan() {
     const rankKey = p => jenisAcara === 'relay' ? p.lorong : p.noBib
     const autoRankMap = new Map()
     if (isLompatTinggi) {
-      finishers.forEach(p => {
-        if (p.kedudukan) autoRankMap.set(rankKey(p), Number(p.kedudukan))
+      // Auto-suggest LT: tinggi sama = rank sama; manual kedudukan override.
+      let curRank = 1
+      finishers.forEach((p, i) => {
+        const suggested = (i > 0 && Number(finishers[i - 1].keputusan) === Number(p.keputusan))
+          ? autoRankMap.get(rankKey(finishers[i - 1]))
+          : curRank
+        curRank = i + 2
+        autoRankMap.set(rankKey(p), p.kedudukan ? Number(p.kedudukan) : suggested)
       })
     } else {
       finishers.forEach((p, i) => autoRankMap.set(rankKey(p), i + 1))
@@ -1628,10 +1634,14 @@ export default function PencatatInputKeputusan() {
       )
       const heatDocForPost  = { id: selectedHeat.heatId, peserta: pesertaFinal, windSpeed: windSpeedVal ?? selectedHeat.windSpeed ?? '' }
       const acaraDocForPost = { ...acara, id: acara.acaraId }
-      await runPostRasmi(db, heatDocForPost, acaraDocForPost, kejId, {
+
+      // Fire-and-forget postRasmi — UI kembali segera, medal tally / rekod
+      // di-update background (biasanya 5-30 saat untuk 5 pemenang).
+      // Kalau error, log console; user boleh re-hantar untuk retry.
+      runPostRasmi(db, heatDocForPost, acaraDocForPost, kejId, {
         schoolId, mataPingat, peringkatKej, grantMedal,
         isRelay: acara.jenisAcara === 'relay',
-      }).catch(e => console.warn('postRasmi:', e.message))
+      }).catch(e => console.warn('postRasmi (background):', e.message))
 
       localPesertaHashRef.current = hashPeserta(pesertaFinal)
       setRemoteKemaskini(false)
@@ -1639,6 +1649,7 @@ export default function PencatatInputKeputusan() {
       setSelectedHeat(prev => ({ ...prev, ...patch }))
       setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, ...patch } : h))
       setSaved(true)
+      showToast('Keputusan dihantar — medal tally & rekod dikemas kini di latar.', 'ok', 3000)
     } catch (e) {
       showToast(`Ralat hantar: ${e.message}`, 'err', 5000)
     } finally {
