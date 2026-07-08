@@ -122,10 +122,6 @@ function KategoriTable({ items, tahun, onEdit, onDelete, onToggle }) {
             <th className="px-3 py-3 text-left">Nama</th>
             <th className="px-3 py-3 text-left">Kelayakan</th>
             <th className="px-3 py-3 text-center">
-              Atlet / Sekolah
-              <p className="text-[9px] font-normal normal-case text-gray-300 mt-0.5">L | P</p>
-            </th>
-            <th className="px-3 py-3 text-center">
               Individu
               <p className="text-[9px] font-normal normal-case text-gray-300 mt-0.5">acara/atlet</p>
             </th>
@@ -170,20 +166,6 @@ function KategoriTable({ items, tahun, onEdit, onDelete, onToggle }) {
                   ) : (
                     <span className="text-[10px] text-gray-400">—</span>
                   )}
-                </td>
-
-                <td className="px-3 py-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5">
-                    <div className="flex items-center gap-0.5">
-                      <span className="w-4 h-4 rounded-full bg-blue-100 text-[8px] font-black text-blue-700 flex items-center justify-center">L</span>
-                      <span className="font-bold text-gray-700">{k.hadAtletL ?? '—'}</span>
-                    </div>
-                    <span className="text-gray-300">|</span>
-                    <div className="flex items-center gap-0.5">
-                      <span className="w-4 h-4 rounded-full bg-pink-100 text-[8px] font-black text-pink-700 flex items-center justify-center">P</span>
-                      <span className="font-bold text-gray-700">{k.hadAtletP ?? '—'}</span>
-                    </div>
-                  </div>
                 </td>
 
                 <td className="px-3 py-3 text-center">
@@ -405,27 +387,14 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
             )}
           </div>
 
-          {/* ── BAHAGIAN 3: Kuota Atlet Per Sekolah ── */}
-          <div>
-            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 pb-1 border-b border-gray-100">
-              3 — Kuota Atlet Per Sekolah
-            </p>
-            <p className="text-[10px] text-gray-400 mb-3">
-              Jumlah atlet (L/P) yang boleh didaftarkan oleh sesebuah sekolah untuk kategori ini.
-              Digunakan semasa pendaftaran untuk menyemak had.
-            </p>
-            <DualField
-              labelL="Lelaki" labelP="Perempuan"
-              valL={form.hadAtletL} valP={form.hadAtletP}
-              onL={v => set('hadAtletL', v)} onP={v => set('hadAtletP', v)}
-              suffix="atlet"
-            />
-          </div>
+          {/* BAHAGIAN 3 (Kuota Atlet Per Sekolah) DIBUANG — sekolah bebas
+              daftar berapa atlet pun tanpa had dalam kategori. Had per acara
+              dikawal oleh acara.hadAtletPerSekolah dalam AcaraSetup. */}
 
-          {/* ── BAHAGIAN 4: Had Acara Per Atlet ── */}
+          {/* ── BAHAGIAN 3: Had Acara Per Atlet (dulunya 4) ── */}
           <div>
             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 pb-1 border-b border-gray-100">
-              4 — Had Acara Per Atlet
+              3 — Had Acara Per Atlet
             </p>
             <p className="text-[10px] text-gray-400 mb-3">
               Maks acara yang boleh disertai oleh <strong>seorang atlet</strong> dalam kategori ini.
@@ -454,7 +423,7 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
           {/* ── BAHAGIAN 5: Pasukan Berkumpulan Per Sekolah ── */}
           <div>
             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 pb-1 border-b border-gray-100">
-              5 — Pasukan Berkumpulan Per Sekolah
+              4 — Pasukan Berkumpulan Per Sekolah
             </p>
             <p className="text-[10px] text-gray-400 mb-3">
               Berapa pasukan relay boleh dihantar per sekolah bagi setiap acara berkumpulan.
@@ -477,7 +446,7 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
           {/* ── BAHAGIAN 6: Catatan & Status ── */}
           <div>
             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 pb-1 border-b border-gray-100">
-              6 — Catatan & Status
+              5 — Catatan & Status
             </p>
             <div className="space-y-3">
               <FormField label="Catatan">
