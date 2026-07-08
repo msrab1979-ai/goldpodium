@@ -1632,52 +1632,63 @@ export default function Rekod() {
     if (!kejId) return { mataCount: 0, heatCount: 0 }
 
     try {
-      // 1. Cari acara yang match (namaAcara/Pendek + kategoriKod + jantina)
+      // 1. Cari SEMUA acara yang match (kategoriKod + jantina + nama match dgn variant)
+      // Boleh ada multiple acara dengan nama sama (contoh: 100M L12A dalam heat & final)
       const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
-      const matchAcara = acaraSnap.docs.find(a => {
+      const namaR = (rekod.namaAcara || '').trim().toUpperCase()
+      const namaRPendek = (rekod.namaAcaraPendek || '').trim().toUpperCase()
+      const matchAcaraList = acaraSnap.docs.filter(a => {
         const d = a.data()
-        const namaA = (d.namaAcaraPendek || d.namaAcara || '').trim().toUpperCase()
-        const namaR = (rekod.namaAcara || '').trim().toUpperCase()
-        return namaA === namaR &&
+        const namaAPenuh  = (d.namaAcara      || '').trim().toUpperCase()
+        const namaAPendek = (d.namaAcaraPendek || '').trim().toUpperCase()
+        // Match kalau mana-mana kombinasi nama sama
+        const namaMatch =
+          namaAPenuh === namaR ||
+          namaAPendek === namaR ||
+          (namaRPendek && (namaAPenuh === namaRPendek || namaAPendek === namaRPendek))
+        return namaMatch &&
                d.kategoriKod === rekod.kategoriKod &&
                d.jantina === rekod.jantina
       })
-      if (!matchAcara) return { mataCount: 0, heatCount: 0 }
+      if (matchAcaraList.length === 0) return { mataCount: 0, heatCount: 0 }
 
-      const acaraId = matchAcara.id
-      const fieldKey = `rekod_${acaraId}`
+      let mataCount = 0, heatCount = 0
+      // Loop setiap acara yang match — biasanya 1, tapi boleh multiple
+      // (contoh: 100M L12A heat + 100M L12A final = 2 acara dengan nama sama)
+      for (const matchAcara of matchAcaraList) {
+        const acaraId = matchAcara.id
+        const fieldKey = `rekod_${acaraId}`
 
-      // 2. Padam field rekod_{acaraId} dari mata_olahragawan
-      const mataSnap = await getDocs(
-        collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan')
-      )
-      let mataCount = 0
-      for (const d of mataSnap.docs) {
-        if (d.data()[fieldKey] !== undefined) {
-          await updateDoc(d.ref, { [fieldKey]: deleteField() })
-          mataCount++
-        }
-      }
-
-      // 3. Buang flag pecahRekod/samaiRekod dari heat.peserta
-      const heatSnap = await getDocs(
-        query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraId))
-      )
-      let heatCount = 0
-      for (const h of heatSnap.docs) {
-        const peserta = h.data().peserta || []
-        let hasChange = false
-        const newPeserta = peserta.map(p => {
-          if (p.pecahRekod || p.samaiRekod) {
-            hasChange = true
-            const { pecahRekod, samaiRekod, ...rest } = p
-            return rest
+        // 2. Padam field rekod_{acaraId} dari mata_olahragawan
+        const mataSnap = await getDocs(
+          collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'mata_olahragawan')
+        )
+        for (const d of mataSnap.docs) {
+          if (d.data()[fieldKey] !== undefined) {
+            await updateDoc(d.ref, { [fieldKey]: deleteField() })
+            mataCount++
           }
-          return p
-        })
-        if (hasChange) {
-          await updateDoc(h.ref, { peserta: newPeserta })
-          heatCount++
+        }
+
+        // 3. Buang flag pecahRekod/samaiRekod dari heat.peserta
+        const heatSnap = await getDocs(
+          query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acaraId))
+        )
+        for (const h of heatSnap.docs) {
+          const peserta = h.data().peserta || []
+          let hasChange = false
+          const newPeserta = peserta.map(p => {
+            if (p.pecahRekod || p.samaiRekod) {
+              hasChange = true
+              const { pecahRekod, samaiRekod, ...rest } = p
+              return rest
+            }
+            return p
+          })
+          if (hasChange) {
+            await updateDoc(h.ref, { peserta: newPeserta })
+            heatCount++
+          }
         }
       }
 
