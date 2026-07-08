@@ -446,6 +446,17 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - Card compact — bukan butang besar full-width (feedback: terlalu besar)
 - Teks tindakan jelas, arahan dari admin boleh customise per kejohanan
 
+## Admin Pengesahan Peserta (2026-07-09)
+
+- Route: `/admin/kejohanan/:kejId/pengesahan-peserta` → `PengesahanPeserta.jsx`
+- Sidebar: Group Pengurusan, bawah Start List, label `✅ Pengesahan Peserta`
+- Header: counter besar `X / Y Sekolah Disahkan` + badge status keseluruhan
+- Filter: `Semua` | `Disahkan` | `Belum Sahkan` dengan counter per tab
+- Jadual flat: Bil · Sekolah · Kod · Status (✓ Disahkan / Belum Sahkan / Bypass) · Tarikh Sahkan
+- Bypass buka kunci/kunci semula terus dari page ini (dengan confirm dialog)
+- PDF ringkas: nama sekolah, status, tarikh — header biru
+- Data: `pengesahan/{kodSekolah}` per kejohanan + `sekolah/{kodSekolah}.bypassPengesahan`
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`
