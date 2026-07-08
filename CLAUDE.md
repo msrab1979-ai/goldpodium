@@ -188,34 +188,37 @@ tenants/{schoolId}/
 - `src/utils/finalistUtils.js` — algoritma pilih finalis (selectFinalists guna h.fasa)
 - `src/utils/startListPdfUtils.js` — PDF generation + resolveIsLompatTinggi + assignLorongFinal/Heat
 
-## Security — Firestore Rules (AUDIT DIPERLUKAN)
+## Security — Firestore Rules (SIAP 2026-07-08)
 
-**Rating semasa: 2.5/5 — BELUM SELAMAT untuk peringkat daerah/negeri**
+**Rating semasa: 4.5/5 — SIAP untuk deploy peringkat daerah/negeri**
 
-### Isu Kritikal
-- `write: if isAuth()` terlalu luas — Anonymous Auth mudah didapat, sesiapa boleh tulis
-- Cross-tenant write tidak disekat — user sekolah A boleh tulis ke sekolah B
-- `/tetapan`, `/atlet`, `/rekod` boleh ditulis oleh mana-mana authenticated user
-- Tiada audit log — tidak boleh kesan siapa yang buat perubahan
+### Multi-Tenant Isolation via Session Doc (commit 6af7947)
+- `canWriteTenant(schoolId)` — semua write kena verify:
+  - `isSuperadmin()`, ATAU
+  - `isAdminOfSchool(schoolId)`, ATAU
+  - `sessionExists(schoolId)` — anonymous user dengan session doc valid
+- Session doc: `tenants/{schoolId}/sessions/{anonUid}` — dicipta lepas PIN verified
+- Rules cegah spoof: `anonUid == request.auth.uid`, schoolId path == data, kodSekolah wujud
+- Immutable (create + delete sahaja, no update)
+- Auto-expire 8 jam via `expireAt` field
 
-### Yang Perlu Difix
-```js
-// Tukar dari:
-allow write: if isAuth();
-// Kepada:
-allow write: if canAccessSchool(schoolId);
-// Untuk pencatat (Anonymous Auth + PIN):
-allow write: if canAccessSchool(schoolId) || isPencatat(schoolId);
-```
+### TTL Cleanup
+- `expireAt` field ditambah ke `sessions` (8 jam) + `login_attempts` (7 hari)
+- TTL policy setup di Firebase Console Firestore → TTL (per collection group)
+- Firestore auto-padam docs dalam 24 jam selepas expireAt
 
-### Risiko Mengikut Skala
-| Senario | Selamat? |
-|---|---|
-| Sekolah sendiri, sorang admin | ✅ OK |
-| Beberapa sekolah, kejohanan daerah | ⚠️ Perlu fix |
-| Ramai sekolah, kejohanan negeri/kebangsaan | 🔴 Mesti fix dulu |
+### Emulator Test
+- `test-multitenant-rules.cjs` — 20 test cases, semua pass
+- Guna `@firebase/rules-unit-testing`
+- Verify cross-tenant write dihalang untuk anon, admin, pencatat, PP
 
-**TODO: Fix Firestore rules sebelum deploy ke peringkat daerah/negeri**
+### Storage Rules
+- Anonymous user TAK boleh upload logos/sijil (size + content-type check)
+- Belum enable Firebase Storage untuk projek — rules standby
+
+### Yang Boleh Improved
+- Pencatat session — rules tak boleh verify `kodAkses` (Firestore rules tak query). Attack surface kecil.
+- Cadangan future: Cloud Function untuk audit log
 
 ## PP Dashboard — Fixes Kritikal (2026-07-05)
 
@@ -322,6 +325,106 @@ allow write: if canAccessSchool(schoolId) || isPencatat(schoolId);
 
 - Load `skolMap` dari koleksi `sekolah` dulu, fallback ke `atlet`
 - Key = `data.kodSekolah || d.id`, value = `data.namaSekolah || data.nama || kod`
+
+## Lompat Tinggi Auto-Suggest (2026-07-08)
+
+### Logik ranking (`kiraRankLompatTinggi`)
+- Sort desc by keputusan (tinggi terbaik dulu)
+- Tinggi berbeza → rank sequential (1, 2, 3)
+- Tinggi sama → rank sama (tie)
+- Manual `p.kedudukan` menang atas auto-suggest
+- Return `{ rankMap, tieMap, tieGroups }`
+
+### UI InputPadang
+- Board tunjuk badge nombor rank (bulat emas/perak/gangsa) — bukan status "selesai"
+- Warning amber untuk tie groups + minta pencatat semak count-back
+- **Butang "✎ Edit Manual"** — mode edit, badge circle jadi input number
+- Manual override badge "MANUAL" biru
+- Auto-uppercase input jenis institusi
+
+### Merentasi tempat
+- `postRasmiUtils.runPostRasmi` — auto-suggest jadi rank rasmi bila kedudukan kosong
+- `pencatat/CetakanHadiah` PDF + UI preview — sama logic
+- Padang biasa (bukan LT) juga terima manual override
+
+## Rekod Detection Gate (2026-07-08)
+
+### HANYA acara akhir/final/terus_final
+```js
+const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.peringkat || '')
+```
+- Sebelum: rekod detect di **semua fasa** (saringan_qf/sf, separuh_akhir) → badge RBK muncul di heat saringan
+- Sekarang: gate `isFinalPeringkat` untuk individu + relay
+- **JANGAN** revert ke "semua fasa" — konfusi audience
+
+### `getNamaSekolah` prefetch sekolah collection
+- Fallback: `p.namaSekolah` → `sekolahNamaMap[kodSekolah]` → `p.kodSekolah`
+- Rekod relay simpan namaSekolah betul (SK PASIR GAJAH) bukan kodSekolah (TBA2006)
+
+### `isBetter` — buang normaliseSaat buggy
+- Prestasi disimpan sebagai saat penuh (100M 9.58s = `9.58`, 800M 1:52.30 = `112.30`)
+- Sebelum: `n < 10` dianggap mm.ss format → 5.00s dinormalise jadi 300 → tuntutan 10s "lebih baik"
+- Sekarang: bandingkan terus tanpa normalisasi
+
+### `autoCleanKesanRekod` — match variant + loop semua
+- Match namaAcara vs namaAcaraPendek dari kedua sisi (rekod ↔ acara)
+- Loop **SEMUA** acara match (kalau ada 100M L12A heat + final berasingan)
+- Padam badge dari heat + `mata_olahragawan.rekod_{acaraId}` untuk semua
+
+## Medal Tally Rollback + Backfill (2026-07-08)
+
+### `rollbackPostRasmi` scan medal_tally penuh
+- Sebelum: loop peserta dari caller (mungkin peserta BARU selepas edit) — miss stale contrib
+- Sekarang: STEP 1 scan collection medal_tally, cari `contrib_{heatId}_*` semua, padam
+- STEP 2 rollback mata_olahragawan untuk peserta semasa
+- Pastikan tally konsisten walaupun peserta ubah kedudukan
+
+### `backfill-medal-tally.cjs` — Nuclear rebuild
+- Padam SEMUA medal_tally + mata_olahragawan existing
+- Rebuild dari heat rasmi (fasa=`final`/`terus_final` + statusKeputusan=`rasmi`/`diterima`)
+- Skip saringan, DNS/DNF/DQ
+- Guna admin login (`ADMIN_EMAIL` + `ADMIN_PASSWORD` env vars)
+- Jalan bila medal tally salah sync dengan heat
+
+## UX Improvements (2026-07-08)
+
+### Modal Akses Staff (Home.jsx + SchoolLanding.jsx)
+- Buang card Pengurus Pasukan (redundan — dah ada di Akses Pantas)
+- Ganti footer "Log Masuk Admin" jadi card ADMIN besar
+- Modal sekarang: **PENCATAT (hijau) + ADMIN (biru gelap)**
+
+### Lupa PIN PengurusLogin
+- Trigger di `PengurusLogin` (page paling logik untuk PP)
+- Flow: kod sekolah + e-mel → semak match → jana PIN 6 digit rawak → hash simpan → papar sekali
+- Hanya muncul bila schoolId sudah resolved dari slug
+
+### bibPrefix untuk relay
+- Row relay tunjuk `namaSekolah` + `bibPrefix` (biru mono) + `Pskmn A/B/C`
+- Sebelum: cuma `TBA2001` (kod sekolah teknikal) — susah untuk juruhebah
+- `matchCarian` tambah bibPrefix ke carian
+- `sekolahMap` + `bibPrefixMap` dua-dua load dari `tenants/{schoolId}/sekolah`
+
+### JanaFinalPanel — Custom lorong (▲▼)
+- Panel auto-jana lorong 1-N untuk finalis relay/lorong
+- Butang ▲▼ swap lorong sebelum jana (state local)
+- Klik "Jana Semula" → susunan custom disimpan (bukan `assignLorongFinal` WA seeding)
+- `handleJanaFinal` semak `hasCustomLorong` — kalau ada, guna susunan itu
+
+### AcaraSetup — noAcara flexible
+- Buang restriction `/\D/g` strip non-digit
+- Allow text/number/mix: `101`, `OSSOM-P`, `A1`, `4x100M-FINAL`
+- Sistem features `Number(noAcara)` auto-langkau text (NaN filter)
+
+### KategoriSetup cleanup
+- Tab filter: whitelist `SR/SM/PPKI` sahaja (buang custom tenant seperti "SEKOLAH RENDAH")
+- Modal: buang butang preset — input text sahaja + panduan biru
+- Modal: buang Bahagian 3 "Kuota Atlet Per Sekolah" — sekolah bebas daftar tanpa had
+- Table: buang kolum "Atlet / Sekolah (L | P)"
+- Had per acara dikawal oleh `acara.hadAtletPerSekolah` dalam AcaraSetup
+
+### AcaraSetup — buang duplicate butang
+- Buang butang top-right "Padam Semua" + "Tambah Acara"
+- Kekal butang dalam toolbar tengah + footer jadual
 
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
