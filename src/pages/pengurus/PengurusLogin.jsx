@@ -13,9 +13,113 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, serverTimestamp, deleteField } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { hashPin } from '../../utils/hashPin'
+
+// ─── LupaPinModal ─────────────────────────────────────────────────────────────
+// Flow: masukkan Kod Sekolah + E-mel Sekolah → sistem semak match → jana PIN 6 digit baru
+function genPin6() { return String(Math.floor(100000 + Math.random() * 900000)) }
+
+function LupaPinModal({ schoolId, onClose }) {
+  const [kodSekolah, setKodSekolah] = useState('')
+  const [email,      setEmail]      = useState('')
+  const [newPin,     setNewPin]     = useState(null)
+  const [error,      setError]      = useState('')
+  const [loading,    setLoading]    = useState(false)
+
+  useEffect(() => {
+    const fn = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', fn)
+    return () => window.removeEventListener('keydown', fn)
+  }, [onClose])
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError('')
+    if (!kodSekolah.trim()) return setError('Sila masukkan Kod Sekolah.')
+    if (!email.trim()) return setError('Sila masukkan E-mel Sekolah.')
+    setLoading(true)
+    try {
+      const kod = kodSekolah.trim().toUpperCase()
+      const snap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kod))
+      if (!snap.exists()) { setError('Kod Sekolah tidak dijumpai.'); return }
+      const data = snap.data()
+      if ((data.email || '').toLowerCase().trim() !== email.toLowerCase().trim()) {
+        setError('E-mel tidak sepadan dengan rekod sekolah ini.'); return
+      }
+      const pin6 = genPin6()
+      const ph   = await hashPin(pin6)
+      await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', kod), {
+        pinHash: ph, pin: deleteField(), updatedAt: serverTimestamp(),
+      })
+      setNewPin(pin6)
+    } catch { setError('Ralat sistem. Cuba sebentar lagi.') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white w-full max-w-xs rounded-2xl shadow-2xl overflow-hidden">
+        <div className="bg-[#003399] px-5 py-4 flex items-center justify-between">
+          <p className="text-sm font-bold text-white">Lupa PIN</p>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-5">
+          {newPin !== null ? (
+            <div className="text-center py-2 space-y-3">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="text-xs font-semibold text-gray-700">PIN baru untuk sekolah anda:</p>
+              <p className="text-3xl font-black tracking-[0.3em] text-[#003399] font-mono bg-blue-50 rounded-xl py-4 border border-blue-100">{newPin}</p>
+              <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Catat PIN ini sekarang. Ia <strong>tidak akan dipaparkan semula</strong> selepas ditutup.
+              </p>
+              <button onClick={onClose} className="w-full bg-[#003399] text-white font-bold py-2.5 rounded-lg text-xs">
+                SAYA SUDAH CATAT — TUTUP
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Masukkan Kod Sekolah dan E-mel untuk <strong>jana PIN baru</strong>.
+                PIN lama tidak lagi boleh digunakan.
+              </p>
+              {error && <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Kod Sekolah</label>
+                <input type="text" value={kodSekolah}
+                  onChange={e => { setKodSekolah(e.target.value.toUpperCase()); setError('') }}
+                  required autoFocus placeholder="cth: KMN-SR-001"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-[#003399]/25 focus:border-[#003399] bg-gray-50" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">E-mel Sekolah</label>
+                <input type="email" value={email}
+                  onChange={e => { setEmail(e.target.value); setError('') }}
+                  required placeholder="sk@moe.edu.my"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#003399]/25 focus:border-[#003399] bg-gray-50" />
+              </div>
+              <button type="submit" disabled={loading}
+                className="w-full bg-[#003399] hover:bg-[#002277] disabled:bg-gray-300 text-white font-bold py-2.5 rounded-lg text-xs tracking-widest transition-colors">
+                {loading ? 'MENYEMAK…' : 'TUNJUK PIN'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function PengurusLogin() {
   const { loginPengurus, userData } = useAuth()
@@ -37,6 +141,7 @@ export default function PengurusLogin() {
   const [loading,     setLoading]     = useState(false)
   const [ralat,       setRalat]       = useState('')
   const [pinVisible,  setPinVisible]  = useState(false)
+  const [lupaPinModal, setLupaPinModal] = useState(false)
 
   // Redirect kalau dah login sebagai pengurus — hantar ke slug sekolah sendiri
   useEffect(() => {
@@ -261,12 +366,26 @@ export default function PengurusLogin() {
               : 'Log Masuk'
             }
           </button>
+
+          {/* Lupa PIN — hanya nampak bila schoolId sudah resolved */}
+          {schoolId && (
+            <p className="text-center pt-1">
+              <button type="button" onClick={() => setLupaPinModal(true)}
+                className="text-[11px] text-gray-400 hover:text-[#003399] underline transition-colors">
+                Lupa PIN?
+              </button>
+            </p>
+          )}
         </form>
       </div>
 
       <button onClick={() => navigate(-1)} className="mt-6 text-xs text-white/40 hover:text-white/70 transition-colors">
         ← Kembali
       </button>
+
+      {lupaPinModal && schoolId && (
+        <LupaPinModal schoolId={schoolId} onClose={() => setLupaPinModal(false)} />
+      )}
     </div>
   )
 }
