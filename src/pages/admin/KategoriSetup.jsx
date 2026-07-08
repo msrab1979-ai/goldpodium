@@ -356,34 +356,25 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
                 <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
                   Jenis Institusi<span className="text-red-500 ml-0.5">*</span>
                 </label>
-                <p className="text-[10px] text-gray-400 mb-1.5">Klik untuk pilih, atau taip nilai baharu di bawah:</p>
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {[...new Set([...jenisValues])].map(j => (
-                    <button
-                      key={j}
-                      type="button"
-                      onClick={() => set('jenisSekolah', j)}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
-                        form.jenisSekolah === j
-                          ? 'bg-[#003399] text-white border-[#003399]'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-[#003399]/50 hover:text-[#003399]'
-                      }`}
-                    >
-                      {j}
-                    </button>
-                  ))}
-                </div>
                 <input
                   type="text"
                   value={form.jenisSekolah}
-                  onChange={e => set('jenisSekolah', e.target.value)}
-                  placeholder="cth: Universiti, Kolej, SMKA, Teknik..."
+                  onChange={e => set('jenisSekolah', e.target.value.toUpperCase())}
+                  placeholder="cth: SR, SM, PPKI, IPT..."
                   className={inputCls}
                   autoComplete="off"
                 />
-                <p className="text-[10px] text-gray-400 mt-1">
-                  Nilai semasa: <span className="font-bold text-gray-700">{form.jenisSekolah || '—'}</span>
-                </p>
+                {/* Panduan ringkas untuk tenant */}
+                <div className="mt-2 p-2.5 rounded-lg bg-blue-50/60 border border-blue-100 text-[10px] leading-relaxed text-gray-600">
+                  <p className="font-bold text-[#003399] mb-0.5">💡 Panduan:</p>
+                  <p>Contoh nilai: <span className="font-bold">SR</span> (Sekolah Rendah), <span className="font-bold">SM</span> (Sekolah Menengah), <span className="font-bold">PPKI</span>, <span className="font-bold">IPT</span>, <span className="font-bold">KOLEJ</span>.</p>
+                  <p className="mt-1">Guna <strong>kod pendek</strong> dan <strong>konsisten</strong> — kategori dengan kod sama akan dikumpulkan bersama dalam paparan medal tally &amp; laporan.</p>
+                </div>
+                {form.jenisSekolah && (
+                  <p className="text-[10px] text-gray-400 mt-1.5">
+                    Nilai semasa: <span className="font-bold text-gray-700">{form.jenisSekolah}</span>
+                  </p>
+                )}
               </div>
             </div>
           </div>
