@@ -186,7 +186,12 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
         const katKey       = isRelay ? 'RELAY' : (acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''))
         const katPingat    = `kat_${katKey}_${acaraDoc.jantina}_${pingat}`
         // noKP TIDAK disimpan dalam medal_tally — public-readable collection
-        const tPatch = { [contribKey]: { pingat, noBib: p.noBib || null, rank, kategoriKod: katKey, jantina: acaraDoc.jantina, isRelay: !!isRelay } }
+        const tPatch = { [contribKey]: {
+          pingat, noBib: p.noBib || null, rank,
+          kategoriKod: katKey, jantina: acaraDoc.jantina, isRelay: !!isRelay,
+          namaAcara:       acaraDoc.namaAcara || '',
+          namaAcaraPendek: acaraDoc.namaAcaraPendek || acaraDoc.namaAcara || '',
+        } }
         if (prevContr) {
           const prevPingat   = prevContr.pingat      || ''
           const prevKat      = prevContr.kategoriKod || katKey
