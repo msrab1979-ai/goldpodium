@@ -42,7 +42,11 @@ export const TETAPAN_DEFAULTS = {
   showJadual:           true,
   // Pautan Kumpulan
   linkWasap:            '',
+  tajukWasap:           '',
+  arahanWasap:          '',
   linkTelegram:         '',
+  tajukTelegram:        '',
+  arahanTelegram:       '',
   // Dokumen Muat Turun (selepas login)
   dokumenMuatTurun:     [], // [{ nama, url }]
 }
@@ -616,18 +620,46 @@ export default function TetapanHome() {
           {/* 7. Pautan Kumpulan */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
             <SectionTitle title="Pautan Kumpulan"
-              desc="Butang WhatsApp / Telegram dipapar di halaman utama sebelum login" />
-            <div className="space-y-3">
-              <Field label="Pautan WhatsApp" hint="Kosongkan jika tidak mahu papar butang WhatsApp">
-                <input className={inputCls} value={cfg.linkWasap || ''}
-                  onChange={e => set('linkWasap', e.target.value)}
-                  placeholder="https://chat.whatsapp.com/..." />
-              </Field>
-              <Field label="Pautan Telegram" hint="Kosongkan jika tidak mahu papar butang Telegram">
-                <input className={inputCls} value={cfg.linkTelegram || ''}
-                  onChange={e => set('linkTelegram', e.target.value)}
-                  placeholder="https://t.me/..." />
-              </Field>
+              desc="Card WhatsApp / Telegram dipapar dalam Panel Pengurus Pasukan selepas login. Kosongkan tajuk untuk sembunyikan." />
+            <div className="space-y-5">
+              {/* WhatsApp */}
+              <div className="space-y-2 border border-green-100 rounded-xl p-4 bg-green-50/30">
+                <p className="text-[10px] font-bold text-green-700 uppercase tracking-wider">WhatsApp</p>
+                <Field label="Pautan" hint="Kosongkan tajuk di bawah untuk sembunyikan card ini">
+                  <input className={inputCls} value={cfg.linkWasap || ''}
+                    onChange={e => set('linkWasap', e.target.value)}
+                    placeholder="https://chat.whatsapp.com/..." />
+                </Field>
+                <Field label="Tajuk" hint="Kosong = card disembunyikan dari PP">
+                  <input className={inputCls} value={cfg.tajukWasap || ''}
+                    onChange={e => set('tajukWasap', e.target.value)}
+                    placeholder="cth: Kumpulan Rasmi Pengurus Pasukan" />
+                </Field>
+                <Field label="Arahan (optional)">
+                  <input className={inputCls} value={cfg.arahanWasap || ''}
+                    onChange={e => set('arahanWasap', e.target.value)}
+                    placeholder="cth: Sertai untuk terima maklumat terkini kejohanan" />
+                </Field>
+              </div>
+              {/* Telegram */}
+              <div className="space-y-2 border border-sky-100 rounded-xl p-4 bg-sky-50/30">
+                <p className="text-[10px] font-bold text-sky-700 uppercase tracking-wider">Telegram</p>
+                <Field label="Pautan" hint="Kosongkan tajuk di bawah untuk sembunyikan card ini">
+                  <input className={inputCls} value={cfg.linkTelegram || ''}
+                    onChange={e => set('linkTelegram', e.target.value)}
+                    placeholder="https://t.me/..." />
+                </Field>
+                <Field label="Tajuk" hint="Kosong = card disembunyikan dari PP">
+                  <input className={inputCls} value={cfg.tajukTelegram || ''}
+                    onChange={e => set('tajukTelegram', e.target.value)}
+                    placeholder="cth: Saluran Maklumat Kejohanan" />
+                </Field>
+                <Field label="Arahan (optional)">
+                  <input className={inputCls} value={cfg.arahanTelegram || ''}
+                    onChange={e => set('arahanTelegram', e.target.value)}
+                    placeholder="cth: Ikuti untuk pengumuman rasmi" />
+                </Field>
+              </div>
             </div>
           </div>
 

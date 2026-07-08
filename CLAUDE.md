@@ -426,6 +426,26 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - Buang butang top-right "Padam Semua" + "Tambah Acara"
 - Kekal butang dalam toolbar tengah + footer jadual
 
+## PP Dashboard — Pautan Kumpulan & Dokumen (2026-07-09)
+
+### TetapanHome — field baru Pautan Kumpulan
+- `tajukWasap` + `arahanWasap` — tajuk & arahan untuk card WhatsApp dalam PP
+- `tajukTelegram` + `arahanTelegram` — tajuk & arahan untuk card Telegram dalam PP
+- **Logik hide:** kalau `tajukWasap` kosong → card WhatsApp TIDAK dipapar (walaupun `linkWasap` ada)
+- Sama untuk Telegram — `tajukTelegram` kosong = hide
+
+### PengurusDashboard — card compact 2-kolum
+- Card muncul di atas tab bar, betul bawah header
+- Grid 2-kolum (sm ke atas), 1-kolum pada mobile
+- Icon bulat warna + tajuk tebal + arahan kecil + anak panah hover
+- Dokumen muat turun dalam format card yang sama (navy)
+- Fetch dari `tetapan/home` dalam `fetchAll` yang sedia ada
+
+### Target user
+- Pengurus Pasukan umur 45+, kemahiran ICT sederhana/lemah
+- Card compact — bukan butang besar full-width (feedback: terlalu besar)
+- Teks tindakan jelas, arahan dari admin boleh customise per kejohanan
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`
