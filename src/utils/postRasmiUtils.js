@@ -106,11 +106,19 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
     ? `${p.kodSekolah || p.lorong}_${p.pasukanRelay || 'A'}`
     : (p.noBib || p.noKP)
   const computedRankMap = new Map()
-  // Lompat Tinggi: GUNA kedudukan manual pencatat (count-back rules MSSM)
+  // Lompat Tinggi: guna kedudukan manual jika ada (count-back MSSM),
+  // fallback auto-suggest (rank sama untuk tinggi sama) bila pencatat tak override.
   // Lain: sequential auto dengan tiebreak masaSebenar → kedudukan manual
   if (isLompatTinggi) {
-    finishers.forEach(p => {
-      if (p.kedudukan) computedRankMap.set(pKey(p), Number(p.kedudukan))
+    // Auto-suggest: rank sama untuk keputusan sama (tie kekal)
+    let curRank = 1
+    finishers.forEach((p, i) => {
+      const suggested = (i > 0 && Number(finishers[i - 1].keputusan) === Number(p.keputusan))
+        ? computedRankMap.get(pKey(finishers[i - 1]))
+        : curRank
+      curRank = i + 2  // next slot ambil kira posisi seterusnya
+      // Manual override menang atas auto
+      computedRankMap.set(pKey(p), p.kedudukan ? Number(p.kedudukan) : suggested)
     })
   } else {
     finishers.forEach((p, i) => {

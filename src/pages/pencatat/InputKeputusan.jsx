@@ -158,6 +158,51 @@ function kiraPadangRank(peserta, keputusan) {
   return rankMap
 }
 
+// Lompat Tinggi — auto-suggest ranking berdasarkan tinggi terbaik
+// - Peserta tinggi sama = tie (rank sama, ditandakan)
+// - Pencatat boleh override rank sama secara manual selepas count-back
+// Return: { rankMap: {key: rank}, tieMap: {key: bool}, tieGroups: [{rank, keys[]}] }
+function kiraRankLompatTinggi(peserta, keputusan) {
+  const rows = peserta.map((p, idx) => {
+    const key = p.noBib || idx
+    const kp  = keputusan[key] || {}
+    const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
+    const best = flagged ? null : (Number(kp.keputusan) || null)
+    return { key, best, flagged }
+  })
+  const sorted = [...rows].sort((a, b) => {
+    if (a.best !== null && b.best !== null) return b.best - a.best
+    if (a.best !== null) return -1
+    if (b.best !== null) return 1
+    return 0
+  })
+  const rankMap = {}
+  const tieMap  = {}
+  const grouping = new Map() // best → { rank, keys[] }
+  let rank = 1
+  sorted.forEach((r, i) => {
+    if (r.best === null) { rankMap[r.key] = null; return }
+    if (i > 0 && sorted[i - 1].best === r.best) {
+      rankMap[r.key] = rankMap[sorted[i - 1].key]
+    } else {
+      rankMap[r.key] = rank
+    }
+    rank++
+    const grp = grouping.get(r.best) || { rank: rankMap[r.key], keys: [] }
+    grp.keys.push(r.key)
+    grouping.set(r.best, grp)
+  })
+  // Tandakan tie
+  const tieGroups = []
+  grouping.forEach(grp => {
+    if (grp.keys.length > 1) {
+      tieGroups.push(grp)
+      grp.keys.forEach(k => { tieMap[k] = true })
+    }
+  })
+  return { rankMap, tieMap, tieGroups }
+}
+
 // ─── Small components ─────────────────────────────────────────────────────────
 
 function HeatDots({ total, rasmi, draf }) {
@@ -567,8 +612,11 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
 
 function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
   const isLompatTinggi = resolveIsLompatTinggi(acara)
-  const rankMap = isLompatTinggi ? {} : kiraPadangRank(peserta, keputusan)
-  const bilPes  = peserta.length
+  const ltData    = isLompatTinggi ? kiraRankLompatTinggi(peserta, keputusan) : null
+  const rankMap   = isLompatTinggi ? ltData.rankMap : kiraPadangRank(peserta, keputusan)
+  const tieMap    = ltData?.tieMap  || {}
+  const tieGroups = ltData?.tieGroups || []
+  const bilPes    = peserta.length
 
   const pesertaSorted = carianBib
     ? [...peserta].sort((a, b) => {
@@ -602,12 +650,27 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
                   r.rank === 1 ? 'bg-yellow-400 text-yellow-900' : r.rank === 2 ? 'bg-gray-300 text-gray-700' : r.rank === 3 ? 'bg-orange-300 text-orange-900' : 'bg-gray-100 text-gray-500'
                 }`}>{r.status || r.rank || '—'}</span>
                 <span className="text-sm font-semibold text-gray-700 flex-1 truncate">{r.nama}</span>
+                {isLompatTinggi && tieMap[r.key] && (
+                  <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">TIE</span>
+                )}
                 <span className="text-sm font-mono font-bold text-gray-800 shrink-0">
                   {r.best ? `${r.best.toFixed(2)} m` : <span className="text-red-400">{r.status}</span>}
                 </span>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Info tie untuk Lompat Tinggi */}
+      {isLompatTinggi && tieGroups.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800">
+          <p className="font-bold mb-1">⚠ Terdapat tie — sila semak count-back</p>
+          {tieGroups.map((grp, i) => (
+            <p key={i} className="mt-0.5">
+              Rank <strong>{grp.rank}</strong>: {grp.keys.length} atlet dengan tinggi sama. Sistem cadang rank sama; ubah manual dalam kolum <strong>Kddk</strong> selepas kira count-back.
+            </p>
+          ))}
         </div>
       )}
 
@@ -626,6 +689,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
           const key     = p.noBib || idx
           const kp      = keputusan[key] || {}
           const rank    = rankMap[key]
+          const isTie   = isLompatTinggi && tieMap[key]
           const flagged = ['DQ', 'DNS', 'DNF'].includes(kp.status)
           const isCarian = carianBib && matchCarian(p, carianBib, sekolahMap)
           const usedByOthers = new Set(
@@ -633,6 +697,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
           )
           const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset'
             : flagged ? 'bg-red-50'
+            : isTie ? 'bg-amber-50'
             : rank === 1 ? 'bg-yellow-50'
             : rank === 2 ? 'bg-gray-50'
             : rank === 3 ? 'bg-orange-50'
@@ -665,9 +730,13 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
                   <select value={kp.kedudukan ?? ''}
                     onChange={e => onChange(key, 'kedudukan', e.target.value !== '' ? Number(e.target.value) : '')}
                     className={`w-full border-2 rounded-lg px-0.5 py-2.5 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white ${
-                      isLompatTinggi && !kp.kedudukan ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      isTie && !kp.kedudukan ? 'border-amber-400 bg-amber-50' : 'border-gray-300'
                     }`}>
-                    <option value="">{isLompatTinggi ? '— pilih —' : (rank ? `(${rank})` : '—')}</option>
+                    <option value="">{
+                      isTie ? `(${rank}) — semak count-back`
+                      : isLompatTinggi && rank ? `(${rank}) auto`
+                      : rank ? `(${rank})` : '—'
+                    }</option>
                     {Array.from({ length: bilPes }, (_, i) => {
                       const v = i + 1
                       if (!isLompatTinggi && usedByOthers.has(v) && kp.kedudukan !== v) return null
