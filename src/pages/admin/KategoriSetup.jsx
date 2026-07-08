@@ -1050,10 +1050,15 @@ export default function KategoriSetup() {
   const allKod = list.map(k => k.kod)
   const filtered = filterJenis === 'semua' ? list : list.filter(k => k.jenisSekolah === filterJenis)
 
+  // Tab jenis sekolah — whitelist SR/SM/PPKI sahaja.
+  // Tab custom tenant (contoh: 'SEKOLAH RENDAH') tak dipapar, sebab
+  // konsep sama dengan default SR/SM/PPKI. Data existing tak dipadam,
+  // cuma tak nampak sebagai tab berasingan.
+  const ALLOWED_JENIS = ['SR', 'SM', 'PPKI']
   const jenisValues = [
     ...new Set([
-      ...jenisList,
-      ...list.map(k => k.jenisSekolah).filter(Boolean),
+      ...jenisList.filter(j => ALLOWED_JENIS.includes(j)),
+      ...list.map(k => k.jenisSekolah).filter(j => ALLOWED_JENIS.includes(j)),
     ])
   ]
 
