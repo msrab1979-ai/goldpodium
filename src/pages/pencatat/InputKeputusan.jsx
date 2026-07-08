@@ -347,7 +347,7 @@ function HeatTabBar({ heats, selectedHeat, onSelect }) {
 
 // ─── Input Semua Peserta (semua heat dalam satu table) ─────────────────────────
 
-function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap = {}, carianBib = '' }) {
+function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const semuaPeserta = useMemo(() => {
     const list = []
     for (const h of heats) {
@@ -363,8 +363,8 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
       const ka = `${a._heatId}_${a.lorong ?? a.noBib}`
       const kb = `${b._heatId}_${b.lorong ?? b.noBib}`
       if (carianBib) {
-        const matchA = matchCarian(a, carianBib, sekolahMap) ? 0 : 1
-        const matchB = matchCarian(b, carianBib, sekolahMap) ? 0 : 1
+        const matchA = matchCarian(a, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
+        const matchB = matchCarian(b, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
         if (matchA !== matchB) return matchA - matchB
       }
       const ma = Number(keputusanSemua[ka]?.keputusan) || 0
@@ -395,7 +395,7 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
         const rank = idx + 1
         const hasMasa = Number(kp.keputusan) > 0 && !flagged
-        const isCarian = carianBib && matchCarian(p, carianBib, sekolahMap)
+        const isCarian = carianBib && matchCarian(p, carianBib, sekolahMap, bibPrefixMap)
         const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset'
           : flagged ? 'bg-red-50'
           : hasMasa && rank === 1 ? 'bg-yellow-50'
@@ -460,14 +460,14 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
 
 // ─── Input Lorong ─────────────────────────────────────────────────────────────
 
-function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, sekolahMap = {}, carianBib = '' }) {
+function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const bilLorong   = acara.bilanganLorong || heat.bilanganLorong || 8
   const isWind      = acara.isWindReading || false
   const slotsAsal   = Array.from({ length: bilLorong }, (_, i) => i + 1)
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
-        const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap) ? 0 : 1
-        const matchB = matchCarian(keputusan[b] || {}, carianBib, sekolahMap) ? 0 : 1
+        const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
+        const matchB = matchCarian(keputusan[b] || {}, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
         return matchA - matchB
       })
     : slotsAsal
@@ -510,7 +510,7 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
           const isKosong = !kp.namaAtlet && !kp.noBib && !kp.kodSekolah && !kp.keputusan && !kp.status
           const rank     = rankMap[lorong]
           const flagged  = ['DNS', 'DNF', 'DQ'].includes(kp.status)
-          const isCarian = carianBib && matchCarian(kp, carianBib, sekolahMap)
+          const isCarian = carianBib && matchCarian(kp, carianBib, sekolahMap, bibPrefixMap)
           const isKonflik = konflikSlots.has(lorong)
           const usedByOthers = new Set(
             slotsAsal.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
@@ -610,7 +610,7 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
 
 // ─── Input Padang ─────────────────────────────────────────────────────────────
 
-function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
+function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const isLompatTinggi = resolveIsLompatTinggi(acara)
   const ltData    = isLompatTinggi ? kiraRankLompatTinggi(peserta, keputusan) : null
   const rankMap   = isLompatTinggi ? ltData.rankMap : kiraPadangRank(peserta, keputusan)
@@ -621,8 +621,8 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
 
   const pesertaSorted = carianBib
     ? [...peserta].sort((a, b) => {
-        const matchA = matchCarian(a, carianBib, sekolahMap) ? 0 : 1
-        const matchB = matchCarian(b, carianBib, sekolahMap) ? 0 : 1
+        const matchA = matchCarian(a, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
+        const matchB = matchCarian(b, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
         return matchA - matchB
       })
     : peserta
@@ -737,7 +737,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
           const rank    = rankMap[key]
           const isTie   = isLompatTinggi && tieMap[key]
           const flagged = ['DQ', 'DNS', 'DNF'].includes(kp.status)
-          const isCarian = carianBib && matchCarian(p, carianBib, sekolahMap)
+          const isCarian = carianBib && matchCarian(p, carianBib, sekolahMap, bibPrefixMap)
           const usedByOthers = new Set(
             peserta.filter((_, i) => i !== idx).map(pp => keputusan[pp.noBib]?.kedudukan).filter(v => v !== '' && v != null)
           )
@@ -810,7 +810,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, car
 
 // ─── Input Mass Start ─────────────────────────────────────────────────────────
 
-function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
+function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const pesertaArr = heat.peserta || []
   const bilAtlet   = pesertaArr.length || 10
   const slotsAsal  = Array.from({ length: bilAtlet }, (_, i) => i + 1)
@@ -818,8 +818,8 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, carianBib 
     ? [...slotsAsal].sort((a, b) => {
         const kpA = keputusan[a] || {}
         const kpB = keputusan[b] || {}
-        const matchA = matchCarian(kpA, carianBib, sekolahMap) ? 0 : 1
-        const matchB = matchCarian(kpB, carianBib, sekolahMap) ? 0 : 1
+        const matchA = matchCarian(kpA, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
+        const matchB = matchCarian(kpB, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
         return matchA - matchB
       })
     : slotsAsal
@@ -842,7 +842,7 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, carianBib 
         const kp      = keputusan[slot] || {}
         const rank    = rankMap[slot]
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
-        const isCarian   = carianBib && matchCarian(kp, carianBib, sekolahMap)
+        const isCarian   = carianBib && matchCarian(kp, carianBib, sekolahMap, bibPrefixMap)
         const isKonflik  = konflikSlots.has(slot)
         const usedByOthers = new Set(
           slotsAsal.filter(s => s !== slot).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
@@ -926,13 +926,13 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, carianBib 
 
 // ─── Input Relay ──────────────────────────────────────────────────────────────
 
-function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianBib = '' }) {
+function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const bilPasukan = acara.bilPasukan || heat.bilPasukan || acara.bilanganLorong || 8
   const slotsAsal  = Array.from({ length: bilPasukan }, (_, i) => i + 1)
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
-        const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap) ? 0 : 1
-        const matchB = matchCarian(keputusan[b] || {}, carianBib, sekolahMap) ? 0 : 1
+        const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
+        const matchB = matchCarian(keputusan[b] || {}, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
         return matchA - matchB
       })
     : slotsAsal
@@ -955,7 +955,7 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianB
         const isKosong = !kp.kodSekolah && !kp.keputusan && !kp.status
         const rank    = rankMap[lorong]
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
-        const isCarian  = carianBib && matchCarian(kp, carianBib, sekolahMap)
+        const isCarian  = carianBib && matchCarian(kp, carianBib, sekolahMap, bibPrefixMap)
         const isKonflik = konflikSlots.has(lorong)
         const usedByOthers = new Set(
           slotsAsal.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
@@ -991,8 +991,8 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianB
             <div className="px-2 py-2 flex flex-col justify-center min-w-0">
               <p className="text-sm font-bold text-gray-800 truncate">{(kp.kodSekolah && (sekolahMap[kp.kodSekolah] || kp.kodSekolah)) || '—'}</p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {kp.kodSekolah && sekolahMap[kp.kodSekolah] && (
-                  <p className="text-xs text-gray-500 truncate">{kp.kodSekolah}</p>
+                {kp.kodSekolah && bibPrefixMap[kp.kodSekolah] && (
+                  <p className="text-xs font-bold text-[#003399] font-mono">{bibPrefixMap[kp.kodSekolah]}</p>
                 )}
                 {kp.pasukanRelay && (
                   <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 shrink-0">Pskmn {kp.pasukanRelay}</span>
@@ -1054,9 +1054,40 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, carianB
 
 // ─── Jana Final Panel ─────────────────────────────────────────────────────────
 
-function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup, fasaJana }) {
+function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup, fasaJana, sekolahMap = {}, bibPrefixMap = {} }) {
   const { bestHeat, bestTime } = getFinalistSetup(acara || {}, finalSetup, fasaJana)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
+  const isRelay  = acara?.jenisAcara === 'relay'
+  const isLorongAcara = ['lorong', 'relay'].includes(acara?.jenisAcara)
+
+  // Auto-jana lorong preview (sort by masa) — pencatat boleh swap
+  const [ordered, setOrdered] = useState(() => {
+    const sorted = [...finalists].sort((a, b) =>
+      isPadang ? (b.keputusan ?? 0) - (a.keputusan ?? 0) : (a.keputusan ?? 999) - (b.keputusan ?? 999)
+    )
+    return sorted.map((f, i) => ({ ...f, lorong: isLorongAcara ? i + 1 : null }))
+  })
+
+  // Reset ordered bila finalists berubah
+  useEffect(() => {
+    const sorted = [...finalists].sort((a, b) =>
+      isPadang ? (b.keputusan ?? 0) - (a.keputusan ?? 0) : (a.keputusan ?? 999) - (b.keputusan ?? 999)
+    )
+    setOrdered(sorted.map((f, i) => ({ ...f, lorong: isLorongAcara ? i + 1 : null })))
+  }, [finalists, isPadang, isLorongAcara])
+
+  function swap(idx, dir) {
+    const target = idx + dir
+    if (target < 0 || target >= ordered.length) return
+    setOrdered(prev => {
+      const next = [...prev]
+      const tmp = next[idx]
+      next[idx] = next[target]
+      next[target] = tmp
+      // Re-number lorong ikut posisi baru
+      return next.map((f, i) => ({ ...f, lorong: isLorongAcara ? i + 1 : null }))
+    })
+  }
 
   return (
     <div className={`border rounded-2xl p-4 space-y-3 ${finalDijanaKe ? 'bg-green-50/60 border-green-200' : 'bg-[#003399]/5 border-[#003399]/20'}`}>
@@ -1073,7 +1104,7 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
             {bestTime > 0 && <span> + <span className="font-semibold text-gray-600">{bestTime} wildcard masa</span></span>}
           </p>
         </div>
-        <button onClick={() => onJana(finalists)} disabled={loading}
+        <button onClick={() => onJana(ordered)} disabled={loading}
           className={`shrink-0 px-4 py-2.5 text-white text-sm font-bold rounded-xl disabled:opacity-50 transition-all active:scale-95 ${
             finalDijanaKe ? 'bg-green-600 hover:bg-green-700' : 'bg-[#003399] hover:bg-[#002277]'
           }`}>
@@ -1083,27 +1114,51 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
         </button>
       </div>
 
+      {isLorongAcara && (
+        <p className="text-[9px] text-gray-500 italic">
+          💡 Guna ▲▼ untuk swap lorong sebelum jana. Susunan lorong akan disimpan bila klik Jana.
+        </p>
+      )}
+
       <div className="rounded-xl border border-[#003399]/15 overflow-hidden">
         <div className="grid bg-[#003399] text-white text-[10px] font-bold uppercase"
-          style={{ gridTemplateColumns: '32px 40px 1fr 56px 36px' }}>
+          style={{ gridTemplateColumns: '32px 40px 1fr 56px 36px 44px' }}>
           <div className="px-1.5 py-2 text-center">{isPadang ? '#' : 'Lrg'}</div>
           <div className="px-1.5 py-2 text-center">BIB</div>
           <div className="px-2 py-2">Atlet / Sekolah</div>
           <div className="px-1.5 py-2 text-center">{isPadang ? 'Jarak' : 'Masa'}</div>
           <div className="px-1.5 py-2 text-center">H</div>
+          <div className="px-1.5 py-2 text-center">Susun</div>
         </div>
-        {finalists.map((f, idx) => (
-          <div key={f.noBib || idx} className={`grid border-t border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
-            style={{ gridTemplateColumns: '32px 40px 1fr 56px 36px' }}>
+        {ordered.map((f, idx) => (
+          <div key={`${f.noBib || f.kodSekolah}-${f.pasukanRelay || ''}-${idx}`}
+            className={`grid border-t border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+            style={{ gridTemplateColumns: '32px 40px 1fr 56px 36px 44px' }}>
             <div className="px-1.5 py-2 flex items-center justify-center">
-              <span className="text-xs font-black text-[#003399]">{isPadang ? idx + 1 : f.lorong}</span>
+              <span className="text-xs font-black text-[#003399]">{isPadang ? idx + 1 : (f.lorong || '—')}</span>
             </div>
             <div className="px-1.5 py-2 flex items-center justify-center">
               <span className="text-[11px] font-mono text-gray-600">{f.noBib || '—'}</span>
             </div>
             <div className="px-2 py-1.5 flex flex-col justify-center min-w-0">
-              <p className="text-[11px] font-semibold text-gray-700 truncate">{f.namaAtlet || '—'}</p>
-              <p className="text-[9px] text-gray-400 truncate">{f.kodSekolah || ''}</p>
+              {isRelay ? (
+                <>
+                  <p className="text-[11px] font-semibold text-gray-700 truncate">{sekolahMap[f.kodSekolah] || f.namaSekolah || f.kodSekolah || '—'}</p>
+                  <div className="flex items-center gap-1.5">
+                    {bibPrefixMap[f.kodSekolah] && (
+                      <p className="text-[10px] font-bold text-[#003399] font-mono">{bibPrefixMap[f.kodSekolah]}</p>
+                    )}
+                    {f.pasukanRelay && (
+                      <span className="text-[8px] font-black px-1 py-0.5 rounded bg-purple-100 text-purple-700">Pskmn {f.pasukanRelay}</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] font-semibold text-gray-700 truncate">{f.namaAtlet || '—'}</p>
+                  <p className="text-[9px] text-gray-400 truncate">{sekolahMap[f.kodSekolah] || f.kodSekolah || ''}</p>
+                </>
+              )}
             </div>
             <div className="px-1.5 py-2 flex items-center justify-center">
               <span className="text-[11px] font-mono font-bold text-gray-800">
@@ -1113,6 +1168,16 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
             <div className="px-1.5 py-2 flex items-center justify-center">
               <span className="text-[10px] text-gray-400">H{f.noHeat}</span>
             </div>
+            <div className="px-1 py-1.5 flex flex-col items-center justify-center gap-0.5">
+              <button type="button" onClick={() => swap(idx, -1)} disabled={idx === 0 || loading}
+                className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-white border border-gray-300 text-gray-600 hover:bg-[#003399] hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-gray-600">
+                ▲
+              </button>
+              <button type="button" onClick={() => swap(idx, 1)} disabled={idx === ordered.length - 1 || loading}
+                className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-white border border-gray-300 text-gray-600 hover:bg-[#003399] hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-gray-600">
+                ▼
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -1120,14 +1185,16 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
   )
 }
 
-function matchCarian(p, q, sekolahMap = {}) {
+function matchCarian(p, q, sekolahMap = {}, bibPrefixMap = {}) {
   if (!q) return false
   const u = q.toUpperCase()
   const namaSekolah = sekolahMap[p.kodSekolah] || p.namaSekolah || ''
+  const bibPrefix = bibPrefixMap[p.kodSekolah] || ''
   return (p.noBib        || '').toUpperCase().includes(u)
       || (p.namaAtlet    || '').toUpperCase().includes(u)
       || namaSekolah.toUpperCase().includes(u)
       || (p.kodSekolah   || '').toUpperCase().includes(u)
+      || bibPrefix.toUpperCase().includes(u)
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -1156,6 +1223,7 @@ export default function PencatatInputKeputusan() {
   const [acaraList,     setAcaraList]     = useState([])
   const [finalSetup,    setFinalSetup]    = useState(null)
   const [sekolahMap,    setSekolahMap]    = useState({})
+  const [bibPrefixMap,  setBibPrefixMap]  = useState({}) // kodSekolah → bibPrefix (contoh: TBA2001 → 'PP')
   const [kategoriMap,   setKategoriMap]   = useState({})
   const [homeCfg,       setHomeCfg]       = useState({})
   const [loading,       setLoading]       = useState(true)
@@ -1235,11 +1303,17 @@ export default function PencatatInputKeputusan() {
             if (d.bilHeatSukuAkhir) setBilHeatSF(Number(d.bilHeatSukuAkhir) || 2)
           }).catch(() => {})
 
-        // Load sekolah map
+        // Load sekolah map + bibPrefix map
         getDocs(collection(db, 'tenants', schoolId, 'sekolah')).then(snap => {
           const map = {}
-          snap.docs.forEach(d => { map[d.id] = d.data().namaSekolah || d.data().nama || d.id })
+          const bpMap = {}
+          snap.docs.forEach(d => {
+            const data = d.data()
+            map[d.id]   = data.namaSekolah || data.nama || d.id
+            bpMap[d.id] = data.bibPrefix || d.id
+          })
           setSekolahMap(map)
+          setBibPrefixMap(bpMap)
         }).catch(() => {})
 
         // Load kategori map (untuk PDF label)
@@ -1886,15 +1960,21 @@ export default function PencatatInputKeputusan() {
         }))
 
       } else {
-        // ── SF/QF → Final: 1 heat dengan assignLorongFinal WA ────────────────
+        // ── SF/QF → Final: 1 heat ────────────────────────────────────────────
+        // Kalau finalistList sudah ada `lorong` (dari panel custom order), guna
+        // susunan itu terus. Kalau tak, jalan assignLorongFinal automatik.
         const heatId = `heat_${fasaHeat}_${Date.now()}`
-        const sorted = [...finalistList].sort((a, b) =>
-          isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
-        )
+        const hasCustomLorong = finalistList.some(f => f.lorong != null && f.lorong !== '')
+        const sorted = hasCustomLorong
+          ? [...finalistList].sort((a, b) => (a.lorong ?? 99) - (b.lorong ?? 99))
+          : [...finalistList].sort((a, b) => isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999))
         const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
         const peserta = (isPadang || isMass
-          ? finalistList
-          : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)).map(resetPeserta)
+          ? sorted
+          : hasCustomLorong
+            ? sorted   // custom order dari panel — lorong sudah ada
+            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
+        ).map(resetPeserta)
         await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
           heatId, aceraId: nextAcaraId, noHeat: 1, fasa: fasaHeat,
           statusKeputusan: 'belum_mula', peserta, createdAt: serverTimestamp(),
@@ -2685,6 +2765,7 @@ export default function PencatatInputKeputusan() {
                     keputusanSemua={keputusanSemua}
                     onChange={handleChangeSemua}
                     sekolahMap={sekolahMap}
+                    bibPrefixMap={bibPrefixMap}
                     carianBib={carianBib}
                   />
                 ) : selectedHeat && (
@@ -2757,19 +2838,19 @@ export default function PencatatInputKeputusan() {
                     {selectedAcara.jenisAcara === 'lorong' && (
                       <InputLorong acara={selectedAcara} heat={selectedHeat} keputusan={keputusan}
                         onChange={handleChange} onWind={setWindSpeed} windSpeed={windSpeed}
-                        sekolahMap={sekolahMap} carianBib={carianBib} />
+                        sekolahMap={sekolahMap} bibPrefixMap={bibPrefixMap} carianBib={carianBib} />
                     )}
                     {selectedAcara.jenisAcara === 'mass_start' && (
                       <InputMassStart heat={selectedHeat} keputusan={keputusan}
-                        onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
+                        onChange={handleChange} sekolahMap={sekolahMap} bibPrefixMap={bibPrefixMap} carianBib={carianBib} />
                     )}
                     {['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara) && (
                       <InputPadang acara={selectedAcara} peserta={peserta} keputusan={keputusan}
-                        onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
+                        onChange={handleChange} sekolahMap={sekolahMap} bibPrefixMap={bibPrefixMap} carianBib={carianBib} />
                     )}
                     {selectedAcara.jenisAcara === 'relay' && (
                       <InputRelay acara={selectedAcara} heat={selectedHeat} keputusan={keputusan}
-                        onChange={handleChange} sekolahMap={sekolahMap} carianBib={carianBib} />
+                        onChange={handleChange} sekolahMap={sekolahMap} bibPrefixMap={bibPrefixMap} carianBib={carianBib} />
                     )}
                   </>
                 )}
@@ -2850,6 +2931,8 @@ export default function PencatatInputKeputusan() {
                     finalDijanaKe={finalDijanaKe}
                     finalSetup={finalSetup}
                     fasaJana={fasaJana}
+                    sekolahMap={sekolahMap}
+                    bibPrefixMap={bibPrefixMap}
                   />
                 )}
               </div>

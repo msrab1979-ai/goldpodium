@@ -911,10 +911,10 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
   return (
     <>
       <tr className="bg-[#eef2ff] border-b border-[#003399]/10">
-        {/* No Acara */}
+        {/* No Acara — allow text/number/mix (contoh: 101, OSSOM-P, A1) */}
         <td className="px-1.5 py-1.5 w-14">
-          <input type="text" inputMode="numeric" value={form.noAcara}
-            onChange={e => set('noAcara', e.target.value.replace(/\D/g, ''))}
+          <input type="text" value={form.noAcara}
+            onChange={e => set('noAcara', e.target.value)}
             className={ic + ' w-14 text-center font-black text-[#003399]'} />
         </td>
         {/* Masa */}
@@ -1868,9 +1868,9 @@ function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategori
           <div className="grid grid-cols-2 gap-3">
             <FormField label="No Acara" required
               hint={isEdit ? (noAcaraBeza ? '' : 'Tukar = pindah semua data ke nombor baru') : ''}>
-              <input type="text" inputMode="numeric" value={form.noAcara}
-                onChange={e => set('noAcara', e.target.value.replace(/\D/g, ''))}
-                placeholder="101"
+              <input type="text" value={form.noAcara}
+                onChange={e => set('noAcara', e.target.value)}
+                placeholder="101 atau OSSOM-P"
                 className={inputCls + (noAcaraBeza ? ' border-orange-400 bg-orange-50/50' : '')} />
             </FormField>
             <FormField label="Masa" required>

@@ -74,8 +74,16 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   const samaiRekodMap      = {} // noBib     → peringkat (individu) — samai rekod
   const samaiRekodRelayMap = {} // kodSekolah → peringkat (relay) — samai rekod
 
-  // namaSekolah — guna yang tersimpan dalam peserta terus (GP simpan namaSekolah dalam heat)
-  const getNamaSekolah = p => p.namaSekolah || p.kodSekolah || ''
+  // namaSekolah — cuba peserta doc, fallback ke sekolah collection map (fetched di bawah).
+  // Kalau peserta relay tak simpan namaSekolah, kod fallback ke kodSekolah (TBA2001) tak elok
+  // untuk rekod display. Sekolah map load once, cache per postRasmi call.
+  const sekolahNamaMap = {}
+  try {
+    const { collection: coll, getDocs: gd } = await import('firebase/firestore')
+    const sekSnap = await gd(coll(db, 'tenants', schoolId, 'sekolah'))
+    sekSnap.docs.forEach(d => { sekolahNamaMap[d.id] = d.data().namaSekolah || d.data().nama || d.id })
+  } catch { /* fallback ke kodSekolah */ }
+  const getNamaSekolah = p => p.namaSekolah || sekolahNamaMap[p.kodSekolah] || p.kodSekolah || ''
 
   // Kira rank dari keputusan (on-the-fly — lebih tepat dari rankDalamHeat yang mungkin lapuk)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acaraDoc.jenisAcara)
@@ -227,10 +235,13 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       } catch (e) { console.warn('medal_tally:', e.message) }
     }
 
-    // ── Rekod detection — individu, tempat 1, semua fasa (saringan/final/terus final) ──
+    // ── Rekod detection — individu, tempat 1, HANYA acara final/akhir ──
+    // Saringan (qf/sf/separuh_akhir) tidak grant rekod supaya tak salah tag
+    // rekod baru dari heat saringan yang sepatutnya tak dikira.
     const isPadangAcara = ['padang_lompat', 'padang_balin'].includes(acaraDoc.jenisAcara)
+    const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.peringkat || '')
     if (
-      !isRelay && rank === 1 &&
+      isFinalPeringkat && !isRelay && rank === 1 &&
       p.keputusan != null && p.keputusan !== '' &&
       acaraDoc.jantina && acaraDoc.kategoriKod && (acaraDoc.namaAcaraPendek || acaraDoc.namaAcara)
     ) {
@@ -369,9 +380,9 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       } catch (e) { console.warn('rekod_tuntutan:', e.message) }
     }
 
-    // ── Rekod relay — semua fasa (saringan/final/terus final) ────────────────
+    // ── Rekod relay — HANYA acara final/akhir (bukan saringan) ────────────────
     if (
-      isRelay && rank === 1 &&
+      isFinalPeringkat && isRelay && rank === 1 &&
       p.keputusan != null && p.keputusan !== '' && p.kodSekolah &&
       acaraDoc.jantina && acaraDoc.kategoriKod && (acaraDoc.namaAcaraPendek || acaraDoc.namaAcara)
     ) {
