@@ -456,6 +456,7 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - Bypass buka kunci/kunci semula terus dari page ini (dengan confirm dialog)
 - PDF ringkas: nama sekolah, status, tarikh — header biru
 - Data: `pengesahan/{kodSekolah}` per kejohanan + `sekolah/{kodSekolah}.bypassPengesahan`
+- **Tapis sekolah**: baca `pendaftaran` kejohanan → ambil `kodSekolah` unik → match koleksi `sekolah` — sekolah yang tak daftar tidak dipapar (selamat untuk old + new tenant)
 
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
