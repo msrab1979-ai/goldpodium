@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import {
-  collection, doc, getDocs, getDoc, updateDoc, serverTimestamp,
+  collection, doc, getDocs, getDoc, updateDoc, serverTimestamp, query, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -33,10 +33,16 @@ export default function PengesahanPeserta() {
       const kejSnap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId))
       if (kejSnap.exists()) setNamaKej(kejSnap.data().namaKejohanan || '')
 
-      // Senarai sekolah
+      // Sekolah yang ada pendaftaran dalam kejohanan ini sahaja
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
+      const kodSet = new Set(pendSnap.docs.map(d => d.data().kodSekolah).filter(Boolean))
+
       const sSnap = await getDocs(collection(db, 'tenants', schoolId, 'sekolah'))
-      const list = sSnap.docs.map(d => ({ kodSekolah: d.id, ...d.data() }))
-        .filter(s => s.namaSekolah)
+      const sekolahMap = {}
+      sSnap.docs.forEach(d => { sekolahMap[d.id] = { kodSekolah: d.id, ...d.data() } })
+
+      const list = [...kodSet]
+        .map(kod => sekolahMap[kod] || { kodSekolah: kod, namaSekolah: kod })
         .sort((a, b) => (a.namaSekolah || '').localeCompare(b.namaSekolah || '', 'ms'))
       setSekolahList(list)
 
