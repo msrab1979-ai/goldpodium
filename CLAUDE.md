@@ -222,9 +222,23 @@ tenants/{schoolId}/
   arahan hubungi admin untuk isi nama ahli dalam heat
 - Nota UI dibetulkan: relay dapat sijil individu automatik (nota lama "hubungi admin" mengelirukan)
 
+## Audit Multi-Tenant Menyeluruh (9 Jul 2026)
+
+**Rating sistem keseluruhan: 4.7/5 — SEDIA PRODUKSI peringkat daerah/negeri**
+
+Objektif user: multi-tenant terasing, selamat, laju bila ramai user. Semua fix
+di-test emulator + deploy live + push GitHub.
+
+- **Silap masuk tenant lain: MUSTAHIL** — schoolId dalam path, session terkunci, rules halang. Conflict antara tenant takkan berlaku.
+- **Skala 10k user: TAHAN** — baca jutaan OK (cost naik, bukan lambat), tulis tersebar per-tenant, `pendaftaran_counter` per-sekolah + transaction (tiada hotspot).
+- **Fix siap:** S1 (session pencatat), R1 (double-count medal), S2 (rate-limit), P1 (lazy xlsx) — lihat seksyen bawah.
+- **Backup per-tenant: SELAMAT** — semua path `tenants/{schoolId}`, dilindung kod+rules 2 lapis.
+- **0.3 yang tinggal:** rate-limit belum kalis-pintas 100% (perlu Cloud Function), tiada backend logik server, medal_tally teori boleh dekati 1 MiB pada kejohanan sangat besar, 11 lint error pre-existing.
+- **Jadi 5.0 bila:** tambah Cloud Functions (rate-limit server-side + operasi sensitif + audit log).
+
 ## Security — Firestore Rules (SIAP 2026-07-08, S1 fix 2026-07-09)
 
-**Rating semasa: 4.8/5 — SIAP untuk deploy peringkat daerah/negeri**
+**Rating keselamatan: 4.8/5 — SIAP untuk deploy peringkat daerah/negeri**
 
 ### Multi-Tenant Isolation via Session Doc (commit 6af7947)
 - `canWriteTenant(schoolId)` — semua write kena verify:
