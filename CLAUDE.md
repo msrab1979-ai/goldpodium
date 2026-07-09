@@ -196,6 +196,23 @@ tenants/{schoolId}/
 - `src/utils/rekodUtils.js` — fetch rekod S/D/N/K per acara
 - `src/utils/finalistUtils.js` — algoritma pilih finalis (selectFinalists guna h.fasa)
 - `src/utils/startListPdfUtils.js` — PDF generation + resolveIsLompatTinggi + assignLorongFinal/Heat
+- `src/utils/sijilUtils.js` — penjana PDF Sijil Penyertaan (dikongsi admin preview + PP)
+- `src/utils/sijilPencapaianUtils.js` — senarai pencapaian (individu + relay) + penjana PDF Sijil Pencapaian
+
+## E-Sijil (fix 2026-07-09)
+
+**PDF WYSIWYG** — kedua-dua penjana sijil (`sijilUtils.js`, `sijilPencapaianUtils.js`):
+- `pdf.text()` guna `baseline: 'middle'` — mesti padan dengan preview drag admin (`translateY(-50%)`)
+- Saiz halaman PDF ikut nisbah template (`getImageProperties`), bukan paksa A4 — template bukan-A4 tak herot
+- `ESijil.jsx` handlePreview panggil `janaSijilPDF()` yang sama dengan PP — JANGAN tulis logic PDF berasingan
+
+**Kelayakan sijil:**
+- Sijil Penyertaan: SEMUA atlet dalam collection `atlet` (kodSekolah match) — TIADA tapisan acara.
+  SENGAJA: pemain simpanan pun dapat sijil. Jangan tambah filter pendaftaran/acaraIds.
+- Sijil Pencapaian individu: `mata_olahragawan.acaraDetail_*` rank ≤ hadKedudukan
+- Sijil Pencapaian relay: scan heat final (`fasa` final/terus_final), `statusKeputusan` dalam
+  `['ada_keputusan', 'rasmi', 'diterima']` — `ada_keputusan` = publish admin, `diterima` = publish
+  pencatat. Setiap ahli `ahliPasukan[]` dapat sijil individu sendiri.
 
 ## Security — Firestore Rules (SIAP 2026-07-08)
 

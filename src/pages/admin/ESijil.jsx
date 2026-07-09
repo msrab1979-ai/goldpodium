@@ -8,7 +8,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import jsPDF from 'jspdf'
+import { janaSijilPDF } from '../../utils/sijilUtils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -296,21 +296,19 @@ export default function ESijil() {
 
   function handlePreview() {
     if (!template) { setMsg('Sila muat naik template dahulu.'); return }
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const W = 210, H = 297
-    pdf.addImage(template, 'JPEG', 0, 0, W, H)
-
-    function lukis(teks, pos, style) {
-      if (!pos || !teks) return
-      pdf.setFontSize(style.size || 24)
-      pdf.setTextColor(style.warna || '#000000')
-      pdf.setFont('helvetica', style.bold ? 'bold' : 'normal')
-      pdf.text(teks, pos.x * W / 100, pos.y * H / 100, { align: style.align || 'center' })
-    }
-
-    lukis('AHMAD BIN ABU BAKAR', positions.nama, styleNama)
-    lukis(namaKejohanan || 'Nama Kejohanan Belum Ditetapkan', positions.kejohanan, styleKej)
-    lukis(tarikhKejohanan || '15 Jun 2025', positions.tarikh, styleTarikh)
+    // Guna janaSijilPDF yang sama dengan sisi Pengurus Pasukan —
+    // preview admin dijamin sepadan dengan PDF sebenar
+    const pdf = janaSijilPDF(FIELDS[0].dummy, {
+      templateImg:      template,
+      posNama:          positions.nama,
+      posKejohanan:     positions.kejohanan,
+      posTarikh:        positions.tarikh,
+      styleNama,
+      styleKejohanan:   styleKej,
+      styleTarikh,
+      namaKejohanan:    namaKejohanan   || 'Nama Kejohanan Belum Ditetapkan',
+      tarikhKejohanan:  tarikhKejohanan || '15 Jun 2025',
+    })
     pdf.output('dataurlnewwindow')
   }
 

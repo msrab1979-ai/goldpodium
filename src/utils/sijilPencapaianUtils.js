@@ -20,8 +20,6 @@ import {
   collection, getDocs, query, where,
 } from 'firebase/firestore'
 
-const W = 210, H = 297  // A4 portrait mm
-
 // ─── Label kedudukan ──────────────────────────────────────────────────────────
 
 const LABEL_KEDUDUKAN = {
@@ -124,7 +122,8 @@ async function ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah) 
     for (const heatDoc of heatSnap.docs) {
       const heat = heatDoc.data()
       const isFinal = ['final', 'terus_final'].includes(heat.fasa)
-      const isRasmi = ['rasmi', 'diterima'].includes(heat.statusKeputusan)
+      // 'ada_keputusan' = publish oleh admin, 'diterima' = publish oleh pencatat
+      const isRasmi = ['ada_keputusan', 'rasmi', 'diterima'].includes(heat.statusKeputusan)
       if (!isFinal || !isRasmi) continue
 
       const peserta = heat.peserta || []
@@ -194,7 +193,6 @@ export async function ambilSenaraiPencapaian(db, schoolId, kejId, hadKedudukan =
  * @returns {jsPDF}
  */
 export function janaSijilPencapaianPDF(data, cfg) {
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const {
     templateImg,
     posisi = {},
@@ -204,6 +202,22 @@ export function janaSijilPencapaianPDF(data, cfg) {
     tempatKejohanan = [],
   } = cfg
 
+  // Saiz halaman ikut nisbah template (lalai A4 portrait 210×297) supaya
+  // imej tidak herot dan kedudukan % sepadan dengan preview drag admin
+  let W = 210, H = 297
+  if (templateImg) {
+    try {
+      const { width, height } = new jsPDF().getImageProperties(templateImg)
+      if (width >= height) { H = 210; W = +(210 * width / height).toFixed(2) }
+      else                 { W = 210; H = +(210 * height / width).toFixed(2) }
+    } catch { /* imej tidak dapat dibaca — kekal A4 */ }
+  }
+
+  const pdf = new jsPDF({
+    orientation: W > H ? 'landscape' : 'portrait',
+    unit: 'mm',
+    format: [W, H],
+  })
   if (templateImg) pdf.addImage(templateImg, 'JPEG', 0, 0, W, H)
 
   function lukis(teks, pos, sty) {
@@ -211,7 +225,8 @@ export function janaSijilPencapaianPDF(data, cfg) {
     pdf.setFontSize(sty.size || 24)
     pdf.setTextColor(sty.warna || '#000000')
     pdf.setFont('helvetica', sty.bold !== false ? 'bold' : 'normal')
-    pdf.text(String(teks), pos.x * W / 100, pos.y * H / 100, { align: sty.align || 'center' })
+    // baseline 'middle' — preview admin center teks menegak pada titik y
+    pdf.text(String(teks), pos.x * W / 100, pos.y * H / 100, { align: sty.align || 'center', baseline: 'middle' })
   }
 
   function lukisMultiBaris(teksArr, pos, sty) {
@@ -223,7 +238,7 @@ export function janaSijilPencapaianPDF(data, cfg) {
     pdf.setFont('helvetica', sty.bold !== false ? 'bold' : 'normal')
     teksArr.forEach((line, i) => {
       if (!line) return
-      pdf.text(String(line), pos.x * W / 100, pos.y * H / 100 + i * lineHeight, { align: sty.align || 'center' })
+      pdf.text(String(line), pos.x * W / 100, pos.y * H / 100 + i * lineHeight, { align: sty.align || 'center', baseline: 'middle' })
     })
   }
 
