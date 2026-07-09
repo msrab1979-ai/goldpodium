@@ -269,6 +269,11 @@ tenants/{schoolId}/
   baca prevDetail/prevContr + tulis dalam satu operasi atomik. Cegah double-count
   bila acara SAMA diproses 2 peranti serentak. Semua logik shift pingat/kat/mata
   dikekalkan. Terbukti: `test-r1-race.cjs` 4/4 lulus (2 proses serentak → kekal 1 emas).
+- ~~P1: 4 static import xlsx bengkakkan bundle~~ ✅ FIXED (2026-07-09)
+  SekolahSetup, Rekod, Backup, PengurusDashboard tukar `import * as XLSX` →
+  `const XLSX = await import('xlsx')` dalam fungsi. xlsx (419 KB) kini chunk
+  berasingan, dimuat hanya bila user tekan Template/Import/Backup. Load pertama
+  PengurusDashboard turun ~525 KB → 106 KB. Semua rujukan XLSX ada import lokal.
 - ~~S2: `login_attempts` public write — rate-limit boleh dipintas~~ ✅ HARDENED (2026-07-09)
   Rules: delete DILARANG; update DITOLAK bila SEDANG terkunci (lockedUntil > now).
   Aliran sah kekal (create + naik attempts + reset selepas lock tamat).

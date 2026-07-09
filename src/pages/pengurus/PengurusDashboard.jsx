@@ -22,7 +22,6 @@ import {
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { validasiPendaftaran } from '../../utils/validasiPendaftaran'
-import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -139,7 +138,8 @@ function formatDeadlineMY(isoStr) {
 
 // ─── Download Template: Atlet ─────────────────────────────────────────────────
 
-function downloadTemplateAtlet(bibPrefix = '', bibFormat = 3) {
+async function downloadTemplateAtlet(bibPrefix = '', bibFormat = 3) {
+  const XLSX = await import('xlsx')
   const wb  = XLSX.utils.book_new()
   const p   = bibPrefix || 'XXX'
   const fmt = n => p + String(n).padStart(bibFormat, '0')
@@ -177,7 +177,8 @@ function downloadTemplateAtlet(bibPrefix = '', bibFormat = 3) {
 
 // ─── Download Template: Daftar Acara ─────────────────────────────────────────
 
-function downloadTemplateDaftar(bibPrefix = '', bibFormat = 3, acaraList = []) {
+async function downloadTemplateDaftar(bibPrefix = '', bibFormat = 3, acaraList = []) {
+  const XLSX = await import('xlsx')
   const wb  = XLSX.utils.book_new()
   const p   = bibPrefix || 'XXX'
   const fmt = n => p + String(n).padStart(bibFormat, '0')
@@ -639,8 +640,9 @@ function ImportAtletModal({ schoolId, kodSekolah, sekolahData, existingBibs, onC
     setRows([])
     setDone(false)
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const XLSX = await import('xlsx')
         const wb  = XLSX.read(new Uint8Array(e.target.result), { type: 'array' })
         const ws  = wb.Sheets[wb.SheetNames[0]]
         const raw = XLSX.utils.sheet_to_json(ws, { defval: '' })

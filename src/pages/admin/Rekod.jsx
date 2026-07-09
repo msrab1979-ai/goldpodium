@@ -21,7 +21,6 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
-import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -118,7 +117,8 @@ function validateImportRow(r) {
 
 // ─── Template download ────────────────────────────────────────────────────────
 
-function downloadTemplate(acaraList) {
+async function downloadTemplate(acaraList) {
+  const XLSX = await import('xlsx')
   const wb = XLSX.utils.book_new()
 
   // Sheet 1: REKOD — headers + 3 contoh
@@ -300,6 +300,7 @@ function ImportRekodModal({ onClose, onDone }) {
     if (!file) return
     setErr('')
     try {
+      const XLSX = await import('xlsx')
       const buffer = await file.arrayBuffer()
       const wb  = XLSX.read(buffer, { type: 'array' })
       const ws  = wb.Sheets[wb.SheetNames[0]]

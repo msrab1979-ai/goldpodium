@@ -14,7 +14,6 @@ import {
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import * as XLSX from 'xlsx'
 
 // ─── Konfigurasi ──────────────────────────────────────────────────────────────
 
@@ -36,6 +35,7 @@ function setCellWidth(ws, cols) {
 
 async function janaSheetExcel(schoolId, addLog) {
   if (!schoolId) throw new Error('schoolId tidak dijumpai — sila log masuk semula.')
+  const XLSX = await import('xlsx')
   // 1. Kejohanan aktif
   addLog('Mencari kejohanan aktif...')
   const kejSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan'])))

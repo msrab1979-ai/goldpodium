@@ -13,7 +13,6 @@ import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import PasswordInput from '../../components/ui/PasswordInput'
 import { hashPin } from '../../utils/hashPin'
-import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -119,7 +118,8 @@ function validateImportRowSekolah(r) {
 
 // ─── Template download ────────────────────────────────────────────────────────
 
-function downloadTemplateSekolah() {
+async function downloadTemplateSekolah() {
+  const XLSX = await import('xlsx')
   const wb = XLSX.utils.book_new()
 
   // Sheet 1: SEKOLAH — headers + 3 contoh
@@ -187,6 +187,7 @@ function ImportSekolahModal({ onClose, onDone, schoolId }) {
     if (!file) return
     setErr('')
     try {
+      const XLSX = await import('xlsx')
       const buffer = await file.arrayBuffer()
       const wb  = XLSX.read(buffer, { type: 'array' })
       const ws  = wb.Sheets[wb.SheetNames[0]]
