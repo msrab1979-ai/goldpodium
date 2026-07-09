@@ -404,11 +404,15 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - `matchCarian` tambah bibPrefix ke carian
 - `sekolahMap` + `bibPrefixMap` dua-dua load dari `tenants/{schoolId}/sekolah`
 
-### JanaFinalPanel — Custom lorong (▲▼)
-- Panel auto-jana lorong 1-N untuk finalis relay/lorong
-- Butang ▲▼ swap lorong sebelum jana (state local)
-- Klik "Jana Semula" → susunan custom disimpan (bukan `assignLorongFinal` WA seeding)
-- `handleJanaFinal` semak `hasCustomLorong` — kalau ada, guna susunan itu
+### JanaFinalPanel — Susun Lorong Manual (checkbox)
+- Default: **WA seeding auto** — preview tunjuk anggaran WA, jana guna `assignLorongFinal`
+- Checkbox **"Susun Lorong Manual"** (hanya untuk `fasaJana !== 'sukuKeSeparuh'` + `isLorongAcara`)
+- Tick → ▲▼ aktif, `useEffect` tidak reset susunan, jana guna susunan panel terus
+- Untick → reset ke WA preview semula
+- QF→SF (serpentine seeding) — checkbox **disembunyikan**, WA auto sahaja
+- `handleJanaFinal(finalistList, isManual)` — `isManual=true` skip `assignLorongFinal`
+- `lorongKumpulan` prop dipass dari parent untuk WA preview dalam panel
+- LT (padang_lompat) — checkbox tidak muncul (`isLorongAcara=false`), lorong tidak diassign
 
 ### AcaraSetup — noAcara flexible
 - Buang restriction `/\D/g` strip non-digit

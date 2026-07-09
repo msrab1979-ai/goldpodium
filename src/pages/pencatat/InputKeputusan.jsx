@@ -1054,27 +1054,39 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
 
 // ─── Jana Final Panel ─────────────────────────────────────────────────────────
 
-function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup, fasaJana, sekolahMap = {}, bibPrefixMap = {} }) {
+function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup, fasaJana, sekolahMap = {}, bibPrefixMap = {}, lorongKumpulan = null }) {
   const { bestHeat, bestTime } = getFinalistSetup(acara || {}, finalSetup, fasaJana)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
   const isRelay  = acara?.jenisAcara === 'relay'
   const isLorongAcara = ['lorong', 'relay'].includes(acara?.jenisAcara)
+  // Checkbox manual hanya untuk Final (bukan QF→SF serpentine)
+  const allowManual = isLorongAcara && fasaJana !== 'sukuKeSeparuh'
 
-  // Auto-jana lorong preview (sort by masa) — pencatat boleh swap
-  const [ordered, setOrdered] = useState(() => {
-    const sorted = [...finalists].sort((a, b) =>
+  const [manualMode, setManualMode] = useState(false)
+
+  function buildWAPreview(list) {
+    const sorted = [...list].sort((a, b) =>
       isPadang ? (b.keputusan ?? 0) - (a.keputusan ?? 0) : (a.keputusan ?? 999) - (b.keputusan ?? 999)
     )
-    return sorted.map((f, i) => ({ ...f, lorong: isLorongAcara ? i + 1 : null }))
-  })
+    if (!isLorongAcara) return sorted.map((f, i) => ({ ...f, lorong: null }))
+    return assignLorongFinal(sorted, detectJenisLorong(acara || {}), lorongKumpulan)
+  }
 
-  // Reset ordered bila finalists berubah
+  const [ordered, setOrdered] = useState(() => buildWAPreview(finalists))
+
+  // Reset ordered bila finalists berubah — skip kalau manual mode aktif
   useEffect(() => {
-    const sorted = [...finalists].sort((a, b) =>
-      isPadang ? (b.keputusan ?? 0) - (a.keputusan ?? 0) : (a.keputusan ?? 999) - (b.keputusan ?? 999)
-    )
-    setOrdered(sorted.map((f, i) => ({ ...f, lorong: isLorongAcara ? i + 1 : null })))
-  }, [finalists, isPadang, isLorongAcara])
+    if (manualMode) return
+    setOrdered(buildWAPreview(finalists))
+  }, [finalists, isPadang, isLorongAcara, manualMode])
+
+  function handleManualToggle(checked) {
+    setManualMode(checked)
+    if (!checked) {
+      // Untick → reset ke WA preview
+      setOrdered(buildWAPreview(finalists))
+    }
+  }
 
   function swap(idx, dir) {
     const target = idx + dir
@@ -1104,7 +1116,7 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
             {bestTime > 0 && <span> + <span className="font-semibold text-gray-600">{bestTime} wildcard masa</span></span>}
           </p>
         </div>
-        <button onClick={() => onJana(ordered)} disabled={loading}
+        <button onClick={() => onJana(ordered, manualMode)} disabled={loading}
           className={`shrink-0 px-4 py-2.5 text-white text-sm font-bold rounded-xl disabled:opacity-50 transition-all active:scale-95 ${
             finalDijanaKe ? 'bg-green-600 hover:bg-green-700' : 'bg-[#003399] hover:bg-[#002277]'
           }`}>
@@ -1114,10 +1126,16 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
         </button>
       </div>
 
-      {isLorongAcara && (
-        <p className="text-[9px] text-gray-500 italic">
-          💡 Guna ▲▼ untuk swap lorong sebelum jana. Susunan lorong akan disimpan bila klik Jana.
-        </p>
+      {allowManual && (
+        <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
+          <input type="checkbox" checked={manualMode} onChange={e => handleManualToggle(e.target.checked)}
+            className="w-3.5 h-3.5 accent-[#003399] cursor-pointer" />
+          <span className="text-[10px] font-semibold text-[#003399]">Susun Lorong Manual</span>
+          {manualMode
+            ? <span className="text-[9px] text-amber-600 font-semibold">⚠ WA auto dimatikan — guna ▲▼ susun lorong</span>
+            : <span className="text-[9px] text-gray-400">Preview anggaran WA (lorong muktamad diundi semasa Jana)</span>
+          }
+        </label>
       )}
 
       <div className="rounded-xl border border-[#003399]/15 overflow-hidden">
@@ -1169,11 +1187,11 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
               <span className="text-[10px] text-gray-400">H{f.noHeat}</span>
             </div>
             <div className="px-1 py-1.5 flex flex-col items-center justify-center gap-0.5">
-              <button type="button" onClick={() => swap(idx, -1)} disabled={idx === 0 || loading}
+              <button type="button" onClick={() => swap(idx, -1)} disabled={idx === 0 || loading || !manualMode}
                 className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-white border border-gray-300 text-gray-600 hover:bg-[#003399] hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-gray-600">
                 ▲
               </button>
-              <button type="button" onClick={() => swap(idx, 1)} disabled={idx === ordered.length - 1 || loading}
+              <button type="button" onClick={() => swap(idx, 1)} disabled={idx === ordered.length - 1 || loading || !manualMode}
                 className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-white border border-gray-300 text-gray-600 hover:bg-[#003399] hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-gray-600">
                 ▼
               </button>
@@ -1912,7 +1930,7 @@ export default function PencatatInputKeputusan() {
     return selectFinalists(heats, selectedAcara, finalSetup, fasaJana)
   }, [isSaringanAcara, allHeatsDone, heats, selectedAcara, finalSetup, fasaJana])
 
-  async function handleJanaFinal(finalistList) {
+  async function handleJanaFinal(finalistList, isManual = false) {
     if (!schoolId || !kejId || !selectedAcara || !finalistList.length) return
     setJanaFinalLoading(true)
     try {
@@ -1961,18 +1979,17 @@ export default function PencatatInputKeputusan() {
 
       } else {
         // ── SF/QF → Final: 1 heat ────────────────────────────────────────────
-        // Kalau finalistList sudah ada `lorong` (dari panel custom order), guna
-        // susunan itu terus. Kalau tak, jalan assignLorongFinal automatik.
+        // isManual=true: guna susunan lorong dari panel (user dah susun manual)
+        // isManual=false: assignLorongFinal WA rules (random undian dalam kumpulan)
         const heatId = `heat_${fasaHeat}_${Date.now()}`
-        const hasCustomLorong = finalistList.some(f => f.lorong != null && f.lorong !== '')
-        const sorted = hasCustomLorong
+        const sorted = isManual
           ? [...finalistList].sort((a, b) => (a.lorong ?? 99) - (b.lorong ?? 99))
           : [...finalistList].sort((a, b) => isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999))
         const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
         const peserta = (isPadang || isMass
           ? sorted
-          : hasCustomLorong
-            ? sorted   // custom order dari panel — lorong sudah ada
+          : isManual
+            ? sorted   // susunan manual dari panel — lorong sudah ada
             : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
         ).map(resetPeserta)
         await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
@@ -2933,6 +2950,7 @@ export default function PencatatInputKeputusan() {
                     fasaJana={fasaJana}
                     sekolahMap={sekolahMap}
                     bibPrefixMap={bibPrefixMap}
+                    lorongKumpulan={lorongKumpulan}
                   />
                 )}
               </div>
