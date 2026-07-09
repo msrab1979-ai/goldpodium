@@ -173,12 +173,44 @@ tenants/{schoolId}/
   tetapan/aksesPantas   — { items: [{id, emoji, tajuk, url, penerangan, aktif}] } max 6
 ```
 
-## Panduan Admin
-- Route: `/admin/panduan` → `Panduan.jsx`
-- 5 tab: Setup · Pendaftaran · Hari Pertandingan · Hadiah & Laporan · Tetapan Lanjutan
-- 21 langkah bernombor, setiap langkah ada penerangan + syarat perlu + butang navigasi terus
-- Butang guna `gp_kej_aktif` sessionStorage untuk resolve kejId
-- Entry 'Panduan' dalam sidebar admin (group Utama, bawah Dashboard)
+## Panduan 3 Portal (overhaul 2026-07-10)
+Konsep seragam admin + PP + pencatat: tab pertama **Menu Sistem** (penerangan 1 ayat
+setiap menu sidebar), diikuti tab langkah bernombor. Setiap langkah ada:
+📍 lokasi menu · "Cara buat" bernombor · 💡 nota amber · 🖼️ ilustrasi skrin · butang navigasi.
+
+- **`src/components/PanduanVisual.jsx`** — komponen ilustrasi skrin KONGSI (mockup CSS,
+  tiada fail imej). Jenis: `borang / senarai / semak / duaPanel / masa / medal / pdf / excel / sijil / toggle`
+- **Admin**: `/admin/panduan` → `Panduan.jsx` — 6 tab (Menu Sistem + Setup/Pendaftaran/
+  Hari Pertandingan/Hadiah/Tetapan Lanjutan), 22 langkah (termasuk Pengesahan Peserta).
+  Butang guna `gp_kej_aktif` sessionStorage untuk resolve kejId. Sistem lorong 4–8
+  didokumen di langkah 1, 4, 20
+- **PP**: `/:slug/pengurus/panduan` → `PanduanPP.jsx` — 3 tab, 11 langkah.
+  Butang tab dashboard hantar `state.tab` — `PengurusDashboard` baca `location.state?.tab`
+- **Pencatat**: `/:slug/pencatat/panduan` → `PanduanPencatat.jsx` — 3 tab, 10 langkah.
+  Menu 'Panduan' dalam sidebar pencatat (seksyen BANTUAN)
+
+## Butang Kembali — WAJIB ke Landing Tenant (fix 2026-07-10)
+Bila tenant ramai, "Kembali" mesti ke `/{slug}`, bukan promo page:
+- `PengurusLogin`: guna `slugFromUrl || slug` (ditaip) — JANGAN `navigate(-1)`
+- `Login` (admin) + `PencatatLogin`: guna `location.state?.schoolSlug` (dihantar
+  SchoolLanding modal Akses Staff); link silang Admin↔Pencatat sambung `state`
+- `PencatatLogin`: medan slug pra-isi dari state; fallback slug ditaip dalam borang
+- `ErrorBoundary.handleGoHome`: derive slug dari pathname dengan senarai RESERVED
+  (admin/login/superadmin/dashboard/pengurus/tukar-password/privasi/syarat)
+- Sumber slug MESTI deterministik (URL param / state / input user) — JANGAN localStorage
+
+## SchoolLanding — Perf & Kos (2026-07-10) ⚠️ JANGAN REVERT
+User arahan tegas: JIMAT KOS FIRESTORE — halaman awam TIADA onSnapshot langsung:
+- Medal tally: `getDocs` sekali + butang "🔄 Muat Semula" (state `tick` + `refreshing`)
+- Acara/jadual: `getDocs` + `jadualTick`; butang refresh tab turut fetch semula acara
+- `tetapan/home` + `aksesPantas`: `getDoc` sekali (bukan listener)
+- `toggleAcara`: query `where('aceraId'/'acaraId', '==', key)` selari + dedupe —
+  JANGAN muat turun seluruh koleksi heat
+- Accordion eksklusif semua tutup default: jadual hari + Kedudukan Pingat —
+  buka satu, yang lain tutup (`new Set([key])` / `new Set()`)
+- Footer: banner promo gradient biru + butang "Saya Berminat →" (link `/` tab baru)
+- `TetapanHome.mampatkanImej(file, maxDim)` — logo auto-resize (512px/header 256px,
+  webp/png terkecil, SVG kekal) sebelum simpan base64
 
 ## Akses Pantas Home
 - Route setup: `/admin/akses-pantas` → `AksesPantasPage.jsx`
