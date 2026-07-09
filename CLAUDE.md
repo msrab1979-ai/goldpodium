@@ -728,7 +728,7 @@ tenants/{schoolId}/langganan_sejarah/{docId}
 
 ### Tenant Demo — goldpodium.web.app/demo
 - Tenant dummy SEBENAR untuk butang "Cuba Demo": slug `demo`, schoolId `skl_demo`, kejohanan `KEJ-DEMO-2026`
-- Route statik `/demo` (mockup `Demo.jsx`) DIBUANG dari `App.jsx` — URL `/demo` kini ditangkap `/:slug` → SchoolLanding sebenar. `Demo.jsx` masih wujud tapi tidak digunakan
+- Route statik `/demo` (mockup `Demo.jsx`) DIBUANG dari `App.jsx` — URL `/demo` kini ditangkap `/:slug` → SchoolLanding sebenar. `Demo.jsx` DIPADAM terus (2026-07-10, commit 31eed88) — ada harga RM150 yang tak sepatutnya dipapar
 - Data fiktif: 6 sekolah (GML/HRJ/SAM/BKI/PEM/TMM), 8 acara — 4 selesai (heat `fasa: 'final'`, `statusKeputusan: 'rasmi'`) + 4 akan datang, medal_tally + contrib, 4 rekod `D` aktif
 - Tenant expiry 2099 — takkan kena auto-suspend
 - **Reset data demo**: `ADMIN_PASSWORD=... node seed-demo-tenant.cjs` (login superadmin, idempotent — overwrite doc sama)
@@ -741,6 +741,11 @@ tenants/{schoolId}/langganan_sejarah/{docId}
 ### Footer Kredit Tenant (SchoolLanding.jsx)
 - Baris footer semua tenant: "Sistem ini dibina oleh **Gold Podium** · **Berminat? →**" — dua-dua link ke `/` (promo page), buka tab baru
 - Terpakai automatik semua tenant (hardcoded dalam SchoolLanding, bukan per-tenant config)
+
+## Dasar Harga (2026-07-10)
+- **JANGAN papar sebarang harga (RM)** di promo page, demo tenant, footer atau mana-mana halaman awam
+- CTA sentiasa hubungi WhatsApp (`NO_WA` dalam `Landing.jsx`) — seksyen #harga guna kad "Bincang Terus dengan Kami"
+- Harga hanya wujud dalam Tab Akaun superadmin (rekod bayaran dalaman)
 
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
