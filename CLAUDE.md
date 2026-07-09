@@ -264,10 +264,11 @@ tenants/{schoolId}/
 
 ### Yang Boleh Improved
 - ~~Pencatat session — rules tak verify kodAkses~~ ✅ FIXED (S1, commit 46aa4fe)
-- R1: `runPostRasmi` medal write guna `getDoc→updateDoc` (bukan transaction).
-  Risiko double-count HANYA bila acara SAMA diproses 2 peranti serentak.
-  Rendah — heat update dah pakai transaction + contrib key idempotent + rollback.
-  Belum fix (perlu sesi khas + test teliti — jangan tergesa, ia jantung kiraan).
+- ~~R1: `runPostRasmi` medal write guna `getDoc→updateDoc`~~ ✅ FIXED (2026-07-09)
+  2 blok kritikal (`mata_olahragawan` + `medal_tally`) dibalut `runTransaction` —
+  baca prevDetail/prevContr + tulis dalam satu operasi atomik. Cegah double-count
+  bila acara SAMA diproses 2 peranti serentak. Semua logik shift pingat/kat/mata
+  dikekalkan. Terbukti: `test-r1-race.cjs` 4/4 lulus (2 proses serentak → kekal 1 emas).
 - S2: `login_attempts` public write — rate-limit boleh dipintas. Sederhana.
 - Cadangan future: Cloud Function untuk audit log
 

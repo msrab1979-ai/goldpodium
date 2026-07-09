@@ -24,7 +24,7 @@
  */
 
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, increment, writeBatch,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, increment, writeBatch, runTransaction,
 } from 'firebase/firestore'
 import { resolveIsLompatTinggi } from './startListPdfUtils'
 
@@ -152,34 +152,37 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       const unitAcara = isPadang ? 'm' : 's'
       const acaraKey  = `acaraDetail_${acaraDoc.id}`
       try {
-        await setDoc(mRef, {
-          noBib:       p.noBib       || '',
-          namaAtlet:   p.namaAtlet   || '',
-          kodSekolah:  p.kodSekolah  || '',
-          namaSekolah: getNamaSekolah(p),
-          jantina:     acaraDoc.jantina    || '',
-          kategoriKod: acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''),
-          kejohananId: kejId,
-        }, { merge: true })
+        // Transaction: baca prevDetail + tulis dalam satu operasi atomik.
+        // Cegah double-count bila acara SAMA diproses 2 peranti serentak (R1).
+        await runTransaction(db, async (tx) => {
+          const existingSnap = await tx.get(mRef)
+          const existingData = existingSnap.exists() ? existingSnap.data() : {}
+          const prevDetail   = existingData[acaraKey]
 
-        const existingSnap = await getDoc(mRef)
-        const existingData = existingSnap.exists() ? existingSnap.data() : {}
-        const prevDetail   = existingData[acaraKey]
-
-        const patch = { [acaraKey]: { aceraId: acaraDoc.id, namaAcara: acaraDoc.namaAcara, pingat, mata, rank, prestasi: p.keputusan ?? null, unit: unitAcara } }
-        if (prevDetail) {
-          const prevMata   = prevDetail.mata   || 0
-          const prevPingat = prevDetail.pingat  || ''
-          if (mata !== prevMata)     patch.jumlahMata           = increment(mata - prevMata)
-          if (pingat !== prevPingat) {
-            patch[`pingat_${prevPingat}`] = increment(-1)
-            patch[`pingat_${pingat}`]     = increment(1)
+          const patch = {
+            noBib:       p.noBib       || '',
+            namaAtlet:   p.namaAtlet   || '',
+            kodSekolah:  p.kodSekolah  || '',
+            namaSekolah: getNamaSekolah(p),
+            jantina:     acaraDoc.jantina    || '',
+            kategoriKod: acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''),
+            kejohananId: kejId,
+            [acaraKey]:  { aceraId: acaraDoc.id, namaAcara: acaraDoc.namaAcara, pingat, mata, rank, prestasi: p.keputusan ?? null, unit: unitAcara },
           }
-        } else {
-          patch.jumlahMata          = increment(mata)
-          patch[`pingat_${pingat}`] = increment(1)
-        }
-        await updateDoc(mRef, patch)
+          if (prevDetail) {
+            const prevMata   = prevDetail.mata   || 0
+            const prevPingat = prevDetail.pingat  || ''
+            if (mata !== prevMata)     patch.jumlahMata           = increment(mata - prevMata)
+            if (pingat !== prevPingat) {
+              patch[`pingat_${prevPingat}`] = increment(-1)
+              patch[`pingat_${pingat}`]     = increment(1)
+            }
+          } else {
+            patch.jumlahMata          = increment(mata)
+            patch[`pingat_${pingat}`] = increment(1)
+          }
+          tx.set(mRef, patch, { merge: true })
+        })
       } catch (e) { console.warn('mata_olahragawan:', e.message) }
     }
 
@@ -190,48 +193,51 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
       const tRef       = tPath('medal_tally', tId)
       // Relay: guna kodSekolah+pasukanRelay; individu: guna noBib → lorong → rank (bukan noKP — PDPA)
       const contribKey = `contrib_${heatDoc.id}_${isRelay ? `${p.kodSekolah}_${p.pasukanRelay || 'A'}` : (p.noBib || p.lorong || rank)}`
+      // Relay guna 'RELAY' sebagai katKey supaya breakdown tally papar row berasingan
+      const katKey       = isRelay ? 'RELAY' : (acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''))
+      const katPingat    = `kat_${katKey}_${acaraDoc.jantina}_${pingat}`
       try {
-        await setDoc(tRef, {
-          kodSekolah: p.kodSekolah, namaSekolah: getNamaSekolah(p), kejohananId: kejId,
-        }, { merge: true })
+        // Transaction: baca prevContr + tulis dalam satu operasi atomik.
+        // Cegah double-count bila acara SAMA diproses 2 peranti serentak (R1).
+        await runTransaction(db, async (tx) => {
+          const tSnap    = await tx.get(tRef)
+          const tData    = tSnap.exists() ? tSnap.data() : {}
+          const prevContr = tData[contribKey]
 
-        const tSnap    = await getDoc(tRef)
-        const tData    = tSnap.exists() ? tSnap.data() : {}
-        const prevContr = tData[contribKey]
-
-        // Relay guna 'RELAY' sebagai katKey supaya breakdown tally papar row berasingan
-        const katKey       = isRelay ? 'RELAY' : (acaraDoc.isTerbuka ? (p.kategoriKod || acaraDoc.kategoriKod || '') : (acaraDoc.kategoriKod || ''))
-        const katPingat    = `kat_${katKey}_${acaraDoc.jantina}_${pingat}`
-        // noKP TIDAK disimpan dalam medal_tally — public-readable collection
-        const tPatch = { [contribKey]: {
-          pingat, noBib: p.noBib || null, rank,
-          kategoriKod: katKey, jantina: acaraDoc.jantina, isRelay: !!isRelay,
-          namaAcara:       acaraDoc.namaAcara || '',
-          namaAcaraPendek: acaraDoc.namaAcaraPendek || acaraDoc.namaAcara || '',
-        } }
-        if (prevContr) {
-          const prevPingat   = prevContr.pingat      || ''
-          const prevKat      = prevContr.kategoriKod || katKey
-          const prevJantina  = prevContr.jantina     || acaraDoc.jantina
-          const prevKatField = `kat_${prevKat}_${prevJantina}_${prevPingat}`
-          // BUG FIX: kalau pingat/kat/jantina berubah — net jumlahPingat = 0
-          // Tapi pingat field & kat field perlu shift (undo lama, apply baru)
-          // Field SAMA tidak boleh assign 2x dalam object (yg kedua overwrite yg pertama)
-          if (prevPingat !== pingat) {
-            tPatch[prevPingat] = increment(-1)
-            tPatch[pingat]     = increment(1)
+          // noKP TIDAK disimpan dalam medal_tally — public-readable collection
+          const tPatch = {
+            kodSekolah: p.kodSekolah, namaSekolah: getNamaSekolah(p), kejohananId: kejId,
+            [contribKey]: {
+              pingat, noBib: p.noBib || null, rank,
+              kategoriKod: katKey, jantina: acaraDoc.jantina, isRelay: !!isRelay,
+              namaAcara:       acaraDoc.namaAcara || '',
+              namaAcaraPendek: acaraDoc.namaAcaraPendek || acaraDoc.namaAcara || '',
+            },
           }
-          if (prevKatField !== katPingat) {
-            tPatch[prevKatField] = increment(-1)
-            tPatch[katPingat]    = increment(1)
+          if (prevContr) {
+            const prevPingat   = prevContr.pingat      || ''
+            const prevKat      = prevContr.kategoriKod || katKey
+            const prevJantina  = prevContr.jantina     || acaraDoc.jantina
+            const prevKatField = `kat_${prevKat}_${prevJantina}_${prevPingat}`
+            // BUG FIX: kalau pingat/kat/jantina berubah — net jumlahPingat = 0
+            // Tapi pingat field & kat field perlu shift (undo lama, apply baru)
+            // Field SAMA tidak boleh assign 2x dalam object (yg kedua overwrite yg pertama)
+            if (prevPingat !== pingat) {
+              tPatch[prevPingat] = increment(-1)
+              tPatch[pingat]     = increment(1)
+            }
+            if (prevKatField !== katPingat) {
+              tPatch[prevKatField] = increment(-1)
+              tPatch[katPingat]    = increment(1)
+            }
+            // jumlahPingat tidak berubah — 1 contrib = 1 pingat (cuma tukar jenis)
+          } else {
+            tPatch[pingat]      = increment(1)
+            tPatch.jumlahPingat = increment(1)
+            tPatch[katPingat]   = increment(1)
           }
-          // jumlahPingat tidak berubah — 1 contrib = 1 pingat (cuma tukar jenis)
-        } else {
-          tPatch[pingat]      = increment(1)
-          tPatch.jumlahPingat = increment(1)
-          tPatch[katPingat]   = increment(1)
-        }
-        await updateDoc(tRef, tPatch)
+          tx.set(tRef, tPatch, { merge: true })
+        })
       } catch (e) { console.warn('medal_tally:', e.message) }
     }
 
