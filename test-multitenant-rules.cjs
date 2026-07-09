@@ -177,6 +177,35 @@ async function tests() {
     anonDb.doc('tenants/skl_A/kejohanan/k1').get())
   await trySucceed('Anyone boleh baca slugIndex',
     anonDb.doc('slugIndex/skl-a').get())
+
+  // Test 7: login_attempts hardening (S2)
+  console.log('\n─── Test 7: login_attempts (S2 — anti-pintas rate limit) ───')
+  const pub = testEnv.unauthenticatedContext().firestore()
+  const now = Date.now()
+  const future = new Date(now + 30 * 60 * 1000)  // lock 30 min ke depan
+  const past   = new Date(now - 60 * 1000)       // lock dah tamat
+
+  // Aliran SAH — kod tulis kaunter sebelum auth
+  await trySucceed('SAH: create kaunter cubaan (login pertama)',
+    pub.doc('login_attempts/pencatat_skl_A_KOD1').set({ attempts: 1, lockedUntil: null, lastAttempt: new Date() }))
+  await trySucceed('SAH: naik attempts (cubaan gagal seterusnya)',
+    pub.doc('login_attempts/pencatat_skl_A_KOD1').set({ attempts: 2, lockedUntil: null, lastAttempt: new Date() }, { merge: true }))
+
+  // Setup doc SEDANG terkunci (guna admin bypass)
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc('login_attempts/pencatat_skl_A_LOCKED').set({ attempts: 5, lockedUntil: future })
+    await ctx.firestore().doc('login_attempts/pencatat_skl_A_EXPIRED').set({ attempts: 5, lockedUntil: past })
+  })
+
+  // Serangan — DILARANG
+  await tryFail('PINTAS: reset attempts semasa SEDANG terkunci DITOLAK',
+    pub.doc('login_attempts/pencatat_skl_A_LOCKED').set({ attempts: 0, lockedUntil: null }, { merge: true }))
+  await tryFail('PINTAS: padam kaunter DITOLAK',
+    pub.doc('login_attempts/pencatat_skl_A_LOCKED').delete())
+
+  // Aliran SAH selepas lock tamat — checkRateLimit reset kaunter
+  await trySucceed('SAH: reset kaunter selepas lock TAMAT (checkRateLimit)',
+    pub.doc('login_attempts/pencatat_skl_A_EXPIRED').set({ attempts: 0, lockedUntil: null }, { merge: true }))
 }
 
 async function main() {

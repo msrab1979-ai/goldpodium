@@ -269,8 +269,13 @@ tenants/{schoolId}/
   baca prevDetail/prevContr + tulis dalam satu operasi atomik. Cegah double-count
   bila acara SAMA diproses 2 peranti serentak. Semua logik shift pingat/kat/mata
   dikekalkan. Terbukti: `test-r1-race.cjs` 4/4 lulus (2 proses serentak → kekal 1 emas).
-- S2: `login_attempts` public write — rate-limit boleh dipintas. Sederhana.
-- Cadangan future: Cloud Function untuk audit log
+- ~~S2: `login_attempts` public write — rate-limit boleh dipintas~~ ✅ HARDENED (2026-07-09)
+  Rules: delete DILARANG; update DITOLAK bila SEDANG terkunci (lockedUntil > now).
+  Aliran sah kekal (create + naik attempts + reset selepas lock tamat).
+  NOTA: reset penuh kalis-pintas masih perlu Cloud Function — Firestore tanpa
+  server tak boleh tahu PIN betul/salah, jadi tulis "attempts:0" tak dapat
+  disekat sepenuhnya. Test S2: 5 kes lulus (aliran sah + serangan ditolak).
+- Cadangan future: Cloud Function untuk (1) rate-limit server-side penuh (2) audit log
 
 ## PP Dashboard — Fixes Kritikal (2026-07-05)
 

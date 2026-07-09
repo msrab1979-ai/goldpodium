@@ -55,10 +55,25 @@ service cloud.firestore {
       );
     }
 
-    // ─── Login attempts (rate limiting) ───────────────────────────────────────
-    // Public write kekal — perlu untuk track sebelum auth. Rate limit di server.
+    // ─── Login attempts (rate limiting) — S2 ──────────────────────────────────
+    // Write kekal terbuka: kod tulis kaunter SEBELUM auth (login pencatat/pengurus/
+    // email pertama kali — anon sign-in berlaku selepas PIN verified). Firestore
+    // tanpa Cloud Function tak boleh tahu PIN betul/salah, jadi tulis mesti dibenar.
+    // Pengetatan yang boleh tanpa server:
+    //   1. delete DILARANG — buang cara paling mudah reset kaunter (kod guna
+    //      setDoc merge, tak pernah delete — jadi tiada aliran sah terjejas).
+    //   2. Bila SEDANG terkunci (lockedUntil masa depan), tulis DILARANG —
+    //      halang penyerang reset lock semasa serangan. clearAttempts sah hanya
+    //      dipanggil selepas PIN betul (bukan semasa terkunci), jadi tak terjejas.
+    // Reset penuh kalis-pintas perlu Cloud Function (future — lihat CLAUDE.md).
     match /login_attempts/{docId} {
-      allow read, write: if true;
+      allow read:   if true;
+      allow create: if true;
+      allow update: if !(
+        resource.data.lockedUntil != null
+        && resource.data.lockedUntil > request.time
+      );
+      allow delete: if false;
     }
 
     // ─── Users root collection ────────────────────────────────────────────────
