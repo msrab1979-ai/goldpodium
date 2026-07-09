@@ -1244,6 +1244,19 @@ export default function SchoolLanding() {
 
   // Jadual & keputusan
   const [activeTab,      setActiveTab]      = useState('jadual')
+  // auto-switch bila tab aktif disembunyikan oleh admin
+  useEffect(() => {
+    const tabs = [
+      { id: 'jadual',    show: cfg.showJadual    !== false },
+      { id: 'keputusan', show: cfg.showKeputusan !== false },
+      { id: 'rekod',     show: cfg.showRekod     !== false },
+    ]
+    const current = tabs.find(t => t.id === activeTab)
+    if (current && !current.show) {
+      const fallback = tabs.find(t => t.show)
+      if (fallback) setActiveTab(fallback.id)
+    }
+  }, [cfg.showJadual, cfg.showKeputusan, cfg.showRekod, activeTab])
   const [acara,          setAcara]          = useState([])
   const [jadualLoading,  setJadualLoading]  = useState(false)
   const [expandedDays,   setExpandedDays]   = useState(new Set())
@@ -1818,10 +1831,10 @@ export default function SchoolLanding() {
             {/* Tab Pills */}
             <div className="flex gap-1.5 mb-4 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
               {[
-                { id: 'jadual',    label: 'Jadual' },
-                { id: 'keputusan', label: 'Keputusan' },
-                { id: 'rekod',     label: 'Rekod Kejohanan' },
-              ].map(t => (
+                { id: 'jadual',    label: 'Jadual',           show: cfg.showJadual    !== false },
+                { id: 'keputusan', label: 'Keputusan',        show: cfg.showKeputusan !== false },
+                { id: 'rekod',     label: 'Rekod Kejohanan',  show: cfg.showRekod     !== false },
+              ].filter(t => t.show).map(t => (
                 <button key={t.id} onClick={() => { setActiveTab(t.id); if (t.id === 'rekod') loadRekodAll() }}
                   className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     activeTab === t.id ? 'bg-[#003399] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'

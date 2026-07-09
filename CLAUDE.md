@@ -124,6 +124,15 @@ const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
 - **Row highlight biru** — atlet layak final
 - `finalSetup` diload dari `tenants/{schoolId}/tetapan/finalSetup`
 
+## TetapanHome — Kawal Tab Halaman Awam (2026-07-09)
+- Section "Tab Halaman Awam" dalam `/admin/tetapan` → `TetapanHome.jsx`
+- 3 toggle: **showJadual** | **showKeputusan** | **showRekod** — simpan ke `tetapan/home`
+- Default semua `true` (dipapar) — field kosong dalam Firestore = papar juga
+- `SchoolLanding.jsx` tapis tab pills dengan `.filter(t => t.show)` berdasarkan `cfg` dari `onSnapshot`
+- `useEffect` auto-switch `activeTab` ke tab pertama yang ON kalau tab aktif disembunyikan
+- `cfg` default kosong (tiada showRekod/showKeputusan/showJadual) → `undefined !== false` = `true` (selamat)
+- **JadualSetup.jsx** ada toggle `showJadual` tersendiri — sama field, tiada konflik
+
 ## PP (Pengurus Pasukan) — Nav
 - Dashboard
 - Sijil Penyertaan (`/:slug/pengurus/sijil-penyertaan`)

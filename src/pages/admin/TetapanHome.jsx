@@ -38,8 +38,10 @@ export const TETAPAN_DEFAULTS = {
   showMedalHome:        true, // tunjuk bahagian kedudukan pingat di laman awam
   medalHomeKedudukan:   3,   // berapa kedudukan DIPAPAR di Home (3/4/5)
   medalHomeGroupJenis:  'pisah', // 'pisah' = SR/SM/PPKI berasingan | 'gabung' = satu jadual
-  // Jadual Acara
+  // Tab halaman awam
   showJadual:           true,
+  showKeputusan:        true,
+  showRekod:            true,
   // Pautan Kumpulan
   linkWasap:            '',
   tajukWasap:           '',
@@ -582,18 +584,26 @@ export default function TetapanHome() {
             </div>
           </div>
 
-          {/* 5. Jadual Acara */}
+          {/* 5. Tab Halaman Awam */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
-            <SectionTitle title="Jadual Acara" desc="Kawal paparan jadual acara di halaman awam (/)" />
-            <label className="flex items-center gap-3 cursor-pointer"
-              onClick={() => set('showJadual', !cfg.showJadual)}>
-              <div className={`relative w-10 h-5 rounded-full transition-colors ${cfg.showJadual ? 'bg-[#003399]' : 'bg-gray-200'}`}>
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${cfg.showJadual ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </div>
-              <span className="text-sm text-gray-600">
-                {cfg.showJadual ? 'Jadual Acara dipapar di halaman awam' : 'Jadual Acara disembunyikan'}
-              </span>
-            </label>
+            <SectionTitle title="Tab Halaman Awam" desc="Kawal tab yang dipapar di halaman awam (/)" />
+            <div className="space-y-3">
+              {[
+                { key: 'showJadual',    labelOn: 'Tab Jadual Acara dipapar',     labelOff: 'Tab Jadual Acara disembunyikan' },
+                { key: 'showKeputusan', labelOn: 'Tab Keputusan dipapar',        labelOff: 'Tab Keputusan disembunyikan' },
+                { key: 'showRekod',     labelOn: 'Tab Rekod Kejohanan dipapar',  labelOff: 'Tab Rekod Kejohanan disembunyikan' },
+              ].map(({ key, labelOn, labelOff }) => (
+                <label key={key} className="flex items-center gap-3 cursor-pointer"
+                  onClick={() => set(key, !cfg[key])}>
+                  <div className={`relative w-10 h-5 rounded-full transition-colors ${cfg[key] ? 'bg-[#003399]' : 'bg-gray-200'}`}>
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${cfg[key] ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </div>
+                  <span className="text-sm text-gray-600">
+                    {cfg[key] ? labelOn : labelOff}
+                  </span>
+                </label>
+              ))}
+            </div>
           </div>
 
           {/* 6. Pengumuman */}
