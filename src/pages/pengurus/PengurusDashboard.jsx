@@ -15,6 +15,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   collection, getDocs, doc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, query, where, getDoc, writeBatch, runTransaction,
@@ -2621,7 +2622,13 @@ export default function PengurusDashboard() {
   const kodSekolah = userData?.kodSekolah || ''
   const namaSekolah = userData?.namaSekolah || kodSekolah || ''
 
-  const [activeTab, setActiveTab] = useState('atlet')
+  const location = useLocation()
+  const [activeTab, setActiveTab] = useState(location.state?.tab || 'atlet')
+
+  // Butang "Pergi ke Dashboard" dari PanduanPP hantar state.tab
+  useEffect(() => {
+    if (location.state?.tab) setActiveTab(location.state.tab)
+  }, [location.state])
 
   // Shared state
   const [kejohanan,       setKejohanan]       = useState(null)
