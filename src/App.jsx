@@ -40,6 +40,7 @@ const PencatatCetakanHadiah = lazy(() => import('./pages/pencatat/CetakanHadiah'
 const PencatatStartList  = lazy(() => import('./pages/admin/StartList'))
 const PencatatRekod      = lazy(() => import('./pages/admin/Rekod'))
 const PencatatCetakAcara = lazy(() => import('./pages/admin/CetakAcara'))
+const PanduanPencatat    = lazy(() => import('./pages/pencatat/PanduanPencatat'))
 const ForceChangePassword = lazy(() => import('./pages/ForceChangePassword'))
 const AnalisisPendaftaran = lazy(() => import('./pages/admin/AnalisisPendaftaran'))
 const Backup             = lazy(() => import('./pages/admin/Backup'))
@@ -280,6 +281,7 @@ function AppRoutes() {
                 <Route path="startlist"                  element={<PencatatStartList />} />
                 <Route path="rekod"                      element={<PencatatRekod />} />
                 <Route path="cetak-acara"                element={<PencatatCetakAcara />} />
+                <Route path="panduan"                    element={<PanduanPencatat />} />
                 <Route path="*"                          element={<NavigateToPencatatDashboard />} />
               </Routes>
             </PencatatLayout>
