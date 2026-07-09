@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   collection, doc, query, getDocs, getDoc,
-  orderBy, limit, onSnapshot, where, updateDoc, serverTimestamp,
+  orderBy, limit, where, updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
@@ -676,8 +676,8 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
   const [expandedRows, setExpandedRows] = useState(new Set()) // klik nama sekolah
   const [medalRawMap,  setMedalRawMap]  = useState({})       // kodSekolah → raw tally doc
   const [katMap,       setKatMap]       = useState({})        // kategoriKod → { umurHad }
-  const unsubRef  = useRef(null)
-  const unsubRef2 = useRef(null)
+  const [tick,         setTick]         = useState(0)         // butang Muat Semula
+  const [refreshing,   setRefreshing]   = useState(false)
 
   useEffect(() => {
     if (!schoolId) return
@@ -686,73 +686,46 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
       .catch(() => setJenisList([]))
   }, [schoolId])
 
+  // Fetch sekali (bukan listener real-time — jimat kos server).
+  // User klik "Muat Semula" untuk data terkini → tick bertambah → fetch semula.
   useEffect(() => {
     if (!schoolId || !kejId) return
-    setLoading(true)
-    if (unsubRef.current)  unsubRef.current()
-    if (unsubRef2.current) unsubRef2.current()
-
-    let medalMap    = {}
-    let sekolahMap  = {}
-    let medalReady  = false
-    let sekolahReady = false
-
-    function merge() {
-      // Tunggu kedua-dua listeners ready dulu baru render
-      if (!medalReady || !sekolahReady) return
-      const allKod = new Set([...Object.keys(sekolahMap), ...Object.keys(medalMap)])
-      const rows = [...allKod].map(kod => ({
-        id:          kod,
-        kodSekolah:  kod,
-        namaSekolah: sekolahMap[kod]?.namaSekolah || medalMap[kod]?.namaSekolah || kod,
-        kategori:    sekolahMap[kod]?.kategori    || 'Lain-lain',
-        emas:        medalMap[kod]?.emas    || 0,
-        perak:       medalMap[kod]?.perak   || 0,
-        gangsa:      medalMap[kod]?.gangsa  || 0,
-        tempat4:     medalMap[kod]?.tempat4 || 0,
-        tempat5:     medalMap[kod]?.tempat5 || 0,
-      }))
-      setAllRows(rows)
-      setLoading(false)
-    }
-
-    unsubRef.current = onSnapshot(
-      collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally'),
-      snap => {
-        medalMap = {}
-        const rawMap = {}
-        snap.docs.forEach(d => {
+    let batal = false
+    if (tick === 0) setLoading(true)
+    Promise.all([
+      getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'medal_tally')),
+      getDocs(collection(db, 'tenants', schoolId, 'sekolah')),
+    ])
+      .then(([medalSnap, sekSnap]) => {
+        if (batal) return
+        const medalMap = {}
+        medalSnap.docs.forEach(d => {
           const data = d.data()
-          const kod = data.kodSekolah || d.id
-          medalMap[kod] = data
-          rawMap[kod]   = data
+          medalMap[data.kodSekolah || d.id] = data
         })
-        setMedalRawMap(rawMap)
-        medalReady = true
-        merge()
-      },
-      () => setLoading(false)
-    )
-
-    unsubRef2.current = onSnapshot(
-      collection(db, 'tenants', schoolId, 'sekolah'),
-      snap => {
-        sekolahMap = {}
-        snap.docs.forEach(d => {
+        const sekolahMap = {}
+        sekSnap.docs.forEach(d => {
           const data = d.data()
           sekolahMap[d.id] = { kodSekolah: d.id, namaSekolah: data.namaSekolah || d.id, kategori: data.kategori || 'Lain-lain' }
         })
-        sekolahReady = true
-        merge()
-      },
-      () => { sekolahReady = true; merge() }
-    )
-
-    return () => {
-      if (unsubRef.current)  unsubRef.current()
-      if (unsubRef2.current) unsubRef2.current()
-    }
-  }, [schoolId, kejId])
+        setMedalRawMap(medalMap)
+        const allKod = new Set([...Object.keys(sekolahMap), ...Object.keys(medalMap)])
+        setAllRows([...allKod].map(kod => ({
+          id:          kod,
+          kodSekolah:  kod,
+          namaSekolah: sekolahMap[kod]?.namaSekolah || medalMap[kod]?.namaSekolah || kod,
+          kategori:    sekolahMap[kod]?.kategori    || 'Lain-lain',
+          emas:        medalMap[kod]?.emas    || 0,
+          perak:       medalMap[kod]?.perak   || 0,
+          gangsa:      medalMap[kod]?.gangsa  || 0,
+          tempat4:     medalMap[kod]?.tempat4 || 0,
+          tempat5:     medalMap[kod]?.tempat5 || 0,
+        })))
+      })
+      .catch(() => {})
+      .finally(() => { if (!batal) { setLoading(false); setRefreshing(false) } })
+    return () => { batal = true }
+  }, [schoolId, kejId, tick])
 
   // Load kategoriMap dari kategori subcollection (sumber benar — ada label, umurHad, urutan, jenisSekolah)
   useEffect(() => {
@@ -1159,6 +1132,16 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
 
   return (
     <div className="space-y-2">
+      {/* Muat Semula — fetch manual, jimat kos berbanding listener real-time */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => { if (!refreshing) { setRefreshing(true); setTick(t => t + 1) } }}
+          disabled={refreshing}
+          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#003399] bg-white border border-gray-200 hover:border-[#003399]/40 px-3 py-1.5 rounded-lg shadow-sm transition-colors disabled:opacity-50">
+          <span className={refreshing ? 'inline-block animate-spin' : ''}>🔄</span>
+          {refreshing ? 'Memuat…' : 'Muat Semula'}
+        </button>
+      </div>
       {katOrdered.map((kat, idx) => {
         const rows    = sortAndRankRows(allRows.filter(r => (r.kategori || 'Lain-lain') === kat))
         if (rows.length === 0) return null
@@ -1256,6 +1239,7 @@ export default function SchoolLanding() {
   const [jadualLoading,  setJadualLoading]  = useState(false)
   const [expandedDays,   setExpandedDays]   = useState(new Set())
   const [expandedAcara,  setExpandedAcara]  = useState(new Set())
+  const [jadualTick,     setJadualTick]     = useState(0)  // butang Muat Semula jadual/keputusan
   const [heatCache,      setHeatCache]      = useState({})
   const [heatLoading,    setHeatLoading]    = useState(new Set())
   const [rekodCache,     setRekodCache]     = useState({})
@@ -1339,26 +1323,20 @@ export default function SchoolLanding() {
       .catch(() => setStatus('tidakJumpa'))
   }, [slug])
 
-  // ── Tetapan home (logo) ──
+  // ── Tetapan home (logo) — fetch sekali, jimat listener ──
   useEffect(() => {
     if (!schoolId) return
-    const unsub = onSnapshot(
-      doc(db, 'tenants', schoolId, 'tetapan', 'home'),
-      s => { if (s.exists()) setCfg(prev => ({ ...prev, ...s.data() })) },
-      () => {}
-    )
-    return () => unsub()
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
+      .then(s => { if (s.exists()) setCfg(prev => ({ ...prev, ...s.data() })) })
+      .catch(() => {})
   }, [schoolId])
 
-  // ── Akses Pantas — sistem bebas ──
+  // ── Akses Pantas — fetch sekali ──
   useEffect(() => {
     if (!schoolId) return
-    const unsub = onSnapshot(
-      doc(db, 'tenants', schoolId, 'tetapan', 'aksesPantas'),
-      s => { if (s.exists() && Array.isArray(s.data().items)) setAksesPantasItems(s.data().items) },
-      () => {}
-    )
-    return () => unsub()
+    getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'aksesPantas'))
+      .then(s => { if (s.exists() && Array.isArray(s.data().items)) setAksesPantasItems(s.data().items) })
+      .catch(() => {})
   }, [schoolId])
 
   // ── Load sekolah map + kategori + finalSetup sekali ──
@@ -1390,16 +1368,15 @@ export default function SchoolLanding() {
       .catch(() => {})
   }, [schoolId, kej?.id])
 
-  // ── Load acara realtime bila kej bertukar ──
+  // ── Load acara bila kej bertukar / butang Muat Semula ──
+  // Fetch sekali (bukan listener real-time) — jimat kos server
   useEffect(() => {
     if (!schoolId || !kej?.id) return
-    setJadualLoading(true)
-    const unsub = onSnapshot(
-      query(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'), orderBy('noAcara')),
-      snap => {
+    if (jadualTick === 0) setJadualLoading(true)
+    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'), orderBy('noAcara')))
+      .then(snap => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         setAcara(list)
-        setJadualLoading(false)
         // Build kategori map dari data acara
         const kMap = {}
         list.forEach(a => {
@@ -1409,11 +1386,10 @@ export default function SchoolLanding() {
         })
         setKategoriMap(kMap)
         // Semua hari tutup secara default — user pilih hari sendiri
-      },
-      () => setJadualLoading(false)
-    )
-    return () => unsub()
-  }, [schoolId, kej?.id])
+      })
+      .catch(() => {})
+      .finally(() => setJadualLoading(false))
+  }, [schoolId, kej?.id, jadualTick])
 
   // ── Toggle acara expand + load heat ──
   async function toggleAcara(a) {
@@ -1670,7 +1646,7 @@ export default function SchoolLanding() {
               : <span className="font-black text-[9px] text-[#003399]">🏆</span>}
           </div>
           {/* Refresh */}
-          <button onClick={() => { setHeatCache({}); setExpandedAcara(new Set()) }}
+          <button onClick={() => { setHeatCache({}); setExpandedAcara(new Set()); setJadualTick(t => t + 1) }}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/35 hover:text-white/80 transition-all shrink-0 active:scale-95">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1819,7 +1795,7 @@ export default function SchoolLanding() {
                     {printingPdf ? 'Menjana…' : 'Cetak PDF'}
                   </button>
                 )}
-                <button onClick={() => { setHeatCache({}); setExpandedAcara(new Set()) }}
+                <button onClick={() => { setHeatCache({}); setExpandedAcara(new Set()); setJadualTick(t => t + 1) }}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-gray-500 hover:text-[#003399] bg-white border border-gray-200 hover:border-[#003399]/30 rounded-xl transition-all shadow-sm">
                   <svg className={`w-3.5 h-3.5 ${jadualLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

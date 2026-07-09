@@ -80,21 +80,62 @@ function Field({ label, hint, children }) {
   )
 }
 
+// ─── Mampat imej ke base64 kecil ──────────────────────────────────────────────
+// Logo disimpan dalam doc tetapan/home yang dimuat SETIAP pelawat landing page —
+// saiz kecil = load pantas + jimat kos bacaan. SVG dikekalkan (memang kecil).
+
+async function mampatkanImej(file, maxDim = 512) {
+  if (file.type === 'image/svg+xml') {
+    return new Promise((res, rej) => {
+      const r = new FileReader()
+      r.onload = e => res(e.target.result)
+      r.onerror = rej
+      r.readAsDataURL(file)
+    })
+  }
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image()
+      i.onload = () => res(i)
+      i.onerror = rej
+      i.src = url
+    })
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const c = document.createElement('canvas')
+    c.width = w; c.height = h
+    c.getContext('2d').drawImage(img, 0, 0, w, h)
+    // PNG kekalkan latar lutsinar; pilih format terkecil
+    const png  = c.toDataURL('image/png')
+    const webp = c.toDataURL('image/webp', 0.9)
+    return (webp.startsWith('data:image/webp') && webp.length < png.length) ? webp : png
+  } finally { URL.revokeObjectURL(url) }
+}
+
 // ─── Logo Uploader (base64) ───────────────────────────────────────────────────
 
 function LogoUploader({ label, desc, value, onChange, maxKB = 500 }) {
   const ref = useRef()
 
-  function handleFile(e) {
+  async function handleFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > maxKB * 1024) {
-      alert(`Saiz fail melebihi ${maxKB}KB. Sila kecilkan imej terlebih dahulu.`)
+    if (file.size > 4 * 1024 * 1024) {
+      alert('Saiz fail melebihi 4MB. Sila pilih imej lebih kecil.')
       return
     }
-    const reader = new FileReader()
-    reader.onload = ev => onChange(ev.target.result)
-    reader.readAsDataURL(file)
+    try {
+      const dataUrl = await mampatkanImej(file, 512)
+      if (dataUrl.length > maxKB * 1024 * 1.4) {
+        alert(`Imej masih terlalu besar selepas dimampatkan. Gunakan imej lebih ringkas (bawah ${maxKB}KB).`)
+        return
+      }
+      onChange(dataUrl)
+    } catch {
+      alert('Gagal memproses imej. Cuba fail lain.')
+    }
     e.target.value = ''
   }
 
@@ -128,7 +169,7 @@ function LogoUploader({ label, desc, value, onChange, maxKB = 500 }) {
             </div>
             <div>
               <p className="text-xs font-semibold text-gray-600">Klik untuk muat naik</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">PNG · JPG · SVG · WebP · Maks {maxKB}KB</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">PNG · JPG · SVG · WebP · Auto-dimampatkan</p>
             </div>
           </>
         )}
@@ -149,16 +190,24 @@ function LogoUploader({ label, desc, value, onChange, maxKB = 500 }) {
 function HeaderLogoUploader({ label, value, teks, onChangeLogo, onChangeTeks }) {
   const ref = useRef()
 
-  function handleFile(e) {
+  async function handleFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 300 * 1024) {
-      alert('Logo header melebihi 300KB. Gunakan imej kecil (icon).')
+    if (file.size > 4 * 1024 * 1024) {
+      alert('Saiz fail melebihi 4MB. Sila pilih imej lebih kecil.')
       return
     }
-    const reader = new FileReader()
-    reader.onload = ev => onChangeLogo(ev.target.result)
-    reader.readAsDataURL(file)
+    try {
+      // Icon header kecil sahaja — mampat ke 256px
+      const dataUrl = await mampatkanImej(file, 256)
+      if (dataUrl.length > 200 * 1024) {
+        alert('Imej masih terlalu besar selepas dimampatkan. Gunakan imej lebih ringkas.')
+        return
+      }
+      onChangeLogo(dataUrl)
+    } catch {
+      alert('Gagal memproses imej. Cuba fail lain.')
+    }
     e.target.value = ''
   }
 
