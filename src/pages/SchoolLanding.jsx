@@ -2157,20 +2157,40 @@ export default function SchoolLanding() {
       )}
 
       {/* ── Footer ── */}
-      <footer className="border-t-2 border-gray-100 py-5 px-5 bg-white">
-        <div className="max-w-4xl mx-auto flex flex-col items-center gap-1.5">
-          <div className="flex items-center gap-2">
-            <div className="h-px w-8 bg-gray-200" />
-            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Gold Podium · Pengurusan Kejohanan</p>
-            <div className="h-px w-8 bg-gray-200" />
+      <footer className="border-t-2 border-gray-100 bg-white">
+
+        {/* Banner promo — sistem dibina oleh Gold Podium */}
+        <div className="px-4 pt-5 pb-1">
+          <a href="/" target="_blank" rel="noopener"
+            className="group block max-w-4xl mx-auto bg-gradient-to-r from-[#003399] via-[#0044cc] to-[#003399] rounded-2xl px-5 py-4 shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-11 h-11 bg-yellow-400 rounded-xl flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                <span className="text-xl">🏆</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-white leading-tight">
+                  Sistem ini dibina oleh <span className="text-yellow-300">Gold Podium</span>
+                </p>
+                <p className="text-[11px] text-blue-200 mt-0.5">
+                  Nak sistem kejohanan macam ini untuk sekolah / daerah anda? Start list, keputusan & sijil — semua automatik.
+                </p>
+              </div>
+              <span className="shrink-0 inline-flex items-center gap-1.5 bg-yellow-400 text-[#003399] text-[11px] sm:text-xs font-black px-3 sm:px-4 py-2 rounded-xl shadow group-hover:bg-yellow-300 transition-colors whitespace-nowrap">
+                Saya Berminat <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+              </span>
+            </div>
+          </a>
+        </div>
+
+        <div className="py-4 px-5">
+          <div className="max-w-4xl mx-auto flex flex-col items-center gap-1.5">
+            <div className="flex items-center gap-2">
+              <div className="h-px w-8 bg-gray-200" />
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Gold Podium · Pengurusan Kejohanan</p>
+              <div className="h-px w-8 bg-gray-200" />
+            </div>
+            <p className="text-[9px] text-gray-300">© {new Date().getFullYear()} · Hak Cipta Terpelihara</p>
           </div>
-          <p className="text-[9px] text-gray-300">© {new Date().getFullYear()} · Hak Cipta Terpelihara</p>
-          <p className="text-[10px] text-gray-400">
-            Sistem ini dibina oleh{' '}
-            <a href="/" target="_blank" rel="noopener" className="font-semibold text-blue-600 hover:underline">Gold Podium</a>
-            {' · '}
-            <a href="/" target="_blank" rel="noopener" className="font-semibold text-green-600 hover:underline">Berminat? →</a>
-          </p>
         </div>
       </footer>
 
