@@ -111,6 +111,7 @@ const LANGKAH = {
       penerangan: 'Langkah terakhir — sahkan selepas urus setia jana heat.',
       lokasi: 'Dashboard → tab Pengesahan Pendaftaran',
       cara: ['Semak lorong / urutan atlet dalam setiap heat', 'Klik "Sahkan Penyertaan"', 'Selepas sah, tiada perubahan boleh dibuat — hubungi urus setia jika ada ralat'],
+      nota: 'Lorong disusun automatik oleh sistem ikut bilangan lorong trek (4–8, ditetapkan urus setia). Jangan risau jika trek padang anda bukan 8 lorong.',
       visual: 'semak',
       tabDest: 'startlist',
     },

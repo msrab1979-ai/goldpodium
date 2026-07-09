@@ -78,7 +78,7 @@ const LANGKAH = {
       penerangan: 'Bila semua heat saringan sudah rasmi, butang jana akan muncul.',
       lokasi: 'Menu kiri → Input Keputusan',
       cara: ['Pastikan SEMUA heat saringan acara itu sudah disahkan', 'Klik "Jana Final" / "Jana Separuh Akhir"', 'Semak senarai finalis dan lorong, kemudian sahkan'],
-      nota: 'Sistem pilih finalis dan susun lorong ikut piawai automatik.',
+      nota: 'Lorong disusun automatik ikut bilangan lorong trek (4–8, set oleh admin). Trek 8 lorong ikut piawai penuh World Athletics; trek 4–7 lorong susunan automatik — ranking terbaik dapat lorong tengah. Jika finalis melebihi bilangan lorong, sistem beri amaran.',
       visual: 'duaPanel',
       pagePath: 'input-keputusan',
       labelNav: 'Input Keputusan',
