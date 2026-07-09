@@ -488,6 +488,131 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - User doc ada `pin` field (plain text lama) tapi tiada `pinHash` — wajib ada `pinHash` untuk login berjaya
 - Superadmin create tenat via `SuperadminPanel.jsx` → `createAdminAccount()` → `slugIndex` auto-cipta dengan `aktif: true`
 
+## SuperadminPanel UX Overhaul (2026-07-09)
+
+### Kad Statistik Clickable + Filter
+- 4 kad KPI (Jumlah/Aktif/Digantung/Perlu Tindakan) — clickable untuk auto-tapis
+- Klik kad → set `tabAktif='sekolah'` + `tapis=<jenis>` dengan ring biru sekeliling kad aktif
+- "Perlu Tindakan" kira sekolah baki ≤30 hari (termasuk yang sudah tamat)
+
+### Toolbar Cari + Filter + Susun
+- Search box: nama sekolah, daerah, slug, nama admin
+- Filter chip: Semua / Aktif / Digantung / Expiry ≤30 (segmented control style)
+- Susun dropdown: Nama / Expiry / Status
+- Counter "X / Y sekolah" di kanan
+
+### Row Table
+- Avatar bulat inisial sekolah dengan warna auto (hash nama) — `warnaAvatar()` + `inisial()`
+- Buang prefix `SK/SMK/SR/SM/PPKI/SJK` dari inisial
+- Status pill besar dengan dot warna (hijau/merah/kuning)
+- Expiry tunjuk tarikh + label baki hari untuk ≤30 hari
+- Hover row = highlight biru halus
+- Header sticky (`sticky top-0 bg-gray-50`)
+
+### Menu ⋯ Dropdown (fixed position)
+- Buang 5 butang inline; kekal butang "Masuk" primary + ikon ⋯
+- Dropdown pakai `position: fixed` dengan koordinat dari `getBoundingClientRect()` — supaya tak clipped oleh parent overflow
+- Auto tutup bila scroll/resize/click luar
+- Items: Reset Password / Perbaharui Langganan / Tangguh/Aktifkan / Data & Reset / Padam
+- Header dropdown tunjuk nama sekolah (context)
+
+### Tab Bar
+- Underline tebal (`h-0.5 rounded-t`) untuk tab aktif
+- Saiz teks `text-sm` (dari `text-xs`)
+- Padding `px-6 py-4` untuk sentuh yang lebih besar
+
+### Kolum URL
+- Papar URL penuh `goldpodium.web.app/{slug}` (bukan hanya `/slug`)
+- Klik terus buka halaman sekolah
+
+## Auto-Suspend Bila Expired / Suspend (2026-07-09)
+
+### Sync `tenants.status` ⇄ `slugIndex.aktif`
+- `tangguhSekolah` — update `tenants.status='suspended'` + `slugIndex.aktif=false`
+- `aktifkanSekolah` — update `tenants.status='active'` + `slugIndex.aktif=true`
+- Public SchoolLanding baca dari `slugIndex.aktif` — sync ini pastikan public block juga
+
+### Auto-suspend bila langganan tamat (cascade)
+- `firebase/auth.js` — bila admin cuba login & `tarikhExpiry < now`:
+  - Auto set `tenants.status='suspended'` + `slugIndex.aktif=false` + `autoSuspendPada`
+  - Throw `auth/account-expired`
+- `SchoolLanding.jsx` — first line of defence untuk public:
+  - Load tenant → semak `expiryMs`
+  - Kalau expired → auto-suspend + tunjuk skrin `tidakAktif`
+  - Kalau `status='suspended'` → skrin `tidakAktif`
+
+### Kesan cascade
+- Admin login → error
+- Admin dah login → `useLesen` hook block dashboard
+- Public landing → skrin Tidak Aktif
+- Pencatat/PP login → block via `slugIndex.aktif=false`
+
+## Panel Superadmin — Tab Akaun (2026-07-09)
+
+### Purpose
+- Track pendapatan langganan Goldpodium (SaaS multi-tenant)
+- Superadmin cipta entry manual bila terima bayaran
+
+### Firestore Path
+```
+tenants/{schoolId}/langganan_sejarah/{docId}
+  ├── schoolId, tarikhBayaran, tarikhMula, tarikhTamat (Timestamp)
+  ├── pakej: 'free'|'school'|'district'
+  ├── jumlahRM: number
+  ├── status: 'sah' | 'menunggu'  (Batal DIBUANG — guna Padam)
+  ├── noRujukan: 'INV-2026-001' (auto-jana ikut collectionGroup scan)
+  ├── nota: string
+  └── dicipta, dikemaskinPada (serverTimestamp)
+```
+
+### Firestore Rules
+- Path spesifik: `match /tenants/{schoolId}/langganan_sejarah/{docId}` — superadmin sahaja
+- Collection group: `match /{path=**}/langganan_sejarah/{docId}` — untuk `collectionGroup(db, 'langganan_sejarah')` query dalam Tab Akaun
+
+### Files
+- `src/pages/superadmin/TabAkaun.jsx` — komponen utama tab
+- `src/pages/superadmin/SuperadminPanel.jsx` — integrate TabAkaun via `<TabAkaun sekolahList={sekolah} />`
+
+### KPI Cards (5)
+- Bulan Ini · Tahun Ini · Sepanjang Masa · Menunggu Bayaran · Purata/Bulan
+
+### Carta
+- Bar chart 12 bulan terkini (SVG native) — status Sah sahaja
+- Pie chart pecahan pakej (Percuma/Sekolah/Daerah)
+
+### Modal Entry (Tambah/Edit)
+- Sekolah (dropdown, disabled masa Edit)
+- Pakej + Status
+- Jumlah RM (input manual)
+- 3 tarikh: Bayaran / Mula / Tamat
+- No Rujukan — auto-jana `INV-{tahun}-{nnn}` kalau kosong (scan collectionGroup)
+- Nota
+
+### Modal Backfill Auto
+- Scan semua tenant → cipta entry dari `tarikhMula` + `tarikhExpiry` sedia ada
+- Jumlah RM = 0 (edit manual selepas)
+- Skip sekolah yang sudah ada entry (idempotent)
+- Log real-time
+
+### Cetak Resit (per row — 1 klik)
+- Butang **ikon 📄** dalam kolum Tindakan (bukan dalam menu ⋯)
+- PDF A4: header biru "GOLD PODIUM" + label "RESIT" kuning
+- Butiran: no resit, tarikh, nama sekolah, pakej, tempoh, status, jumlah dalam kotak biru besar
+- Signature line, filename `Resit_{noRujukan}_{sekolah}.pdf`
+
+### Cetak Statement Sekolah
+- Butang toolbar "📑 Statement Sekolah"
+- Modal: search + pilih sekolah + toggle sepanjang masa / Dari-Hingga
+- PDF: header, autoTable semua entry, ringkasan (Sah + Menunggu + Jumlah Keseluruhan)
+
+### Export Semua (filtered)
+- PDF landscape dengan autoTable (semua entry dipapar)
+- Excel dengan xlsx lib (semua entry dipapar, satu sheet)
+
+### Menu ⋯ per entry
+- Edit / Tandakan Sah / Tandakan Menunggu / 🗑 Padam
+- Status "Batal" DIBUANG — kalau nak buang entry, guna Padam
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`

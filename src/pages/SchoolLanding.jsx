@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   collection, doc, query, getDocs, getDoc,
-  orderBy, limit, onSnapshot, where,
+  orderBy, limit, onSnapshot, where, updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
@@ -1321,7 +1321,21 @@ export default function SchoolLanding() {
           getDocs(query(collection(db, 'tenants', sId, 'kejohanan'), orderBy('createdAt', 'desc'), limit(10))).catch(() => ({ docs: [] })),
         ])
         if (!tenantSnap.exists()) { setStatus('tidakJumpa'); return }
-        setSekolah(tenantSnap.data())
+        const tenantData = tenantSnap.data()
+
+        // Auto-suspend bila langganan tamat (first line of defence untuk public)
+        const expiryMs = tenantData.tarikhExpiry?.toMillis?.() || 0
+        if (expiryMs > 0 && expiryMs < Date.now()) {
+          if (tenantData.status !== 'suspended') {
+            updateDoc(doc(db, 'tenants', sId), { status: 'suspended', autoSuspendPada: serverTimestamp() }).catch(() => {})
+            updateDoc(doc(db, 'slugIndex', slugBersih), { aktif: false }).catch(() => {})
+          }
+          setStatus('tidakAktif')
+          return
+        }
+        if (tenantData.status === 'suspended') { setStatus('tidakAktif'); return }
+
+        setSekolah(tenantData)
         const semuaKej = kSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         const aktifKej = semuaKej.find(k => k.statusKejohanan === 'aktif') || semuaKej[0] || null
         setKej(aktifKej)

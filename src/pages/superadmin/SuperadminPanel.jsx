@@ -4,6 +4,7 @@ import { db } from '../../firebase/config'
 import { createAdminAccount, hantarResetPassword } from '../../firebase/auth'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import TabAkaun from './TabAkaun'
 
 // ── Modal Data & Reset ────────────────────────────────────────────────────────
 
@@ -238,21 +239,52 @@ function warnaExpiry(baki) {
   return 'text-gray-500'
 }
 
+function inisial(nama) {
+  if (!nama) return '?'
+  const kata = nama.trim().split(/\s+/).filter(k => !/^(SK|SMK|SR|SM|PPKI|SJK|SJKC|SJKT)$/i.test(k))
+  const sumber = kata.length ? kata : nama.trim().split(/\s+/)
+  return sumber.slice(0, 2).map(k => k[0]).join('').toUpperCase()
+}
+
+function warnaAvatar(nama) {
+  const palet = [
+    'bg-blue-100 text-blue-700',
+    'bg-purple-100 text-purple-700',
+    'bg-pink-100 text-pink-700',
+    'bg-amber-100 text-amber-700',
+    'bg-emerald-100 text-emerald-700',
+    'bg-cyan-100 text-cyan-700',
+    'bg-indigo-100 text-indigo-700',
+    'bg-rose-100 text-rose-700',
+  ]
+  let hash = 0
+  for (let i = 0; i < (nama || '').length; i++) hash = (hash * 31 + nama.charCodeAt(i)) >>> 0
+  return palet[hash % palet.length]
+}
+
 // ── Kad Statistik ─────────────────────────────────────────────────────────────
 
-function KadStatistik({ label, nilai, sub, warna = 'biru' }) {
+function KadStatistik({ label, nilai, sub, warna = 'biru', onClick, aktif }) {
   const cls = {
     biru:   'bg-blue-50 border-blue-200 text-blue-700',
     hijau:  'bg-green-50 border-green-200 text-green-700',
     kuning: 'bg-amber-50 border-amber-200 text-amber-700',
     merah:  'bg-red-50 border-red-200 text-red-700',
   }
+  const isClickable = typeof onClick === 'function'
   return (
-    <div className={`rounded-xl border p-4 ${cls[warna]}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!isClickable}
+      className={`text-left rounded-xl border p-4 transition-all ${cls[warna]} ${
+        isClickable ? 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer' : 'cursor-default'
+      } ${aktif ? 'ring-2 ring-offset-1 ring-current' : ''}`}
+    >
       <p className="text-xs font-medium opacity-70">{label}</p>
       <p className="text-2xl font-black mt-1">{nilai}</p>
       {sub && <p className="text-[10px] opacity-60 mt-0.5">{sub}</p>}
-    </div>
+    </button>
   )
 }
 
@@ -584,6 +616,23 @@ export default function SuperadminPanel() {
   const [modalPerbaharui,    setModalPerbaharui]     = useState(null)
   const [modalDataReset,     setModalDataReset]      = useState(null)
   const [muatTurunTindakan,  setMuatTurunTindakan]   = useState(null)
+  const [carian,             setCarian]              = useState('')
+  const [tapis,              setTapis]               = useState('semua') // semua | active | suspended | expiring
+  const [susun,              setSusun]               = useState('nama')  // nama | expiry | status
+  const [menuTerbuka,        setMenuTerbuka]         = useState(null)    // { id, top, right } — dropdown fixed position
+
+  useEffect(() => {
+    if (!menuTerbuka) return
+    const tutup = () => setMenuTerbuka(null)
+    window.addEventListener('click', tutup)
+    window.addEventListener('scroll', tutup, true)
+    window.addEventListener('resize', tutup)
+    return () => {
+      window.removeEventListener('click', tutup)
+      window.removeEventListener('scroll', tutup, true)
+      window.removeEventListener('resize', tutup)
+    }
+  }, [menuTerbuka])
 
   async function muatSekolah() {
     setMuatTurun(true)
@@ -620,10 +669,14 @@ export default function SuperadminPanel() {
   }
 
   async function tangguhSekolah(s) {
-    if (!confirm(`Tangguhkan ${s.namaSekolah}? Admin sekolah tidak boleh log masuk semasa ditangguh.`)) return
+    if (!confirm(`Tangguhkan ${s.namaSekolah}?\n\nAdmin/PP/pencatat tidak boleh log masuk & halaman public akan disembunyikan.`)) return
     setMuatTurunTindakan(s.id)
     try {
       await updateDoc(doc(db, 'tenants', s.id), { status: 'suspended', dikemaskinPada: serverTimestamp() })
+      // Sync ke slugIndex supaya SchoolLanding public juga block
+      if (s.slug) {
+        await updateDoc(doc(db, 'slugIndex', s.slug), { aktif: false }).catch(() => {})
+      }
       setSekolah(list => list.map(x => x.id === s.id ? { ...x, status: 'suspended' } : x))
     } catch { alert('Gagal. Sila cuba semula.') }
     setMuatTurunTindakan(null)
@@ -633,6 +686,9 @@ export default function SuperadminPanel() {
     setMuatTurunTindakan(s.id)
     try {
       await updateDoc(doc(db, 'tenants', s.id), { status: 'active', dikemaskinPada: serverTimestamp() })
+      if (s.slug) {
+        await updateDoc(doc(db, 'slugIndex', s.slug), { aktif: true }).catch(() => {})
+      }
       setSekolah(list => list.map(x => x.id === s.id ? { ...x, status: 'active' } : x))
     } catch { alert('Gagal. Sila cuba semula.') }
     setMuatTurunTindakan(null)
@@ -704,6 +760,30 @@ export default function SuperadminPanel() {
   const sekolahAktif   = sekolah.filter(s => s.status === 'active').length
   const sekolahTangguh = sekolah.filter(s => s.status === 'suspended').length
 
+  // Filter + sort untuk tab Senarai Sekolah
+  const carianLower = carian.trim().toLowerCase()
+  const sekolahDipapar = sekolah
+    .filter(s => {
+      if (tapis === 'active'     && s.status !== 'active')    return false
+      if (tapis === 'suspended'  && s.status !== 'suspended') return false
+      if (tapis === 'expiring') {
+        const b = bakiHari(s.tarikhExpiry)
+        if (b === null || b > 30) return false
+      }
+      if (!carianLower) return true
+      const kata = `${s.namaSekolah || ''} ${s.daerah || ''} ${s.slug || ''} ${s.namaAdmin || ''}`.toLowerCase()
+      return kata.includes(carianLower)
+    })
+    .sort((a, b) => {
+      if (susun === 'expiry') {
+        return (bakiHari(a.tarikhExpiry) ?? 9999) - (bakiHari(b.tarikhExpiry) ?? 9999)
+      }
+      if (susun === 'status') {
+        return (a.status || '').localeCompare(b.status || '')
+      }
+      return (a.namaSekolah || '').localeCompare(b.namaSekolah || '')
+    })
+
   // Expiry dalam 30 hari ATAU dah tamat
   const perluTindakan = sekolah.filter(s => {
     const baki = bakiHari(s.tarikhExpiry)
@@ -720,6 +800,7 @@ export default function SuperadminPanel() {
   const TAB = [
     { id: 'sekolah',     label: 'Senarai Sekolah' },
     { id: 'langganan',   label: `Langganan${perluTindakan.length > 0 ? ` (${perluTindakan.length})` : ''}` },
+    { id: 'akaun',       label: 'Akaun' },
     { id: 'keselamatan', label: 'Log Keselamatan' },
   ]
 
@@ -755,12 +836,20 @@ export default function SuperadminPanel() {
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Kad Statistik */}
+        {/* Kad Statistik — clickable untuk tapis */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <KadStatistik label="Jumlah Sekolah"    nilai={jumlahSekolah}          warna="biru" />
-          <KadStatistik label="Aktif"             nilai={sekolahAktif}           warna="hijau" />
-          <KadStatistik label="Digantung"         nilai={sekolahTangguh}         warna="merah" />
-          <KadStatistik label="Perlu Tindakan"    nilai={perluTindakan.length}   warna="kuning" sub="expiry ≤30 hari / tamat" />
+          <KadStatistik label="Jumlah Sekolah" nilai={jumlahSekolah} warna="biru"
+            aktif={tabAktif === 'sekolah' && tapis === 'semua'}
+            onClick={() => { setTabAktif('sekolah'); setTapis('semua') }} />
+          <KadStatistik label="Aktif" nilai={sekolahAktif} warna="hijau"
+            aktif={tabAktif === 'sekolah' && tapis === 'active'}
+            onClick={() => { setTabAktif('sekolah'); setTapis('active') }} />
+          <KadStatistik label="Digantung" nilai={sekolahTangguh} warna="merah"
+            aktif={tabAktif === 'sekolah' && tapis === 'suspended'}
+            onClick={() => { setTabAktif('sekolah'); setTapis('suspended') }} />
+          <KadStatistik label="Perlu Tindakan" nilai={perluTindakan.length} warna="kuning" sub="expiry ≤30 hari / tamat"
+            aktif={tabAktif === 'sekolah' && tapis === 'expiring'}
+            onClick={() => { setTabAktif('sekolah'); setTapis('expiring') }} />
         </div>
 
         {/* Banner amaran jika ada yang tamat */}
@@ -784,23 +873,26 @@ export default function SuperadminPanel() {
 
         {/* Tab */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex border-b border-gray-100 overflow-x-auto">
+          <div className="flex border-b border-gray-200 overflow-x-auto items-end">
             {TAB.map(t => (
               <button key={t.id} onClick={() => setTabAktif(t.id)}
-                className={`shrink-0 px-5 py-3 text-xs font-bold transition-colors ${
+                className={`shrink-0 px-6 py-4 text-sm font-bold transition-colors relative ${
                   tabAktif === t.id
-                    ? 'text-[#003399] border-b-2 border-[#003399] bg-blue-50/50'
+                    ? 'text-[#003399]'
                     : t.id === 'langganan' && perluTindakan.length > 0
                       ? 'text-amber-600 hover:text-amber-700'
                       : 'text-gray-400 hover:text-gray-600'
                 }`}>
                 {t.label}
+                {tabAktif === t.id && (
+                  <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-[#003399] rounded-t" />
+                )}
               </button>
             ))}
             <div className="flex-1" />
             {tabAktif === 'sekolah' && (
               <button onClick={() => setModalTambah(true)}
-                className="m-2 px-3 py-1.5 bg-[#003399] hover:bg-[#002277] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shrink-0">
+                className="m-2 px-3 py-2 bg-[#003399] hover:bg-[#002277] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shrink-0">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
@@ -809,9 +901,58 @@ export default function SuperadminPanel() {
             )}
           </div>
 
+          {/* Toolbar: Cari + Tapis + Susun (khusus tab Sekolah) */}
+          {tabAktif === 'sekolah' && sekolah.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[220px] max-w-md">
+                <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 10a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" value={carian} onChange={e => setCarian(e.target.value)}
+                  placeholder="Cari nama sekolah, daerah, atau slug…"
+                  className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#003399]/20 focus:border-[#003399]" />
+                {carian && (
+                  <button onClick={() => setCarian('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+                )}
+              </div>
+
+              {/* Filter chip */}
+              <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                {[
+                  { id: 'semua',     label: 'Semua',      warna: 'gray'  },
+                  { id: 'active',    label: 'Aktif',      warna: 'green' },
+                  { id: 'suspended', label: 'Digantung',  warna: 'red'   },
+                  { id: 'expiring',  label: 'Expiry ≤30', warna: 'amber' },
+                ].map(f => (
+                  <button key={f.id} onClick={() => setTapis(f.id)}
+                    className={`text-[10px] font-bold px-2.5 py-1.5 rounded-md transition-colors ${
+                      tapis === f.id
+                        ? 'bg-[#003399] text-white shadow-sm'
+                        : 'text-gray-500 hover:bg-gray-100'
+                    }`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort */}
+              <select value={susun} onChange={e => setSusun(e.target.value)}
+                className="text-[10px] font-bold px-2.5 py-2 border border-gray-200 rounded-lg bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#003399]/20">
+                <option value="nama">Susun: Nama</option>
+                <option value="expiry">Susun: Expiry</option>
+                <option value="status">Susun: Status</option>
+              </select>
+
+              <div className="text-[10px] text-gray-400 ml-auto">
+                {sekolahDipapar.length} / {sekolah.length} sekolah
+              </div>
+            </div>
+          )}
+
           {/* ── Tab: Senarai Sekolah ────────────────────────────────────────── */}
           {tabAktif === 'sekolah' && (
-            <div className="overflow-x-auto">
+            <div className="overflow-visible">
               {muatTurun ? (
                 <div className="flex items-center justify-center py-16 gap-2 text-gray-400">
                   <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -828,33 +969,51 @@ export default function SuperadminPanel() {
                     + Tambah sekolah pertama
                   </button>
                 </div>
+              ) : sekolahDipapar.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="text-4xl mb-2 opacity-40">🔍</div>
+                  <p className="text-gray-500 text-sm font-semibold">Tiada sekolah padan dengan tapisan</p>
+                  <p className="text-xs text-gray-400 mt-1">Cuba kata kunci lain atau tukar penapis.</p>
+                  <button onClick={() => { setCarian(''); setTapis('semua') }}
+                    className="mt-3 text-xs text-[#003399] hover:underline font-semibold">
+                    Reset penapis
+                  </button>
+                </div>
               ) : (
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-gray-50">
+                  <thead className="sticky top-0 bg-gray-50 z-10">
+                    <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100">
                       <th className="px-4 py-3 text-left">Sekolah</th>
                       <th className="px-3 py-3 text-left hidden sm:table-cell">Daerah</th>
                       <th className="px-3 py-3 text-left hidden md:table-cell">URL</th>
                       <th className="px-3 py-3 text-center hidden lg:table-cell">Expiry</th>
                       <th className="px-3 py-3 text-center">Status</th>
-                      <th className="px-4 py-3 text-right">Tindakan</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">Tindakan</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sekolah.map(s => {
+                    {sekolahDipapar.map(s => {
                       const baki = bakiHari(s.tarikhExpiry)
+                      const menuBuka = menuTerbuka?.id === s.id
                       return (
-                        <tr key={s.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${baki !== null && baki < 0 ? 'bg-red-50/30' : ''}`}>
+                        <tr key={s.id} className={`border-b border-gray-50 hover:bg-blue-50/30 transition-colors ${baki !== null && baki < 0 ? 'bg-red-50/20' : ''}`}>
                           <td className="px-4 py-3">
-                            <p className="font-semibold text-gray-800 text-xs">{s.namaSekolah || '—'}</p>
-                            <p className="text-[10px] text-gray-400">{s.namaAdmin || '—'}</p>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${warnaAvatar(s.namaSekolah)}`}>
+                                {inisial(s.namaSekolah)}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-gray-800 text-xs truncate">{s.namaSekolah || '—'}</p>
+                                <p className="text-[10px] text-gray-400 truncate">{s.namaAdmin || '—'}</p>
+                              </div>
+                            </div>
                           </td>
                           <td className="px-3 py-3 text-xs text-gray-500 hidden sm:table-cell">{s.daerah || '—'}</td>
                           <td className="px-3 py-3 hidden md:table-cell">
                             {s.slug ? (
                               <a href={`https://goldpodium.web.app/${s.slug}`} target="_blank" rel="noopener noreferrer"
                                 className="text-[10px] font-mono text-[#003399] hover:underline">
-                                /{s.slug}
+                                goldpodium.web.app/{s.slug}
                               </a>
                             ) : <span className="text-[10px] text-gray-300">—</span>}
                           </td>
@@ -862,13 +1021,21 @@ export default function SuperadminPanel() {
                             <p className={`text-[10px] ${warnaExpiry(baki)}`}>
                               {s.tarikhExpiry?.toDate ? s.tarikhExpiry.toDate().toLocaleDateString('ms-MY') : '—'}
                             </p>
+                            {baki !== null && baki <= 30 && (
+                              <p className={`text-[9px] mt-0.5 ${warnaExpiry(baki)}`}>{labelExpiry(baki)}</p>
+                            )}
                           </td>
                           <td className="px-3 py-3 text-center">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${WARNA_STATUS[s.status] || 'bg-gray-100 text-gray-500'}`}>
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full ${WARNA_STATUS[s.status] || 'bg-gray-100 text-gray-500'}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                s.status === 'active'    ? 'bg-green-500' :
+                                s.status === 'suspended' ? 'bg-red-500'   :
+                                'bg-yellow-500'
+                              }`} />
                               {LABEL_STATUS[s.status] || 'Menunggu'}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-4 py-3 text-right relative">
                             {muatTurunTindakan === s.id ? (
                               <svg className="w-4 h-4 animate-spin text-gray-400 ml-auto" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -877,34 +1044,26 @@ export default function SuperadminPanel() {
                             ) : (
                               <div className="flex items-center justify-end gap-1">
                                 <button onClick={() => masukSebagaiAdmin(s)}
-                                  className="text-[10px] font-bold text-[#003399] hover:text-white hover:bg-[#003399] px-2 py-1 rounded border border-[#003399]/30 hover:border-[#003399] transition-colors">
+                                  className="text-[10px] font-bold text-[#003399] hover:text-white hover:bg-[#003399] px-2.5 py-1.5 rounded-md border border-[#003399]/30 hover:border-[#003399] transition-colors">
                                   Masuk
                                 </button>
-                                <button onClick={() => resetPwAdmin(s)}
-                                  className="text-[10px] font-bold text-orange-500 hover:text-white hover:bg-orange-500 px-2 py-1 rounded border border-orange-300 hover:border-orange-500 transition-colors"
-                                  title="Hantar reset password ke emel admin">
-                                  Reset PW
-                                </button>
-                                {s.status === 'active' ? (
-                                  <button onClick={() => tangguhSekolah(s)}
-                                    className="text-[10px] font-bold text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors">
-                                    Tangguh
-                                  </button>
-                                ) : (
-                                  <button onClick={() => aktifkanSekolah(s)}
-                                    className="text-[10px] font-bold text-green-600 hover:text-green-800 px-2 py-1 rounded hover:bg-green-50 transition-colors">
-                                    Aktifkan
-                                  </button>
-                                )}
-                                <button onClick={() => setModalDataReset(s)}
-                                  className="text-[10px] font-bold text-purple-500 hover:text-white hover:bg-purple-600 px-2 py-1 rounded border border-purple-200 hover:border-purple-600 transition-colors"
-                                  title="Data & Reset">
-                                  Data
-                                </button>
-                                <button onClick={() => padamSekolah(s)}
-                                  className="text-[10px] font-bold text-gray-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors"
-                                  title="Padam sekolah">
-                                  🗑
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    if (menuBuka) { setMenuTerbuka(null); return }
+                                    const r = e.currentTarget.getBoundingClientRect()
+                                    setMenuTerbuka({ id: s.id, top: r.bottom + 4, right: window.innerWidth - r.right })
+                                  }}
+                                  title="Tindakan lain"
+                                  className={`p-1.5 rounded-md transition-colors ${
+                                    menuBuka ? 'bg-gray-200 text-gray-800' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+                                  }`}
+                                >
+                                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <circle cx="5"  cy="12" r="1.6" />
+                                    <circle cx="12" cy="12" r="1.6" />
+                                    <circle cx="19" cy="12" r="1.6" />
+                                  </svg>
                                 </button>
                               </div>
                             )}
@@ -992,6 +1151,11 @@ export default function SuperadminPanel() {
             </div>
           )}
 
+          {/* ── Tab: Akaun ───────────────────────────────────────────────────── */}
+          {tabAktif === 'akaun' && (
+            <TabAkaun sekolahList={sekolah} />
+          )}
+
           {/* ── Tab: Log Keselamatan ─────────────────────────────────────────── */}
           {tabAktif === 'keselamatan' && (
             <div className="p-6">
@@ -1040,6 +1204,52 @@ export default function SuperadminPanel() {
           )}
         </div>
       </div>
+
+      {/* Dropdown menu ⋯ — fixed position supaya tak clipped */}
+      {menuTerbuka && (() => {
+        const s = sekolah.find(x => x.id === menuTerbuka.id)
+        if (!s) return null
+        return (
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ top: menuTerbuka.top, right: menuTerbuka.right }}
+            className="fixed z-50 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden"
+          >
+            <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tindakan</p>
+              <p className="text-xs font-bold text-gray-700 truncate">{s.namaSekolah}</p>
+            </div>
+            <button onClick={() => { setMenuTerbuka(null); resetPwAdmin(s) }}
+              className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2">
+              <span className="text-sm">🔑</span> Reset Password
+            </button>
+            <button onClick={() => { setMenuTerbuka(null); setModalPerbaharui(s) }}
+              className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2">
+              <span className="text-sm">📅</span> Perbaharui Langganan
+            </button>
+            {s.status === 'active' ? (
+              <button onClick={() => { setMenuTerbuka(null); tangguhSekolah(s) }}
+                className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-red-50 hover:text-red-700 flex items-center gap-2">
+                <span className="text-sm">⏸</span> Tangguh Akaun
+              </button>
+            ) : (
+              <button onClick={() => { setMenuTerbuka(null); aktifkanSekolah(s) }}
+                className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2">
+                <span className="text-sm">▶</span> Aktifkan Akaun
+              </button>
+            )}
+            <button onClick={() => { setMenuTerbuka(null); setModalDataReset(s) }}
+              className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2">
+              <span className="text-sm">♻️</span> Data & Reset
+            </button>
+            <div className="border-t border-gray-100" />
+            <button onClick={() => { setMenuTerbuka(null); padamSekolah(s) }}
+              className="w-full text-left px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center gap-2">
+              <span className="text-sm">🗑</span> Padam Sekolah
+            </button>
+          </div>
+        )
+      })()}
 
       {modalTambah && (
         <ModalTambahSekolah onTutup={() => setModalTambah(false)} onSimpan={muatSekolah} />

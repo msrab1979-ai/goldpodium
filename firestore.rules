@@ -79,6 +79,15 @@ service cloud.firestore {
       allow read, write: if isSuperadmin();
     }
 
+    // ─── Sejarah langganan (superadmin sahaja — audit trail bayaran) ──────────
+    match /tenants/{schoolId}/langganan_sejarah/{docId} {
+      allow read, write: if isSuperadmin();
+    }
+    // Collection group query untuk agregasi merentas semua tenant (Tab Akaun)
+    match /{path=**}/langganan_sejarah/{docId} {
+      allow read: if isSuperadmin();
+    }
+
     // ─── Sessions (Anonymous Auth pencatat/pengurus) ──────────────────────────
     // Client tulis session doc selepas signInAnonymously + PIN verified.
     // Constraints:

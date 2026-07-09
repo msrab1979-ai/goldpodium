@@ -171,6 +171,13 @@ export async function loginWithEmail(email, password) {
         const tenant = tenantSnap.data()
         const expiry = tenant.tarikhExpiry?.toMillis?.() || 0
         if (expiry > 0 && expiry < Date.now()) {
+          // Auto-suspend supaya public landing + pencatat + PP juga terus block
+          if (tenant.status !== 'suspended') {
+            updateDoc(doc(db, 'tenants', userData.schoolId), { status: 'suspended', autoSuspendPada: serverTimestamp() }).catch(() => {})
+            if (tenant.slug) {
+              updateDoc(doc(db, 'slugIndex', tenant.slug), { aktif: false }).catch(() => {})
+            }
+          }
           await firebaseSignOut(auth)
           throw Object.assign(
             new Error('Langganan sistem telah tamat. Sila hubungi Gold Podium untuk memperbaharui.'),
