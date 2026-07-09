@@ -212,7 +212,15 @@ tenants/{schoolId}/
 - Sijil Pencapaian individu: `mata_olahragawan.acaraDetail_*` rank ≤ hadKedudukan
 - Sijil Pencapaian relay: scan heat final (`fasa` final/terus_final), `statusKeputusan` dalam
   `['ada_keputusan', 'rasmi', 'diterima']` — `ada_keputusan` = publish admin, `diterima` = publish
-  pencatat. Setiap ahli `ahliPasukan[]` dapat sijil individu sendiri.
+  pencatat. Setiap ahli `ahliPasukan[]` dapat sijil individu sendiri (nama sendiri, bukan nama pasukan).
+
+**Relay pasukan tanpa ahli (fix 2026-07-09, commit f92cc7b):**
+- `ambilSenaraiPencapaian()` return `{ senarai, pasukanTanpaAhli }` — BUKAN array terus
+- `pasukanTanpaAhli` = pasukan relay menang (rank ≤ had) tapi `ahliPasukan[]` kosong/tiada nama —
+  dulu dilangkau senyap, sekarang dikesan dan dilaporkan
+- `SijilPencapaianPP.jsx` papar kotak amaran amber: senarai acara/pasukan/kedudukan terjejas +
+  arahan hubungi admin untuk isi nama ahli dalam heat
+- Nota UI dibetulkan: relay dapat sijil individu automatik (nota lama "hubungi admin" mengelirukan)
 
 ## Security — Firestore Rules (SIAP 2026-07-08)
 
