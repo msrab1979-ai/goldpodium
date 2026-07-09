@@ -2165,6 +2165,12 @@ export default function SchoolLanding() {
             <div className="h-px w-8 bg-gray-200" />
           </div>
           <p className="text-[9px] text-gray-300">© {new Date().getFullYear()} · Hak Cipta Terpelihara</p>
+          <p className="text-[10px] text-gray-400">
+            Sistem ini dibina oleh{' '}
+            <a href="/" target="_blank" rel="noopener" className="font-semibold text-blue-600 hover:underline">Gold Podium</a>
+            {' · '}
+            <a href="/" target="_blank" rel="noopener" className="font-semibold text-green-600 hover:underline">Berminat? →</a>
+          </p>
         </div>
       </footer>
 

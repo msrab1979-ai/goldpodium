@@ -680,6 +680,24 @@ tenants/{schoolId}/langganan_sejarah/{docId}
 - Edit / Tandakan Sah / Tandakan Menunggu / 🗑 Padam
 - Status "Batal" DIBUANG — kalau nak buang entry, guna Padam
 
+## Demo Tenant + Promo Page + Footer Kredit (2026-07-09)
+
+### Tenant Demo — goldpodium.web.app/demo
+- Tenant dummy SEBENAR untuk butang "Cuba Demo": slug `demo`, schoolId `skl_demo`, kejohanan `KEJ-DEMO-2026`
+- Route statik `/demo` (mockup `Demo.jsx`) DIBUANG dari `App.jsx` — URL `/demo` kini ditangkap `/:slug` → SchoolLanding sebenar. `Demo.jsx` masih wujud tapi tidak digunakan
+- Data fiktif: 6 sekolah (GML/HRJ/SAM/BKI/PEM/TMM), 8 acara — 4 selesai (heat `fasa: 'final'`, `statusKeputusan: 'rasmi'`) + 4 akan datang, medal_tally + contrib, 4 rekod `D` aktif
+- Tenant expiry 2099 — takkan kena auto-suspend
+- **Reset data demo**: `ADMIN_PASSWORD=... node seed-demo-tenant.cjs` (login superadmin, idempotent — overwrite doc sama)
+
+### Promo Page (Landing.jsx)
+- Seksyen baru "Kelebihan Sistem" — 8 kad (Portal PP, Start List Auto, Medal Tally, Rekod S/D/N/K, Multi-tenant Selamat, Cetakan 1 Klik, PWA, Pengesahan Online) — antara banner social proof dan seksyen Harga, guna const `KELEBIHAN`
+- Stat bar hero: `7 Ciri` → `15+ Kelebihan`
+- Semua butang "Cuba Demo" kekal `<Link to="/demo">` — tak perlu ubah, slug tangkap
+
+### Footer Kredit Tenant (SchoolLanding.jsx)
+- Baris footer semua tenant: "Sistem ini dibina oleh **Gold Podium** · **Berminat? →**" — dua-dua link ke `/` (promo page), buka tab baru
+- Terpakai automatik semua tenant (hardcoded dalam SchoolLanding, bukan per-tenant config)
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`

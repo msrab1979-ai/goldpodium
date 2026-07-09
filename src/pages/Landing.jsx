@@ -66,6 +66,17 @@ const CIRI = [
   },
 ]
 
+const KELEBIHAN = [
+  { icon: '👥', tajuk: 'Portal Pengurus Pasukan',       hurai: 'Setiap sekolah daftar atlet sendiri — taip terus atau import Excel. Beban admin turun 90%.' },
+  { icon: '📋', tajuk: 'Start List & Heat Auto Jana',   hurai: 'Saringan → Separuh Akhir → Final dijana automatik. Susunan lorong ikut piawaian World Athletics.' },
+  { icon: '🥇', tajuk: 'Medal Tally Masa Nyata',        hurai: 'Pungutan pingat setiap sekolah dikira automatik sebaik keputusan disahkan. Tiada kira manual.' },
+  { icon: '📜', tajuk: 'Rekod Kejohanan S/D/N/K',       hurai: 'Rekod Sekolah, Daerah, Negeri & Kebangsaan disimpan kekal — pecahan rekod dikesan automatik tahun demi tahun.' },
+  { icon: '🔒', tajuk: 'Data Sekolah Terasing & Selamat', hurai: 'Setiap sekolah ada ruang data sendiri. Login berasingan untuk Admin, Pencatat & Pengurus Pasukan.' },
+  { icon: '🖨️', tajuk: 'Cetakan Lengkap 1 Klik',        hurai: 'Keputusan rasmi 3 salinan (Juruhebah · Hadiah · Fail), start list, borang — semua PDF siap cetak.' },
+  { icon: '📱', tajuk: 'Boleh Install Macam App',       hurai: 'PWA — pasang terus di telefon tanpa App Store. Guna di padang, di khemah, di mana sahaja.' },
+  { icon: '✅', tajuk: 'Pengesahan Penyertaan Online',  hurai: 'Sekolah sahkan senarai atlet dalam sistem. Admin nampak status semua sekolah dalam satu skrin.' },
+]
+
 
 export default function Landing() {
   const NO_WA  = '60199761693'
@@ -142,7 +153,7 @@ export default function Landing() {
             {[
               { nilai: '100%', label: 'Auto — tiada input manual' },
               { nilai: 'Masa Nyata', label: 'Keputusan langsung di telefon' },
-              { nilai: '7 Ciri', label: 'Eksklusif sistem olahraga' },
+              { nilai: '15+', label: 'Kelebihan — dari pendaftaran hingga sijil' },
             ].map(s => (
               <div key={s.label} className="px-6 py-5 text-center">
                 <p className="text-xl sm:text-2xl font-black text-yellow-400">{s.nilai}</p>
@@ -201,6 +212,28 @@ export default function Landing() {
             className="shrink-0 px-7 py-3.5 bg-yellow-400 hover:bg-yellow-300 text-[#003399] font-black rounded-xl text-sm transition-all shadow-lg whitespace-nowrap">
             Cuba Demo →
           </Link>
+        </div>
+      </section>
+
+      {/* ── KELEBIHAN SISTEM ── */}
+      <section className="py-20 px-5 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-[10px] font-bold text-[#003399] uppercase tracking-widest mb-2">Kelebihan Sistem</p>
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900">
+              Bukan Sekadar 7 Ciri — <span className="text-[#003399]">Ini Semua Yang Anda Dapat</span>
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {KELEBIHAN.map(k => (
+              <div key={k.tajuk}
+                className="bg-gray-50 border border-gray-100 rounded-2xl p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all">
+                <div className="text-2xl mb-3">{k.icon}</div>
+                <h3 className="text-sm font-bold text-gray-900 mb-1.5">{k.tajuk}</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">{k.hurai}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

@@ -8,7 +8,6 @@ import PWAInstallPrompt from './components/PWAInstallPrompt'
 const Landing            = lazy(() => import('./pages/Landing'))
 const Login              = lazy(() => import('./pages/Login'))
 const SchoolLanding      = lazy(() => import('./pages/SchoolLanding'))
-const Demo               = lazy(() => import('./pages/Demo'))
 const SuperadminSetup    = lazy(() => import('./pages/superadmin/SuperadminSetup'))
 const SuperadminPanel    = lazy(() => import('./pages/superadmin/SuperadminPanel'))
 const AdminDashboard     = lazy(() => import('./pages/admin/AdminDashboard'))
@@ -194,7 +193,7 @@ function AppRoutes() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<Landing />} />
-        <Route path="/demo" element={<Demo />} />
+        {/* /demo kini tenant sebenar (slug 'demo') — ditangkap oleh route /:slug */}
 
         <Route path="/privasi" element={
           <StaticPage title="Dasar Privasi">
