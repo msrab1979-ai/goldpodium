@@ -60,6 +60,7 @@ export default function SijilPencapaianPP() {
   const [sijilCfg, setSijilCfg]    = useState(null)
   const [kejohanan, setKejohanan]  = useState(null)
   const [senarai, setSenarai]      = useState([])
+  const [pasukanTanpaAhli, setPasukanTanpaAhli] = useState([])
   const [loading, setLoading]      = useState(true)
   const [err, setErr]              = useState('')
   const [downloading, setDownloading] = useState({})
@@ -102,8 +103,10 @@ export default function SijilPencapaianPP() {
       setKejohanan(kej)
 
       const had = Number(cfg.hadKedudukan) || 5
-      const list = await ambilSenaraiPencapaian(db, schoolId, kej.id, had, kodSekolah)
+      const { senarai: list, pasukanTanpaAhli: tanpaAhli } =
+        await ambilSenaraiPencapaian(db, schoolId, kej.id, had, kodSekolah)
       setSenarai(list)
+      setPasukanTanpaAhli(tanpaAhli)
     } catch (e) {
       setErr('Ralat memuatkan: ' + e.message)
     }
@@ -199,6 +202,25 @@ export default function SijilPencapaianPP() {
           Hanya murid yang dapat Tempat 1 hingga {had} dipaparkan. Sijil dijana automatik selepas keputusan rasmi direkod.
         </p>
       </div>
+
+      {/* Amaran: pasukan relay menang tapi tiada nama ahli */}
+      {pasukanTanpaAhli.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
+          <p className="text-xs font-bold text-amber-800 mb-1">
+            ⚠️ {pasukanTanpaAhli.length} pasukan relay menang tetapi tiada nama ahli — sijil tidak dapat dijana
+          </p>
+          <ul className="text-[11px] text-amber-700 space-y-0.5">
+            {pasukanTanpaAhli.map((t, i) => (
+              <li key={i}>
+                · {t.namaAcara} — Pasukan {t.pasukanRelay} ({labelKedudukan(t.rank)})
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-amber-600 mt-1.5">
+            Sila hubungi admin untuk isi nama ahli pasukan dalam heat berkenaan.
+          </p>
+        </div>
+      )}
 
       {/* Stats + Download All */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -296,7 +318,7 @@ export default function SijilPencapaianPP() {
         <p className="font-bold">Nota:</p>
         <p>· Hanya murid yang BETUL-BETUL dapat Tempat 1 hingga {had} dipaparkan.</p>
         <p>· Sijil dijana automatik selepas pengadil rekod keputusan rasmi.</p>
-        <p>· Acara berpasukan (relay) — sila hubungi admin jika perlu sijil khas.</p>
+        <p>· Acara berpasukan (relay) — setiap ahli pasukan yang menang dapat sijil individu automatik atas nama sendiri.</p>
       </div>
     </div>
   )

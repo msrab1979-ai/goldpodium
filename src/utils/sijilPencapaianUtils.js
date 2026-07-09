@@ -104,6 +104,7 @@ async function ambilSenaraiIndividu(db, schoolId, kejId, hadKedudukan, kodSekola
  */
 async function ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah) {
   const senarai = []
+  const pasukanTanpaAhli = []
   const acaraSnap = await getDocs(
     query(
       collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'),
@@ -132,11 +133,23 @@ async function ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah) 
         if (!rank || rank > hadKedudukan) continue
         if (['DNS', 'DNF', 'DQ'].includes(p.status)) continue
         if (kodSekolah && p.kodSekolah !== kodSekolah) continue
-        if (!Array.isArray(p.ahliPasukan) || p.ahliPasukan.length === 0) continue
+
+        const ahliSah = (Array.isArray(p.ahliPasukan) ? p.ahliPasukan : [])
+          .filter(a => a.namaAtlet || a.noKP)
+        if (ahliSah.length === 0) {
+          // Pasukan menang tapi tiada nama ahli — sijil tak dapat dijana
+          pasukanTanpaAhli.push({
+            namaAcara,
+            kodSekolah:   p.kodSekolah   || '',
+            namaSekolah:  p.namaSekolah  || '',
+            pasukanRelay: p.pasukanRelay || 'A',
+            rank,
+          })
+          continue
+        }
 
         const pingat = { 1: 'emas', 2: 'perak', 3: 'gangsa', 4: 'tempat4', 5: 'tempat5' }[rank] || ''
-        for (const ahli of p.ahliPasukan) {
-          if (!ahli.namaAtlet && !ahli.noKP) continue
+        for (const ahli of ahliSah) {
           senarai.push({
             noKP:        ahli.noKP      || '',
             namaAtlet:   ahli.namaAtlet || '',
@@ -156,7 +169,7 @@ async function ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah) 
       }
     }
   }
-  return senarai
+  return { senarai, pasukanTanpaAhli }
 }
 
 /**
@@ -168,19 +181,23 @@ async function ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah) 
  * @param {string} kejId Kejohanan ID
  * @param {number} hadKedudukan Maximum rank yang layak (1-10)
  * @param {string|null} kodSekolah Filter sekolah, null = semua
+ * @returns {{ senarai: Array, pasukanTanpaAhli: Array }} pasukanTanpaAhli = pasukan relay
+ *   yang menang tapi ahliPasukan[] kosong — sijil tak dapat dijana untuk mereka
  */
 export async function ambilSenaraiPencapaian(db, schoolId, kejId, hadKedudukan = 5, kodSekolah = null) {
-  const [individu, relay] = await Promise.all([
+  const [individu, relayResult] = await Promise.all([
     ambilSenaraiIndividu(db, schoolId, kejId, hadKedudukan, kodSekolah),
     ambilSenaraiRelay(db, schoolId, kejId, hadKedudukan, kodSekolah),
   ])
-  const senarai = [...individu, ...relay]
+  const senarai = [...individu, ...relayResult.senarai]
 
-  return senarai.sort((a, b) => {
+  senarai.sort((a, b) => {
     const c = (a.namaAtlet || '').localeCompare(b.namaAtlet || '', 'ms')
     if (c !== 0) return c
     return (a.rank || 99) - (b.rank || 99)
   })
+
+  return { senarai, pasukanTanpaAhli: relayResult.pasukanTanpaAhli }
 }
 
 // ─── PDF generator ────────────────────────────────────────────────────────────
