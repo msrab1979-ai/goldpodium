@@ -222,9 +222,9 @@ tenants/{schoolId}/
   arahan hubungi admin untuk isi nama ahli dalam heat
 - Nota UI dibetulkan: relay dapat sijil individu automatik (nota lama "hubungi admin" mengelirukan)
 
-## Security — Firestore Rules (SIAP 2026-07-08)
+## Security — Firestore Rules (SIAP 2026-07-08, S1 fix 2026-07-09)
 
-**Rating semasa: 4.5/5 — SIAP untuk deploy peringkat daerah/negeri**
+**Rating semasa: 4.8/5 — SIAP untuk deploy peringkat daerah/negeri**
 
 ### Multi-Tenant Isolation via Session Doc (commit 6af7947)
 - `canWriteTenant(schoolId)` — semua write kena verify:
@@ -236,22 +236,39 @@ tenants/{schoolId}/
 - Immutable (create + delete sahaja, no update)
 - Auto-expire 8 jam via `expireAt` field
 
+### S1 — Ketatkan session pencatat (commit 46aa4fe, 2026-07-09)
+- **Masalah lama:** rules buta percaya client bila `role=='pencatat'` — sesiapa
+  boleh cipta session pencatat palsu untuk mana-mana tenant.
+- **Fix:** helper `getUserDoc(schoolId, userDocId)` — rules kini sahkan di server:
+  - `userDocId` wujud dalam `tenants/{schoolId}/users/`
+  - `role == 'pencatat'`, `kodAkses` padan, `isAktif != false`
+- Kongsi 1 kodAkses antara banyak pencatat TETAP dibenarkan (userDocId sama sah).
+  Tiap peranti dapat anon UID unik → session doc berasingan.
+- Disahkan 25/25 test emulator lulus; deployed live.
+
 ### TTL Cleanup
 - `expireAt` field ditambah ke `sessions` (8 jam) + `login_attempts` (7 hari)
 - TTL policy setup di Firebase Console Firestore → TTL (per collection group)
 - Firestore auto-padam docs dalam 24 jam selepas expireAt
 
 ### Emulator Test
-- `test-multitenant-rules.cjs` — 20 test cases, semua pass
-- Guna `@firebase/rules-unit-testing`
+- `test-multitenant-rules.cjs` — 25 test cases, semua pass
+- Guna `@firebase/rules-unit-testing` (perlu Java: `/opt/homebrew/opt/openjdk/bin`)
+- Jalan: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" npx firebase emulators:exec --only firestore "node test-multitenant-rules.cjs"`
 - Verify cross-tenant write dihalang untuk anon, admin, pencatat, PP
+- Termasuk 4 test S1: pencatat sah lulus; palsu (tiada userDocId / userDocId tak wujud / kodAkses salah / cross-tenant) ditolak
 
 ### Storage Rules
 - Anonymous user TAK boleh upload logos/sijil (size + content-type check)
 - Belum enable Firebase Storage untuk projek — rules standby
 
 ### Yang Boleh Improved
-- Pencatat session — rules tak boleh verify `kodAkses` (Firestore rules tak query). Attack surface kecil.
+- ~~Pencatat session — rules tak verify kodAkses~~ ✅ FIXED (S1, commit 46aa4fe)
+- R1: `runPostRasmi` medal write guna `getDoc→updateDoc` (bukan transaction).
+  Risiko double-count HANYA bila acara SAMA diproses 2 peranti serentak.
+  Rendah — heat update dah pakai transaction + contrib key idempotent + rollback.
+  Belum fix (perlu sesi khas + test teliti — jangan tergesa, ia jantung kiraan).
+- S2: `login_attempts` public write — rate-limit boleh dipintas. Sederhana.
 - Cadangan future: Cloud Function untuk audit log
 
 ## PP Dashboard — Fixes Kritikal (2026-07-05)
