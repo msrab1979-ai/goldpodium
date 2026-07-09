@@ -827,12 +827,8 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
   }
 
   function toggleGrp(kat) {
-    setOpenGrps(prev => {
-      const next = new Set(prev)
-      if (next.has(kat)) next.delete(kat)
-      else next.add(kat)
-      return next
-    })
+    // Accordion eksklusif — buka satu, yang lain tutup
+    setOpenGrps(prev => (prev.has(kat) ? new Set() : new Set([kat])))
   }
 
   async function cetakKatPDF(kat, rows) {
@@ -1240,7 +1236,6 @@ export default function SchoolLanding() {
 
   usePWATitle(sekolah?.namaSekolah || cfg?.namaSistem)
   const [status,   setStatus]   = useState('muatTurun')
-  const [stats,    setStats]    = useState({ acara: 0, sekolah: 0, hari: 0 })
 
   // Jadual & keputusan
   const [activeTab,      setActiveTab]      = useState('jadual')
@@ -1413,27 +1408,12 @@ export default function SchoolLanding() {
           }
         })
         setKategoriMap(kMap)
-        // Auto-expand hari ini atau hari pertama
-        const hariKeys = [...new Set(list.map(a => a.tarikhAcara).filter(Boolean))].sort()
-        const todayKey = hariKeys.find(k => isToday(k))
-        if (todayKey) setExpandedDays(new Set([todayKey]))
-        else if (hariKeys.length > 0) setExpandedDays(new Set([hariKeys[0]]))
+        // Semua hari tutup secara default — user pilih hari sendiri
       },
       () => setJadualLoading(false)
     )
     return () => unsub()
   }, [schoolId, kej?.id])
-
-  // ── Load stats ──
-  useEffect(() => {
-    if (!schoolId || !kej?.id) return
-    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'))
-      .then(aSnap => {
-        const list = aSnap.docs.map(d => d.data())
-        const hariSet = new Set(list.map(a => a.tarikhAcara).filter(Boolean))
-        setStats({ acara: list.length, sekolah: Object.keys(sekolahMap).length, hari: hariSet.size })
-      }).catch(() => {})
-  }, [schoolId, kej?.id, sekolahMap])
 
   // ── Toggle acara expand + load heat ──
   async function toggleAcara(a) {
@@ -1447,10 +1427,17 @@ export default function SchoolLanding() {
     if (heatCache[key] !== undefined) return
     setHeatLoading(prev => new Set([...prev, key]))
     try {
-      const snap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'heat'))
-      const heatsAcara = snap.docs
+      // Query tepat per acara (bukan muat turun seluruh koleksi heat) —
+      // dua field disemak sebab doc lama guna acaraId, baru guna aceraId
+      const heatCol = collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'heat')
+      const [s1, s2] = await Promise.all([
+        getDocs(query(heatCol, where('aceraId', '==', key))),
+        getDocs(query(heatCol, where('acaraId', '==', key))),
+      ])
+      const seen = new Set()
+      const heatsAcara = [...s1.docs, ...s2.docs]
+        .filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true })
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(h => (h.aceraId || h.acaraId) === key)
         .sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0))
       setHeatCache(prev => ({ ...prev, [key]: heatsAcara }))
       // Load rekod D/N/K untuk acara ini
@@ -1880,11 +1867,9 @@ export default function SchoolLanding() {
                     return (
                       <div key={date} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                         <button
-                          onClick={() => setExpandedDays(prev => {
-                            const next = new Set(prev)
-                            if (next.has(date)) next.delete(date); else next.add(date)
-                            return next
-                          })}
+                          onClick={() => setExpandedDays(prev =>
+                            prev.has(date) ? new Set() : new Set([date])
+                          )}
                           className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${isOpen ? 'bg-[#003399]' : 'hover:bg-gray-50'}`}>
                           <div className="flex items-center gap-2.5">
                             {todayDt && !isOpen && <span className="w-2 h-2 rounded-full bg-[#003399] shrink-0" />}
