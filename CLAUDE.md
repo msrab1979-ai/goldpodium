@@ -462,6 +462,23 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - Data: `pengesahan/{kodSekolah}` per kejohanan + `sekolah/{kodSekolah}.bypassPengesahan`
 - **Tapis sekolah**: baca `pendaftaran` kejohanan → ambil `kodSekolah` unik → match koleksi `sekolah` — sekolah yang tak daftar tidak dipapar (selamat untuk old + new tenant)
 
+## Pengurusan Pengguna (UserManagement) — Pencatat Login
+
+- Route admin: `/admin/pengurusan-pengguna` → `UserManagement.jsx`
+- Firestore path: `tenants/{schoolId}/users/{docId}` — ada `kodAkses`, `pinHash`, `role`, `isAktif`
+- Login pencatat guna: **slug sekolah** (bukan schoolId) + **kodAkses** (uppercase) + **PIN 6 digit**
+
+### Debug Pencatat Gagal Login — Semak Urutan
+1. **"Kod sekolah tidak dijumpai"** → `slugIndex/{slug}` tiada atau `aktif: false` — berlaku kalau tenat dibuat manual (bukan via SuperadminPanel)
+2. **"Kod akses tidak dijumpai"** → `tenants/{schoolId}/users` kosong, atau `kodAkses` tak match (sensitif huruf besar — kod login auto-uppercase, Firestore wajib simpan uppercase juga)
+3. **"PIN tidak betul"** → `pinHash` dalam Firestore tak match — berlaku kalau PIN ditukar tapi hash lama masih ada, atau PIN diinput dengan spasi
+4. **"Akaun ini tidak aktif"** → `isAktif: false` dalam user doc
+
+### Punca biasa tenat baru gagal
+- `slugIndex/{slug}` wujud tapi `aktif: false` — semak Firebase Console → Firestore → `slugIndex`
+- User doc ada `pin` field (plain text lama) tapi tiada `pinHash` — wajib ada `pinHash` untuk login berjaya
+- Superadmin create tenat via `SuperadminPanel.jsx` → `createAdminAccount()` → `slugIndex` auto-cipta dengan `aktif: true`
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`
