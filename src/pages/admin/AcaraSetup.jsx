@@ -257,7 +257,7 @@ function HariHeader({ hIdx, tarikh, hariLabel, count, onTukar }) {
 
 // ─── EditAcaraRow — inline edit untuk baris sedia ada ────────────────────────
 
-function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved, onCancel }) {
+function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved, onCancel, kejDefaultLorong = 8 }) {
   const kejohananId = kejId // backward compat alias
   const peringkatMode0 = acara.peringkat === 'saringan_qf'    ? 'saringan_qf'
     : acara.peringkat === 'saringan_sf'    ? 'saringan_sf'
@@ -357,7 +357,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
       isLompatTinggi: /lompat tinggi/i.test(form.namaAcaraPendek),
       unitUkuran: isPadang ? 'm' : 's',
-      bilanganLorong: isPadang ? null : 8,
+      bilanganLorong: isPadang ? null : kejDefaultLorong,
       bilanganFinalis: 8, bilanganCubaan: isPadang ? 6 : 0,
       hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
       statusAcara: 'akan_datang', isAktif: true,
@@ -617,7 +617,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
 
 const LOKASI_LIST = ['Trek Utama','Padang A','Padang B','Padang C','Padang D','Gelanggang']
 
-function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, onSaved, onCancel }) {
+function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, onSaved, onCancel, kejDefaultLorong = 8 }) {
   const kejohananId = kejId
   // Smart defaults dari acara terakhir dalam hari yang sama
   const inHari = acaraList
@@ -746,7 +746,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       adaHeat: adaHeatVal,
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
       unitUkuran: isPadang ? 'm' : 's',
-      bilanganLorong: isPadang ? null : 8,
+      bilanganLorong: isPadang ? null : kejDefaultLorong,
       bilanganFinalis: 8, bilanganCubaan: isPadang ? 6 : 0,
       hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
       statusAcara: 'akan_datang', isAktif: true,
@@ -792,7 +792,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       adaHeat: PERINGKAT_DENGAN_HEAT.includes(peringkat),
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
       unitUkuran: isPadang ? 'm' : 's',
-      bilanganLorong: isPadang ? null : 8,
+      bilanganLorong: isPadang ? null : kejDefaultLorong,
       bilanganFinalis: 8, bilanganCubaan: isPadang ? 6 : 0,
       hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
       isTerbuka: isTerbuka,
@@ -1693,7 +1693,7 @@ function WaConfigPanel({ schoolId, kejId }) {
 
 // ─── AcaraModal ───────────────────────────────────────────────────────────────
 
-function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategoriList = [], defaultTarikh = '' }) {
+function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategoriList = [], defaultTarikh = '', kejDefaultLorong = 8 }) {
   const kejohananId = kejId
   const isEdit = mode === 'edit'
 
@@ -1709,7 +1709,7 @@ function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategori
     parentAcaraId:  initial?.parentAcaraId  || '',
     sesi:           initial?.sesi           || 'Pagi',
     jenisAcara:     initial?.jenisAcara     || 'lorong',
-    bilanganLorong: initial?.bilanganLorong || 8,
+    bilanganLorong: initial?.bilanganLorong || kejDefaultLorong,
     bilanganFinalis:initial?.bilanganFinalis|| 8,
     caraPilihFinal: initial?.caraPilihFinal || 'hybrid',
     wildcardSlot:   initial?.wildcardSlot   || 2,
@@ -2036,7 +2036,7 @@ function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategori
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <FormField label="Bilangan Lorong">
-                      <input type="number" min={4} max={10} value={form.bilanganLorong}
+                      <input type="number" min={4} max={8} value={form.bilanganLorong}
                         onChange={e => set('bilanganLorong', e.target.value)} className={inputCls} />
                     </FormField>
                     <FormField label="Bilangan Finalis">
@@ -2994,6 +2994,16 @@ export default function AcaraSetup() {
   const kejId    = ctx.id       || ''
   const namaKej  = ctx.namaKejohanan || ctx.nama || ''
 
+  // Default lorong dari setup kejohanan (4–8) — acara baru ikut nilai ini.
+  // Diletak sebelum guard supaya hook tidak dipanggil secara bersyarat.
+  const [kejDefaultLorong, setKejDefaultLorong] = useState(8)
+  useEffect(() => {
+    if (!schoolId || !kejId) return
+    getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId))
+      .then(s => { if (s.exists()) setKejDefaultLorong(Number(s.data().defaultLorong) || 8) })
+      .catch(() => {})
+  }, [schoolId, kejId])
+
   // Guard — jika tiada konteks
   if (!schoolId || !kejId) {
     return (
@@ -3505,6 +3515,7 @@ export default function AcaraSetup() {
                                     kejId={kejId}
                                     kategoriList={kategoriList}
                                     acaraList={acaraList}
+                                    kejDefaultLorong={kejDefaultLorong}
                                     onSaved={(updated) => {
                                       setAcaraList(l => l.map(x =>
                                         String(x.noAcara || x.id) === rowKey ? { ...x, ...updated } : x
@@ -3629,6 +3640,7 @@ export default function AcaraSetup() {
                                 kejId={kejId}
                                 kategoriList={kategoriList}
                                 acaraList={acaraList}
+                                kejDefaultLorong={kejDefaultLorong}
                                 onSaved={(t) => {
                                   setAddingHari(null)
                                   setExtraHari(h => h.filter(x => x !== tarikh))
@@ -3788,12 +3800,13 @@ export default function AcaraSetup() {
       {/* Modals */}
       {modal?.mode === 'add' && (
         <AcaraModal mode="add" schoolId={schoolId} kejId={kejId} kategoriList={kategoriList}
-          defaultTarikh={lastDate}
+          defaultTarikh={lastDate} kejDefaultLorong={kejDefaultLorong}
           onClose={() => setModal(null)}
           onSaved={(tarikh) => { if (tarikh) setLastDate(tarikh); fetchAcara() }} />
       )}
       {modal?.mode === 'edit' && (
         <AcaraModal mode="edit" initial={modal.data} schoolId={schoolId} kejId={kejId} kategoriList={kategoriList}
+          kejDefaultLorong={kejDefaultLorong}
           onClose={() => setModal(null)} onSaved={fetchAcara} />
       )}
       {delTarget && (

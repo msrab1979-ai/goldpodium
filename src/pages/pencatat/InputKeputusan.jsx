@@ -1069,7 +1069,7 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
       isPadang ? (b.keputusan ?? 0) - (a.keputusan ?? 0) : (a.keputusan ?? 999) - (b.keputusan ?? 999)
     )
     if (!isLorongAcara) return sorted.map((f, i) => ({ ...f, lorong: null }))
-    return assignLorongFinal(sorted, detectJenisLorong(acara || {}), lorongKumpulan)
+    return assignLorongFinal(sorted, detectJenisLorong(acara || {}), lorongKumpulan, null, Number(acara?.bilanganLorong) || 8)
   }
 
   const [ordered, setOrdered] = useState(() => buildWAPreview(finalists))
@@ -1944,6 +1944,7 @@ export default function PencatatInputKeputusan() {
       const nextAcaraId  = nextAcara.aceraId || nextAcara.id
       const fasaHeat     = nextAcara.peringkat === 'akhir' ? 'final' : nextAcara.peringkat
       const jenisLorong  = detectJenisLorong(selectedAcara)
+      const bilLorongAcara = Number(nextAcara.bilanganLorong || selectedAcara.bilanganLorong) || 8
       const isPadang     = ['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara)
       const isMass       = selectedAcara.jenisAcara === 'mass_start'
 
@@ -1970,7 +1971,7 @@ export default function PencatatInputKeputusan() {
           const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
           const peserta = (isPadang || isMass
             ? kumpulan
-            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)).map(resetPeserta)
+            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan, null, bilLorongAcara)).map(resetPeserta)
           await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
             heatId, aceraId: nextAcaraId, noHeat, fasa: fasaHeat,
             statusKeputusan: 'belum_mula', peserta, createdAt: serverTimestamp(),
@@ -1990,7 +1991,7 @@ export default function PencatatInputKeputusan() {
           ? sorted
           : isManual
             ? sorted   // susunan manual dari panel — lorong sudah ada
-            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan)
+            : assignLorongFinal(sorted, jenisLorong, lorongKumpulan, null, bilLorongAcara)
         ).map(resetPeserta)
         await setDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heatId), {
           heatId, aceraId: nextAcaraId, noHeat: 1, fasa: fasaHeat,

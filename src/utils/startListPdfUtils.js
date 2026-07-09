@@ -22,6 +22,18 @@ export const WA_LORONG_KUMPULAN_DEFAULT = {
   // selekoh_800 guna kumpulan selekoh yang sama untuk final
 }
 
+// ─── Formula mudah untuk trek BUKAN 8 lorong ─────────────────────────────────
+// Rules WA di atas hanya sah untuk trek 8 lorong. Untuk 4/5/6/7 lorong,
+// guna urutan keutamaan tengah-keluar: 3, 4, ..., N, 2, 1 (rank 1 = lorong 3).
+export function lorongUrutanMudah(bilanganLorong) {
+  const N = Math.max(1, Number(bilanganLorong) || 8)
+  const urutan = []
+  for (let l = 3; l <= N; l++) urutan.push(l)
+  if (N >= 2) urutan.push(2)
+  urutan.push(1)
+  return urutan
+}
+
 // ─── Rules lorong untuk HEAT (saringan) ──────────────────────────────────────
 // Urutan lorong yang dikosongkan apabila atlet < bilanganLorong
 export const WA_LORONG_HEAT_REMOVE = {
@@ -79,8 +91,17 @@ export function detectJenisLorong(acara) {
  * jenisLorong: 'lurus' | 'dua_ratus' | 'selekoh'
  * lorongKumpulan: override kumpulan (dari wa_config), atau null untuk guna default.
  * kumpulanOverride: override terus (satu jenis sahaja).
+ * bilanganLorong: bilangan lorong trek — jika BUKAN 8, rules WA diabaikan dan
+ *                 formula mudah digunakan (rank 1 → lorong 3, 4, ..., N, 2, 1).
  */
-export function assignLorongFinal(pesertaSorted, jenisLorong, lorongKumpulan, kumpulanOverride) {
+export function assignLorongFinal(pesertaSorted, jenisLorong, lorongKumpulan, kumpulanOverride, bilanganLorong = 8) {
+  const bilL = Number(bilanganLorong) || 8
+  if (bilL !== 8) {
+    const urutan = lorongUrutanMudah(bilL)
+    return pesertaSorted
+      .map((p, i) => ({ ...p, lorong: urutan[i] ?? null }))
+      .sort((a, b) => (a.lorong ?? 99) - (b.lorong ?? 99))
+  }
   const pool = lorongKumpulan || WA_LORONG_KUMPULAN_DEFAULT
   // selekoh_800 guna kumpulan selekoh untuk final (800m final biasanya mass start)
   const jenisEff = jenisLorong === 'selekoh_800' ? 'selekoh' : jenisLorong
@@ -110,11 +131,16 @@ export function assignLorongHeat(peserta, jenisLorong, bilanganLorong = 8, loron
   const n = peserta.length
   if (n === 0) return []
 
+  const bilL = Number(bilanganLorong) || 8
+  // Trek bukan 8 lorong: rules WA (rujuk lorong 1–8) tidak sah — kosongkan
+  // ikut songsangan formula mudah: 1, 2, N, N-1, ..., 3
   const removeMap   = lorongHeatRemove || WA_LORONG_HEAT_REMOVE
-  const removeOrder = removeMap[jenisLorong] || removeMap.lurus
+  const removeOrder = bilL !== 8
+    ? [...lorongUrutanMudah(bilL)].reverse()
+    : (removeMap[jenisLorong] || removeMap.lurus)
 
-  const allLanes  = Array.from({ length: bilanganLorong }, (_, i) => i + 1)
-  const toRemove  = Math.max(0, bilanganLorong - n)
+  const allLanes  = Array.from({ length: bilL }, (_, i) => i + 1)
+  const toRemove  = Math.max(0, bilL - n)
   const removedSet = new Set(removeOrder.slice(0, toRemove))
   const available  = allLanes.filter(l => !removedSet.has(l))
 

@@ -55,6 +55,18 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 - `resolveIsLompatTinggi(acara)` — guna field Firestore `isLompatTinggi` dulu, fallback regex
 - `rollbackPostRasmi()` — undo medal_tally + mata_olahragawan bila PADAM keputusan rasmi
 - `kejDefaultLorong` — baca dari `kej.defaultLorong`, hantar ke GenerateModal/JanaFinalModal/JanaSemuaModal sebagai fallback jika acara tiada `bilanganLorong`
+
+### Sistem Lorong 4–8 (fix 2026-07-09)
+- `kej.defaultLorong` (4–8, set dalam KejohananSetup) kini BENAR-BENAR dipakai:
+  AcaraSetup load kej doc → acara baru ditulis `bilanganLorong: kejDefaultLorong` (bukan hardcode 8)
+- `assignLorongFinal(..., bilanganLorong = 8)` — param ke-5 baru:
+  - `=== 8` → rules WA kekal 100% (kumpulan undian `[3,4,5,6]/[2,7]/[1,8]` + waConfig)
+  - `!== 8` → **formula mudah** `lorongUrutanMudah(N)`: rank 1 → lorong 3, 4, ..., N, 2, 1 (deterministik, tiada undian)
+- `assignLorongHeat` — bila `!== 8`, urutan kosongkan = songsangan formula (1, 2, N, N-1, ...) ganti jadual WA
+- JanaFinalModal papar warning amber bila bilangan finalis > bilangan lorong (finalis lebihan dapat `lorong: null`)
+- Acara sedia ada dalam Firestore semua tertulis 8 → laluan WA lama, zero behaviour change
+- Test: 66 unit test (4/5/6/7/8 lorong × 4 jenisLorong) — semua lulus
+- **JANGAN** ubah rules WA 8-lorong; formula mudah hanya untuk trek bukan-8
 - `sekolahList` dibina dari koleksi `sekolah` dulu (ada `namaSekolah` + `bibPrefix`), fallback ke koleksi `atlet`
 - Relay PDF "No BIB" guna `bibPrefixMap[kodSekolah]` — bibPrefix sekolah (bukan BIB atlet)
 - **Jangan buang orderBy('noHeat')** — sudah dibuang, sort dalam JS: `.sort((a,b) => (a.noHeat??0)-(b.noHeat??0))`

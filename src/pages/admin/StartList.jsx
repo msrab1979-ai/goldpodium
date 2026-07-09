@@ -333,7 +333,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
       const fasa  = tentukanFasa(pasukan.length, bilL)
       let heats   = []
       if (fasa === 'terus_final') {
-        heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorongFinal(pasukan, jenis, LORONG_KUMPULAN) }]
+        heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorongFinal(pasukan, jenis, LORONG_KUMPULAN, null, bilL) }]
       } else {
         const bahagi = bahagikanKeHeat(pasukan, bilL)
         heats = bahagi.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorongHeat(hp, jenis, bilL, LORONG_HEAT_REMOVE) }))
@@ -358,7 +358,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
     if (fasa === 'terus_final' || isPadang || isMass) {
       const pesertaAssigned = isPadang || isMass
         ? assignGiliran(p)
-        : assignLorongFinal(p, jenis, LORONG_KUMPULAN)
+        : assignLorongFinal(p, jenis, LORONG_KUMPULAN, null, bilL)
       heats = [{ fasa: 'final', noHeat: 1, peserta: pesertaAssigned }]
     } else {
       const bahagiHeat = bahagikanKeHeatAdil(p, bilL)
@@ -460,7 +460,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Bilangan Lorong</label>
-                <input type="number" min={4} max={10} value={bilanganLorong}
+                <input type="number" min={4} max={8} value={bilanganLorong}
                   onChange={e => { setBL(e.target.value); setPreview(null) }} className={inputCls} />
               </div>
               <div>
@@ -705,7 +705,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
     const fasa = tentukanFasa(pasukanList.length, bilLorong)
     let heats = []
     if (fasa === 'terus_final') {
-      heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorongFinal(pasukanList, jenisLorong, LORONG_KUMPULAN) }]
+      heats = [{ fasa: 'final', noHeat: 1, peserta: assignLorongFinal(pasukanList, jenisLorong, LORONG_KUMPULAN, null, bilLorong) }]
     } else {
       const bahagi = bahagikanKeHeat(pasukanList, bilLorong)
       heats = bahagi.map((hp, i) => ({ fasa: 'heat', noHeat: i + 1, peserta: assignLorongHeat(hp, jenisLorong, bilLorong, LORONG_HEAT_REMOVE) }))
@@ -756,7 +756,7 @@ async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId,
   if (fasa === 'terus_final' || isPadang || isMass) {
     const assigned = isPadang || isMass
       ? assignGiliran(p)
-      : assignLorongFinal(p, jenisLorongNonRelay, LORONG_KUMPULAN)
+      : assignLorongFinal(p, jenisLorongNonRelay, LORONG_KUMPULAN, null, bilLorong)
     heats = [{ fasa: 'final', noHeat: 1, peserta: assigned }]
   } else {
     const bahagiHeat = bahagikanKeHeatAdil(p, bilLorong)
@@ -995,6 +995,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
 
   const heatPhaseHeats = heatList.filter(h => h.fasa === 'heat' || h.fasa === 'saringan_qf' || h.fasa === 'saringan_sf' || h.fasa === 'separuh_akhir')
   const fasaJana = acara.peringkat === 'saringan_qf' ? 'sukuKeSeparuh' : 'toFinal'
+  const bilLorongAcara = Number(acara.bilanganLorong) || kejDefaultLorong
 
   const [finalis,        setFinalis]        = useState([])
   const [finalSetup,     setFinalSetup]     = useState(null)
@@ -1113,7 +1114,9 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
           const assigned = assignLorongFinal(
             [...kumpulan].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999)),
             jenisLorong,
-            lorongKumpulan
+            lorongKumpulan,
+            null,
+            bilLorongAcara
           )
           batch.set(ref, {
             heatId,
@@ -1143,7 +1146,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
           : finalis
         const pesertaAssigned = isPadang || isMass
           ? assignGiliran(finalis)
-          : assignLorongFinal(finalisUntukAssign, jenisLorong, lorongKumpulan)
+          : assignLorongFinal(finalisUntukAssign, jenisLorong, lorongKumpulan, null, bilLorongAcara)
 
         await setDoc(ref, {
           heatId,
@@ -1299,6 +1302,13 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
             )}
           </div>
 
+          {!isPadang && !isMass && fasaJana !== 'sukuKeSeparuh' && finalis.length > bilLorongAcara && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              ⚠️ {finalis.length} finalis melebihi {bilLorongAcara} lorong trek — finalis lebihan tidak akan
+              dapat lorong. Semak tetapan gate finalis (KategoriSetup) atau bilangan lorong acara.
+            </p>
+          )}
+
           {msg && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{msg}</p>
           )}
@@ -1367,7 +1377,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
     if (fasa === 'terus_final' || isPadang || isMass) {
       const assigned = isPadang || isMass
         ? assignGiliran(p)
-        : assignLorongFinal(p, jenis2, LORONG_KUMPULAN)
+        : assignLorongFinal(p, jenis2, LORONG_KUMPULAN, null, bilL2)
       heats = [{ fasa: 'final', noHeat: 1, peserta: assigned }]
     } else {
       heats = bahagikanKeHeatAdil(p, bilL2)
@@ -1466,7 +1476,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1.5">Bilangan Lorong</label>
-                    <input type="number" min={4} max={10} value={bilanganLorong}
+                    <input type="number" min={4} max={8} value={bilanganLorong}
                       onChange={e => { setBL(e.target.value); setPreview(null) }} className={inputCls} />
                   </div>
                   <div>
@@ -3257,7 +3267,7 @@ export default function StartList() {
                       const peserta  = pesertaCountMap[aid] || 0
                       const heat     = heatCountMap[aid] || 0
                       const isFinal  = !!a.parentAcaraId
-                      const bl       = a.bilanganLorong || 8
+                      const bl       = a.bilanganLorong || kejDefaultLorong
                       const isPadangA = ['padang_lompat','padang_balin'].includes(a.jenisAcara)
                       const isMassA   = a.jenisAcara === 'mass_start'
 
@@ -3627,7 +3637,7 @@ export default function StartList() {
                 const aid        = a.aceraId || a.id
                 const heatCount  = heatCountMap[aid] ?? 0
                 const pesertaCount = pesertaCountMap[aid] ?? 0
-                const bl         = a.bilanganLorong || 8
+                const bl         = a.bilanganLorong || kejDefaultLorong
                 const isPadangA  = ['padang_lompat','padang_balin'].includes(a.jenisAcara)
                 const isMassA    = a.jenisAcara === 'mass_start'
 
