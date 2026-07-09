@@ -379,7 +379,12 @@ export default function PengurusLogin() {
         </form>
       </div>
 
-      <button onClick={() => navigate(-1)} className="mt-6 text-xs text-white/40 hover:text-white/70 transition-colors">
+      <button
+        onClick={() => {
+          const s = (slugFromUrl || slug || '').trim().toLowerCase()
+          navigate(s ? `/${s}` : '/')
+        }}
+        className="mt-6 text-xs text-white/40 hover:text-white/70 transition-colors">
         ← Kembali
       </button>
 

@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { hashPin } from '../../utils/hashPin'
@@ -19,8 +19,12 @@ const LOCK_MS = 30 * 60 * 1000
 export default function PencatatLogin() {
   const { loginPencatat } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const [slug,     setSlug]     = useState('')
+  // Boleh datang dari SchoolLanding / Login dengan state { schoolSlug }
+  const slugTenant = (location.state?.schoolSlug || '').trim().toLowerCase()
+
+  const [slug,     setSlug]     = useState(slugTenant)
   const [kodAkses, setKodAkses] = useState('')
   const [pin,      setPin]      = useState('')
   const [ralat,    setRalat]    = useState('')
@@ -146,10 +150,12 @@ export default function PencatatLogin() {
       </div>
 
       <div className="mt-6 flex flex-col items-center gap-3">
-        <Link to="/login" className="text-xs text-white/50 hover:text-white/80 transition-colors">
+        <Link to="/login" state={location.state} className="text-xs text-white/50 hover:text-white/80 transition-colors">
           Log masuk sebagai Admin →
         </Link>
-        <Link to="/" className="text-xs text-white/40 hover:text-white/70 transition-colors">
+        <Link
+          to={(slugTenant || slug.trim()) ? `/${(slugTenant || slug.trim()).toLowerCase()}` : '/'}
+          className="text-xs text-white/40 hover:text-white/70 transition-colors">
           ← Kembali ke Laman Utama
         </Link>
       </div>

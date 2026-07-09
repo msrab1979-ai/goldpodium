@@ -42,8 +42,11 @@ class ErrorBoundary extends Component {
   }
 
   handleGoHome = () => {
-    // Hard navigate ke home
-    window.location.href = '/'
+    // Hard navigate — kembali ke landing tenant jika path bermula dengan slug,
+    // jika tidak (route sistem) ke root
+    const RESERVED = ['admin', 'login', 'superadmin', 'dashboard', 'pengurus', 'tukar-password', 'privasi', 'syarat', '']
+    const seg = window.location.pathname.split('/')[1] || ''
+    window.location.href = RESERVED.includes(seg) ? '/' : `/${seg}`
   }
 
   render() {
