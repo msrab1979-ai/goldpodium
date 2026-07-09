@@ -35,6 +35,11 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/tenants/$(schoolId)/sessions/$(request.auth.uid));
     }
 
+    // Baca data user doc dalam tenant (untuk sahkan session pencatat).
+    function getUserDoc(schoolId, userDocId) {
+      return get(/databases/$(database)/documents/tenants/$(schoolId)/users/$(userDocId)).data;
+    }
+
     // Gabungan: sesiapa yang authorized tulis dalam tenant tertentu
     function canWriteTenant(schoolId) {
       return isSuperadmin()
@@ -95,7 +100,8 @@ service cloud.firestore {
     //   2. schoolId dalam path mesti match schoolId dalam data
     //   3. Role mesti 'pencatat' atau 'pengurus'
     //   4. Untuk 'pengurus': kodSekolah mesti wujud dalam tenants/{schoolId}/sekolah/
-    //   5. Untuk 'pencatat': kodAkses mesti wujud dalam tenants/{schoolId}/users/
+    //   5. Untuk 'pencatat': userDocId mesti wujud dalam tenants/{schoolId}/users/,
+    //      role user doc == 'pencatat', kodAkses padan, dan user aktif.
     //   Tiada update — hanya create + delete oleh diri sendiri
     match /tenants/{schoolId}/sessions/{anonUid} {
       allow read:   if isAuth() && request.auth.uid == anonUid;
@@ -109,11 +115,15 @@ service cloud.firestore {
           (request.resource.data.role == 'pengurus'
             && exists(/databases/$(database)/documents/tenants/$(schoolId)/sekolah/$(request.resource.data.kodSekolah)))
           ||
-          // Pencatat: session dicipta guna user doc ID sebagai anonUid tidak boleh — anon UID random.
-          // Terima create pencatat jika kodAkses ada dalam users collection (tak boleh query dari rules).
-          // Fallback: percaya client kata dia pencatat (PIN dah verified di client sebelum tulis session).
-          // Untuk halang bogus session, rule ini boleh diketatkan bila kod ada userDocId parameter.
-          request.resource.data.role == 'pencatat'
+          // Pencatat: sahkan userDocId wujud dalam users collection tenant ini,
+          // role user doc == 'pencatat', kodAkses padan, dan user tidak dinyahaktifkan.
+          // Ini halang session palsu — rules tidak lagi buta percaya client.
+          (request.resource.data.role == 'pencatat'
+            && request.resource.data.userDocId is string
+            && exists(/databases/$(database)/documents/tenants/$(schoolId)/users/$(request.resource.data.userDocId))
+            && getUserDoc(schoolId, request.resource.data.userDocId).role == 'pencatat'
+            && getUserDoc(schoolId, request.resource.data.userDocId).kodAkses == request.resource.data.kodAkses
+            && getUserDoc(schoolId, request.resource.data.userDocId).isAktif != false)
         );
       allow update: if false;
     }

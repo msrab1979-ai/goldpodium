@@ -42,6 +42,8 @@ async function setup() {
     await db.doc('tenants/skl_A').set({ namaSekolah: 'Sekolah A', slug: 'skl-a', status: 'active' })
     await db.doc('users/admin_A').set({ role: 'admin', schoolId: 'skl_A', isAktif: true })
     await db.doc('tenants/skl_A/sekolah/KOD_A_001').set({ namaSekolah: 'SK Bunga', pinHash: 'x' })
+    // Pencatat user doc dalam tenant A — session pencatat disahkan terhadap doc ini
+    await db.doc('tenants/skl_A/users/pencatat_doc_A').set({ role: 'pencatat', kodAkses: 'CATAT01', isAktif: true, pinHash: 'x' })
 
     // Sekolah B (schoolId = skl_B)
     await db.doc('tenants/skl_B').set({ namaSekolah: 'Sekolah B', slug: 'skl-b', status: 'active' })
@@ -105,6 +107,34 @@ async function tests() {
     }))
   await tryFail('Anon tak boleh update session (immutable)',
     anonDb.doc('tenants/skl_A/sessions/anon_user_1').update({ role: 'admin' }))
+
+  // Test 2b: session PENCATAT — disahkan terhadap user doc (S1 fix)
+  console.log('\n─── Test 2b: Session pencatat (S1 — anti-palsu) ───')
+  const catatOK = testEnv.authenticatedContext('anon_catat_ok', { firebase: { sign_in_provider: 'anonymous' } })
+  const catatOKDb = catatOK.firestore()
+  await trySucceed('Pencatat SAH boleh cipta session (userDocId + kodAkses padan)',
+    catatOKDb.doc('tenants/skl_A/sessions/anon_catat_ok').set({
+      role: 'pencatat', schoolId: 'skl_A', userDocId: 'pencatat_doc_A', kodAkses: 'CATAT01', createdAt: new Date(),
+    }))
+
+  const catatBad = testEnv.authenticatedContext('anon_catat_bad', { firebase: { sign_in_provider: 'anonymous' } })
+  const catatBadDb = catatBad.firestore()
+  await tryFail('Pencatat PALSU tanpa userDocId DITOLAK',
+    catatBadDb.doc('tenants/skl_A/sessions/anon_catat_bad').set({
+      role: 'pencatat', schoolId: 'skl_A', kodAkses: 'CATAT01', createdAt: new Date(),
+    }))
+  await tryFail('Pencatat PALSU userDocId tak wujud DITOLAK',
+    catatBadDb.doc('tenants/skl_A/sessions/anon_catat_bad').set({
+      role: 'pencatat', schoolId: 'skl_A', userDocId: 'tiada_doc', kodAkses: 'CATAT01', createdAt: new Date(),
+    }))
+  await tryFail('Pencatat PALSU kodAkses salah DITOLAK',
+    catatBadDb.doc('tenants/skl_A/sessions/anon_catat_bad').set({
+      role: 'pencatat', schoolId: 'skl_A', userDocId: 'pencatat_doc_A', kodAkses: 'SALAH99', createdAt: new Date(),
+    }))
+  await tryFail('Pencatat PALSU guna userDoc tenant A untuk masuk tenant B DITOLAK',
+    catatBadDb.doc('tenants/skl_B/sessions/anon_catat_bad').set({
+      role: 'pencatat', schoolId: 'skl_B', userDocId: 'pencatat_doc_A', kodAkses: 'CATAT01', createdAt: new Date(),
+    }))
 
   console.log('\n─── Test 3: Anonymous DENGAN session doc ───')
   await trySucceed('Anon (session A) boleh tulis pendaftaran Sekolah A',
