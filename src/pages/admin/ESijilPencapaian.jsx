@@ -321,6 +321,21 @@ export default function ESijilPencapaian() {
     setStyles(prev => ({ ...prev, [key]: val }))
   }
 
+  // Toggle auto-save — tulis field aktif sahaja terus ke Firestore (merge)
+  async function handleToggleAktif() {
+    const next = !aktif
+    setAktif(next)
+    try {
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijilPencapaian'), { aktif: next }, { merge: true })
+      setMsg(next
+        ? 'Sijil Pencapaian DIAKTIFKAN — menu dipapar kepada Pengurus Pasukan.'
+        : 'Sijil Pencapaian DIMATIKAN — menu disembunyikan dari Pengurus Pasukan.')
+    } catch (err) {
+      setAktif(!next) // revert bila gagal
+      setMsg('Ralat simpan status: ' + err.message)
+    }
+  }
+
   async function handleSave() {
     // Toggle OFF? Boleh Simpan walaupun template belum upload.
     // Toggle ON tapi tiada template? Tak boleh — kerana PP tak boleh jana sijil.
@@ -431,12 +446,12 @@ export default function ESijilPencapaian() {
                   }
                 </p>
                 <p className="text-[10px] text-gray-400 mt-1">
-                  Tukar status, kemudian klik <strong>Simpan Tetapan</strong> di bawah.
+                  Status disimpan <strong>serta-merta</strong> bila toggle diklik.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setAktif(prev => !prev)}
+                onClick={handleToggleAktif}
                 className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${
                   aktif ? 'bg-green-500' : 'bg-gray-300'
                 }`}

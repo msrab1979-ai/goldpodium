@@ -228,6 +228,7 @@ export default function ESijil() {
   const [saving, setSaving]               = useState(false)
   const [msg, setMsg]                     = useState('')
   const [uploading, setUploading]         = useState(false)
+  const [aktif, setAktif]                 = useState(true)  // default ON
   const containerRef                      = useRef(null)
 
   useEffect(() => {
@@ -237,6 +238,7 @@ export default function ESijil() {
         if (!snap.exists()) return
         const d = snap.data()
         if (d.templateImg)      setTemplate(d.templateImg)
+        if (typeof d.aktif === 'boolean') setAktif(d.aktif)
         if (d.namaKejohanan)    setNamaKejohanan(d.namaKejohanan)
         if (d.tarikhKejohanan)  setTarikh(d.tarikhKejohanan)
         if (d.posNama || d.posKejohanan || d.posTarikh)
@@ -271,12 +273,28 @@ export default function ESijil() {
     setPositions(prev => ({ ...prev, [key]: val }))
   }
 
+  // Toggle auto-save — tulis field aktif sahaja terus ke Firestore (merge)
+  async function handleToggleAktif() {
+    const next = !aktif
+    setAktif(next)
+    try {
+      await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijil'), { aktif: next }, { merge: true })
+      setMsg(next
+        ? 'Sijil Penyertaan DIAKTIFKAN — menu dipapar kepada Pengurus Pasukan.'
+        : 'Sijil Penyertaan DIMATIKAN — menu disembunyikan dari Pengurus Pasukan.')
+    } catch (err) {
+      setAktif(!next) // revert bila gagal
+      setMsg('Ralat simpan status: ' + err.message)
+    }
+  }
+
   async function handleSave() {
     if (!template) { setMsg('Sila muat naik template dahulu.'); return }
     setSaving(true); setMsg('')
     try {
       await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijil'), {
         templateImg:      template,
+        aktif:            !!aktif,
         namaKejohanan,
         tarikhKejohanan,
         posNama:          positions.nama,
@@ -325,6 +343,47 @@ export default function ESijil() {
       </div>
 
       <div className="space-y-5">
+
+        {/* ── Toggle Aktif ── */}
+        <div className={`rounded-xl border-2 p-4 transition-colors ${
+          aktif
+            ? 'border-green-300 bg-green-50'
+            : 'border-gray-200 bg-gray-50'
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs font-bold text-gray-800">Status Sijil Penyertaan</p>
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                  aktif ? 'bg-green-500 text-white' : 'bg-gray-400 text-white'
+                }`}>
+                  {aktif ? 'AKTIF' : 'TIDAK AKTIF'}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-600">
+                {aktif
+                  ? 'Pengurus Pasukan boleh nampak menu & muat turun sijil murid.'
+                  : 'Menu Sijil Penyertaan DISEMBUNYIKAN dari Pengurus Pasukan. PP yang akses URL langsung akan diredirect.'
+                }
+              </p>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Status disimpan <strong>serta-merta</strong> bila toggle diklik.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleAktif}
+              className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${
+                aktif ? 'bg-green-500' : 'bg-gray-300'
+              }`}
+              aria-label="Toggle aktif"
+            >
+              <span className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${
+                aktif ? 'left-[22px]' : 'left-0.5'
+              }`} />
+            </button>
+          </div>
+        </div>
 
         {/* ── 1: Upload Template ── */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">

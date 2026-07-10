@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -27,7 +28,9 @@ function Spinner({ size = 'w-5 h-5' }) {
 }
 
 export default function SijilPenyertaanPP() {
-  const { userData } = useAuth()
+  const { userData, userRole } = useAuth()
+  const navigate    = useNavigate()
+  const { slug }    = useParams()
   const schoolId    = userData?.schoolId  || ''
   const kodSekolah  = userData?.kodSekolah || ''
   const namaSekolah = userData?.namaSekolah || kodSekolah
@@ -53,7 +56,16 @@ export default function SijilPenyertaanPP() {
         setErr('Tetapan sijil belum dikonfigurasi oleh admin. Sila hubungi admin.')
         setLoading(false); return
       }
-      setSijilCfg(sijilSnap.data())
+      const cfg = sijilSnap.data()
+
+      // ── Guard: toggle OFF + PP → redirect ke dashboard ──────────────────
+      const isAktif = cfg.aktif === undefined ? true : !!cfg.aktif
+      if (!isAktif && userRole === 'pengurus_pasukan') {
+        navigate(`/${slug}/pengurus/dashboard`, { replace: true })
+        return
+      }
+
+      setSijilCfg(cfg)
 
       const kejSnap = await getDocs(
         query(collection(db, 'tenants', schoolId, 'kejohanan'), where('statusKejohanan', 'in', ['aktif', 'draf', 'persediaan']))

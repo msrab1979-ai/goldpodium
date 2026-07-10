@@ -12,15 +12,21 @@
  *   - Medal Tally
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
+import { doc, getDoc } from 'firebase/firestore'
+import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useLesen } from '../../hooks/useLesen'
 import LesenTamat from '../LesenTamat'
 
-// ─── Nav items — guna fungsi supaya slug boleh dimasukkan dalam path ─────────
+// Cache per sesi — elak fetch doc sijil (ada base64 template) setiap tukar page
+const sijilShowCache = {}
 
-function buildNavItems(slug) {
+// ─── Nav items — guna fungsi supaya slug boleh dimasukkan dalam path ─────────
+// sijilShow: toggle admin (tetapan/sijil + tetapan/sijilPencapaian) — aktif=false → hide
+
+function buildNavItems(slug, sijilShow = { penyertaan: true, pencapaian: true }) {
   return [
     {
       section: 'UTAMA',
@@ -31,10 +37,10 @@ function buildNavItems(slug) {
     {
       section: 'SIJIL & DOKUMEN',
       items: [
-        { label: 'Sijil Penyertaan', path: `/${slug}/pengurus/sijil-penyertaan`, icon: 'sijil' },
-        { label: 'Sijil Pencapaian', path: `/${slug}/pengurus/sijil-pencapaian`, icon: 'medal' },
+        sijilShow.penyertaan && { label: 'Sijil Penyertaan', path: `/${slug}/pengurus/sijil-penyertaan`, icon: 'sijil' },
+        sijilShow.pencapaian && { label: 'Sijil Pencapaian', path: `/${slug}/pengurus/sijil-pencapaian`, icon: 'medal' },
         { label: 'Buku Kongsi',      path: `/${slug}/pengurus/buku-kongsi`,      icon: 'book'  },
-      ],
+      ].filter(Boolean),
     },
     {
       section: 'BANTUAN',
@@ -106,10 +112,10 @@ const Icons = {
 
 // ─── Sidebar Content ──────────────────────────────────────────────────────────
 
-function SidebarContent({ userData, slug, onLogout, onNavClick }) {
+function SidebarContent({ userData, slug, sijilShow, onLogout, onNavClick }) {
   const namaSekolah = userData?.namaSekolah || userData?.kodSekolah || 'Pengurus Pasukan'
   const kodSekolah  = userData?.kodSekolah  || ''
-  const navItems    = buildNavItems(slug)
+  const navItems    = buildNavItems(slug, sijilShow)
 
   return (
     <div className="flex flex-col h-full">
@@ -188,6 +194,37 @@ export default function PengurusLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const lesen = useLesen(schoolId)
 
+  // Toggle sijil dari admin — getDoc sekali per sesi (cache module, jimat kos)
+  // Default papar (aktif undefined = true); hanya aktif === false yang hide
+  const [sijilShow, setSijilShow] = useState(
+    () => sijilShowCache[schoolId] || { penyertaan: true, pencapaian: true }
+  )
+  useEffect(() => {
+    if (!schoolId) return
+    let cancelled = false
+    async function loadSijilShow() {
+      let show = sijilShowCache[schoolId]
+      if (!show) {
+        try {
+          const [pSnap, cSnap] = await Promise.all([
+            getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijil')),
+            getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'sijilPencapaian')),
+          ])
+          show = {
+            penyertaan: pSnap.exists() ? pSnap.data().aktif !== false : true,
+            pencapaian: cSnap.exists() ? cSnap.data().aktif !== false : true,
+          }
+          sijilShowCache[schoolId] = show
+        } catch { return /* kekal default papar */ }
+      } else {
+        await Promise.resolve() // elak setState segerak dalam effect
+      }
+      if (!cancelled) setSijilShow(show)
+    }
+    loadSijilShow()
+    return () => { cancelled = true }
+  }, [schoolId])
+
   async function handleLogout() {
     await logout()
     const dest = slug ? `/${slug}` : '/'
@@ -219,6 +256,7 @@ export default function PengurusLayout({ children }) {
         <SidebarContent
           userData={userData}
           slug={slug || userData?.schoolSlug || ''}
+          sijilShow={sijilShow}
           onLogout={handleLogout}
           onNavClick={() => setSidebarOpen(false)}
         />

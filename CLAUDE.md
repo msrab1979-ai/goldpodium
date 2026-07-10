@@ -147,9 +147,18 @@ const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
 
 ## PP (Pengurus Pasukan) — Nav
 - Dashboard
-- Sijil Penyertaan (`/:slug/pengurus/sijil-penyertaan`)
-- Sijil Pencapaian (`/:slug/pengurus/sijil-pencapaian`)
+- Sijil Penyertaan (`/:slug/pengurus/sijil-penyertaan`) — hide bila `tetapan/sijil.aktif === false`
+- Sijil Pencapaian (`/:slug/pengurus/sijil-pencapaian`) — hide bila `tetapan/sijilPencapaian.aktif === false`
 - Buku Kongsi (`/:slug/pengurus/buku-kongsi`)
+
+### Toggle Sijil ON/OFF (2026-07-11)
+- Admin ESijil + ESijilPencapaian ada toggle `aktif` — **AUTO-SAVE serta-merta**
+  (`setDoc(..., { aktif }, { merge: true })` — JANGAN ikat pada butang Simpan, user tolak double kerja)
+- `PengurusLayout.jsx` baca 2 doc tetapan (`getDoc` sekali + cache module `sijilShowCache`
+  — doc ada base64 template, jangan fetch berulang/onSnapshot) → filter menu sidebar
+- Default papar: `aktif === undefined` = ON (selamat tenant lama); hanya `false` yang hide
+- Guard URL langsung: `SijilPenyertaanPP` + `SijilPencapaianPP` redirect PP ke dashboard bila OFF
+- PP yang sedang login perlu refresh untuk nampak perubahan (cache per sesi)
 
 ## Firestore Structure
 ```
@@ -401,6 +410,19 @@ di-test emulator + deploy live + push GitHub.
 | `admin/StartList.jsx` | BACA — guna `kejohananId` prop |
 | `pencatat/CetakanHadiah.jsx` | BACA — load dari kejohanan aktif |
 | `pencatat/InputKeputusan.jsx` | BACA — guna `kejId` dari URL |
+
+## Cetak Keputusan Admin — Overhaul (2026-07-11, commit 02d3255)
+- `/admin/cetak-keputusan` → `CetakKeputusan.jsx`
+- **Sumber jadual: `acara.tarikhAcara`** (doc acara sendiri) — BUKAN koleksi `jadual`
+  (koleksi tu kosong untuk tenant GP → page kosong "Tiada jadual"). Acara tanpa tarikh → tab "Lain-lain" (`tba`)
+- Carian no/nama acara + dropdown filter kategori + butang Padam Tapisan
+- Papar SEMUA fasa heat (SARINGAN → SF → FINAL via `sortHeats`/`heatLabel`);
+  heat tanpa keputusan berlabel "Belum ada keputusan" (web/PDF/Excel) — JANGAN skip senyap
+- PDF ikut hari terpilih + tapisan aktif (dicatat dalam header PDF)
+- Excel: **1 sheet per hari**, checkbox ☑ pada tab hari pilih hari mana masuk (default semua)
+- `isSelesai(h)` = statusKeputusan dalam `['ada_keputusan','diterima','rasmi']`
+- **Menu "Cetak Acara" DIBUANG dari admin** (sidebar/dashboard/route/panduan) —
+  Cetak Keputusan rangkum semua. Portal pencatat KEKAL guna `CetakAcara.jsx` (slip hadiah/juruhebah)
 
 ## Cetak Hadiah Inline dalam InputKeputusan (2026-07-07)
 
