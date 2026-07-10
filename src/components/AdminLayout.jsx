@@ -32,7 +32,6 @@ const NAV = [
     label: 'Cetakan',
     items: [
       { label: 'Buku Kejohanan',  icon: '📖', path: '/admin/buku-kejohanan' },
-      { label: 'Cetak Acara',     icon: '🖨️', path: '/admin/cetak-acara' },
       { label: 'Cetak Keputusan', icon: '📄', path: '/admin/cetak-keputusan' },
     ],
   },

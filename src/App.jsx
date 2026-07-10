@@ -48,7 +48,6 @@ const BukuKejohanan      = lazy(() => import('./pages/admin/BukuKejohanan'))
 const BukuKejohananLinkSetup = lazy(() => import('./pages/admin/BukuKejohananLinkSetup'))
 const BukuKongsiSetup    = lazy(() => import('./pages/admin/BukuKongsiSetup'))
 const BukuProgramSetup   = lazy(() => import('./pages/admin/BukuProgramSetup'))
-const CetakAcara         = lazy(() => import('./pages/admin/CetakAcara'))
 const CetakKeputusan     = lazy(() => import('./pages/admin/CetakKeputusan'))
 const ESijil             = lazy(() => import('./pages/admin/ESijil'))
 const ESijilPencapaian   = lazy(() => import('./pages/admin/ESijilPencapaian'))
@@ -258,7 +257,6 @@ function AppRoutes() {
         <Route path="/admin/buku-kejohanan-link" element={<AdminRoute><BukuKejohananLinkSetup /></AdminRoute>} />
         <Route path="/admin/buku-kongsi" element={<AdminRoute><BukuKongsiSetup /></AdminRoute>} />
         <Route path="/admin/buku-program" element={<AdminRoute><BukuProgramSetup /></AdminRoute>} />
-        <Route path="/admin/cetak-acara" element={<AdminRoute><CetakAcara /></AdminRoute>} />
         <Route path="/admin/cetak-keputusan" element={<AdminRoute><CetakKeputusan /></AdminRoute>} />
         <Route path="/admin/esijil" element={<AdminRoute><ESijil /></AdminRoute>} />
         <Route path="/admin/esijil-pencapaian" element={<AdminRoute><ESijilPencapaian /></AdminRoute>} />

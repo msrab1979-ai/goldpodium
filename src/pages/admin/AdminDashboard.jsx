@@ -374,7 +374,6 @@ export default function AdminDashboard() {
               { label: 'Buku Kongsi',         ikon: '🔗', path: '/admin/buku-kongsi' },
               { label: 'Buku Program',        ikon: '📰', path: '/admin/buku-program' },
               { label: 'Link Buku Kejohanan', ikon: '🌐', path: '/admin/buku-kejohanan-link' },
-              { label: 'Cetak Acara',         ikon: '🖨️', path: '/admin/cetak-acara' },
               { label: 'Cetak Keputusan',     ikon: '📄', path: '/admin/cetak-keputusan' },
               { label: 'E-Sijil Penyertaan',  ikon: '🎖️', path: '/admin/esijil' },
               { label: 'E-Sijil Pencapaian',  ikon: '🥇', path: '/admin/esijil-pencapaian' },

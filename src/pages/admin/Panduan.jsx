@@ -45,8 +45,7 @@ const MENU_SISTEM = [
     group: 'Cetakan',
     items: [
       { icon: '📖', nama: 'Buku Kejohanan', apa: 'PDF lengkap — semua keputusan, medal tally, rekod.' },
-      { icon: '🖨️', nama: 'Cetak Acara', apa: 'Cetak senarai acara & peserta.' },
-      { icon: '📄', nama: 'Cetak Keputusan', apa: 'Cetak keputusan rasmi setiap acara.' },
+      { icon: '📄', nama: 'Cetak Keputusan', apa: 'Cetak keputusan rasmi setiap acara — by hari, carian acara, PDF/Excel.' },
     ],
   },
   {
