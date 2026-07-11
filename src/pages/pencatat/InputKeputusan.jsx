@@ -24,6 +24,7 @@ import { assignLorongFinal, detectJenisLorong, WA_LORONG_KUMPULAN_DEFAULT, deser
 import { runPostRasmi, rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import { useNavigate, useParams } from 'react-router-dom'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -1218,7 +1219,8 @@ function matchCarian(p, q, sekolahMap = {}, bibPrefixMap = {}) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PencatatInputKeputusan() {
-  const { userData } = useAuth()
+  const { userData: authData } = useAuth()
+  const userData = withPortalView(authData)
   const navigate     = useNavigate()
   const { slug, kejId } = useParams()
   const schoolId     = userData?.schoolId || ''

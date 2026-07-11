@@ -11,7 +11,7 @@ import {
   collection, getDocs, query, where, onSnapshot, doc, getDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
-import { useAuth } from '../../context/AuthContext'
+import useSchoolId from '../../hooks/useSchoolId'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -222,8 +222,7 @@ function TallyTable({ rows, bilanganKedudukan = 3, showJumlah = false }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function MedalTally() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { schoolId } = useSchoolId()
   const [selKej, setSelKej]               = useState('')
   const [namaKej, setNamaKej]             = useState('')
   const [bilanganKedudukan, setBilKed]    = useState(3)

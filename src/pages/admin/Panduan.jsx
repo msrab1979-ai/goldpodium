@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { viewSchool } from '../../hooks/useSchoolId'
 import Visual from '../../components/PanduanVisual'
 
 const TABS = [
@@ -319,7 +320,7 @@ export default function Panduan() {
       const kej = JSON.parse(sessionStorage.getItem('gp_kej_aktif') || '{}')
       if (kej.id) return kej.id
     } catch { /* langkau */ }
-    const schoolId = userData?.schoolId || ''
+    const schoolId = userData?.schoolId || viewSchool().schoolId || ''
     if (!schoolId) return null
     try {
       const snap = await getDocs(query(

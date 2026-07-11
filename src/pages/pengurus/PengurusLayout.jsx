@@ -14,9 +14,10 @@
 
 import { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView, viewPortal, setViewPortal, clearViewPortal } from '../../hooks/useSchoolId'
 import { useLesen } from '../../hooks/useLesen'
 import LesenTamat from '../LesenTamat'
 
@@ -184,10 +185,58 @@ function SidebarContent({ userData, slug, sijilShow, onLogout, onNavClick }) {
   )
 }
 
+// ─── Picker sekolah untuk superadmin (portal PP terikat pada satu kodSekolah) ──
+
+function PilihSekolahSuper({ schoolId, onPilih, onKembali }) {
+  const [senarai, setSenarai] = useState(null)
+
+  useEffect(() => {
+    if (!schoolId) return
+    getDocs(collection(db, 'tenants', schoolId, 'sekolah'))
+      .then(snap => setSenarai(
+        snap.docs
+          .map(d => ({ kod: d.data().kodSekolah || d.id, nama: d.data().namaSekolah || d.data().nama || d.id }))
+          .sort((a, b) => (a.nama || '').localeCompare(b.nama || ''))
+      ))
+      .catch(() => setSenarai([]))
+  }, [schoolId])
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-lg w-full max-w-md overflow-hidden">
+        <div className="bg-[#003399] px-5 py-4">
+          <p className="text-[10px] font-bold tracking-widest text-amber-300 uppercase">Mod Superadmin</p>
+          <p className="text-sm font-bold text-white mt-0.5">Pilih sekolah untuk portal PP</p>
+        </div>
+        <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+          {senarai === null && <p className="text-xs text-gray-400 text-center py-8">Memuatkan senarai sekolah...</p>}
+          {senarai?.length === 0 && <p className="text-xs text-gray-400 text-center py-8">Tiada sekolah dalam tenant ini.</p>}
+          {senarai?.map(s => (
+            <button key={s.kod} onClick={() => onPilih(s)}
+              className="w-full text-left px-5 py-3 hover:bg-blue-50 transition-colors">
+              <p className="text-xs font-semibold text-gray-800">{s.nama}</p>
+              <p className="text-[10px] text-gray-400 font-mono">{s.kod}</p>
+            </button>
+          ))}
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
+          <button onClick={onKembali} className="text-[11px] font-semibold text-gray-500 hover:text-gray-700">
+            ← Kembali ke Panel Superadmin
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── PengurusLayout ───────────────────────────────────────────────────────────
 
 export default function PengurusLayout({ children }) {
-  const { userData, logout } = useAuth()
+  const { userData: authData, logout } = useAuth()
+  const isSuperView = authData?.role === 'superadmin'
+  // Trigger re-render bila superadmin tukar sekolah (viewPortal dalam sessionStorage)
+  const [portalTick, setPortalTick] = useState(0) // eslint-disable-line no-unused-vars
+  const userData = withPortalView(authData)
   const navigate = useNavigate()
   const { slug } = useParams()
   const schoolId = userData?.schoolId || ''
@@ -226,9 +275,29 @@ export default function PengurusLayout({ children }) {
   }, [schoolId])
 
   async function handleLogout() {
+    if (isSuperView) {
+      // Superadmin tak logout — hanya keluar dari mod portal
+      clearViewPortal()
+      navigate('/superadmin', { replace: true })
+      return
+    }
     await logout()
     const dest = slug ? `/${slug}` : '/'
     navigate(dest, { replace: true })
+  }
+
+  // Superadmin belum pilih sekolah — papar picker dahulu
+  if (isSuperView && !userData?.kodSekolah) {
+    return (
+      <PilihSekolahSuper
+        schoolId={schoolId}
+        onPilih={s => {
+          setViewPortal({ ...viewPortal(), kodSekolah: s.kod, namaSekolah: s.nama })
+          setPortalTick(t => t + 1)
+        }}
+        onKembali={() => { clearViewPortal(); navigate('/superadmin', { replace: true }) }}
+      />
+    )
   }
 
   if (!lesen.loading && lesen.expired) {
@@ -264,6 +333,18 @@ export default function PengurusLayout({ children }) {
 
       {/* ── Main ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Banner mod superadmin */}
+        {isSuperView && (
+          <div className="flex items-center gap-2 px-4 py-1.5 bg-amber-400 text-[11px] font-semibold text-amber-950 shrink-0">
+            <span>⚡ Mod Superadmin — {userData?.namaSekolah || ''} ({userData?.kodSekolah || ''})</span>
+            <button onClick={() => {
+              const v = viewPortal(); delete v.kodSekolah
+              setViewPortal({ ...v, namaSekolah: '' })
+              setPortalTick(t => t + 1)
+            }} className="ml-auto underline hover:no-underline">Tukar Sekolah</button>
+            <button onClick={handleLogout} className="underline hover:no-underline">Kembali ke Superadmin</button>
+          </div>
+        )}
         {/* Mobile topbar */}
         <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shrink-0">
           <button onClick={() => setSidebarOpen(true)}
@@ -277,8 +358,8 @@ export default function PengurusLayout({ children }) {
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        {/* Page content — key kodSekolah supaya page remount bila superadmin tukar sekolah */}
+        <main className="flex-1 overflow-y-auto" key={isSuperView ? userData?.kodSekolah : undefined}>
           {children}
         </main>
       </div>

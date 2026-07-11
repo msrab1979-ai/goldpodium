@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
-import { useAuth } from '../../context/AuthContext'
+import useSchoolId from '../../hooks/useSchoolId'
 
 const MAX_ITEMS = 6
 
@@ -191,8 +191,7 @@ function CardRow({ item, idx, total, onChange, onMove, onDelete }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AksesPantasPage() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { schoolId } = useSchoolId()
 
   const [items,   setItems]   = useState([])
   const [loading, setLoading] = useState(true)

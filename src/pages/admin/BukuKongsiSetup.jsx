@@ -11,7 +11,7 @@
 import { useState, useEffect } from 'react'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
-import { useAuth } from '../../context/AuthContext'
+import useSchoolId from '../../hooks/useSchoolId'
 import { isValidDriveUrl, extractDriveFileId } from '../../utils/bukuKongsiUtils'
 
 const MAX_BUKU = 10
@@ -24,8 +24,7 @@ function newBukuId() {
 }
 
 export default function BukuKongsiSetup() {
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { schoolId } = useSchoolId()
   const [aktif, setAktif]       = useState(true)
   const [senarai, setSenarai]   = useState([])  // [{ id, tajuk, url, createdAt }]
   const [saving, setSaving]     = useState(false)

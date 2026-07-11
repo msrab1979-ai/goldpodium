@@ -22,6 +22,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import { validasiPendaftaran } from '../../utils/validasiPendaftaran'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -2616,7 +2617,8 @@ function TabPanduan({ onGoTab }) {
 }
 
 export default function PengurusDashboard() {
-  const { userData } = useAuth()
+  const { userData: authData } = useAuth()
+  const userData = withPortalView(authData)
 
   const schoolId   = userData?.schoolId   || ''
   const kodSekolah = userData?.kodSekolah || ''

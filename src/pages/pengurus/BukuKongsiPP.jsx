@@ -12,10 +12,12 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import { driveViewUrl } from '../../utils/bukuKongsiUtils'
 
 export default function BukuKongsiPP() {
-  const { userRole, userData } = useAuth()
+  const { userRole, userData: authData } = useAuth()
+  const userData = withPortalView(authData)
   const schoolId = userData?.schoolId || ''
   const navigate     = useNavigate()
   const [senarai, setSenarai] = useState([])

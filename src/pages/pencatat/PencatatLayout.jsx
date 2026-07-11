@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView, clearViewPortal } from '../../hooks/useSchoolId'
 import { usePWATitle } from '../../hooks/usePWATitle'
 import { useLesen } from '../../hooks/useLesen'
 import LesenTamat from '../LesenTamat'
@@ -129,7 +130,8 @@ function SidebarContent({ userData, slug, sistemTutup, mesejTutup, onLogout, onN
 // ─── PencatatLayout ───────────────────────────────────────────────────────────
 
 export default function PencatatLayout({ children }) {
-  const { userData, logout } = useAuth()
+  const { userData: authData, logout } = useAuth()
+  const userData = withPortalView(authData)
   const navigate = useNavigate()
   const { slug }  = useParams()
   const schoolId  = userData?.schoolId || ''
@@ -153,7 +155,15 @@ export default function PencatatLayout({ children }) {
     return () => unsub()
   }, [userData?.schoolId])
 
+  const isSuperView = authData?.role === 'superadmin'
+
   async function handleLogout() {
+    if (isSuperView) {
+      // Superadmin tak logout — hanya keluar dari mod portal
+      clearViewPortal()
+      navigate('/superadmin', { replace: true })
+      return
+    }
     await logout()
     navigate(`/${slug}`)
   }
@@ -216,6 +226,14 @@ export default function PencatatLayout({ children }) {
             </div>
           </div>
         </header>
+
+        {/* Banner mod superadmin */}
+        {isSuperView && (
+          <div className="flex items-center gap-2 px-4 py-1.5 bg-amber-400 text-[11px] font-semibold text-amber-950 shrink-0">
+            <span>⚡ Mod Superadmin — {userData?.namaSekolah || slug || ''}</span>
+            <button onClick={handleLogout} className="ml-auto underline hover:no-underline">Kembali ke Superadmin</button>
+          </div>
+        )}
 
         {/* Sistem Tutup Banner */}
         {sistemTutup && (

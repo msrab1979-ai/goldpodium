@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import useSchoolId from '../../hooks/useSchoolId'
 import { useNavigate } from 'react-router-dom'
 
 const NAV_ITEMS = [
@@ -293,7 +294,7 @@ function EventsTab({ schoolId, events, onRefresh }) {
 export default function AdminPanel() {
   const { userData, logout } = useAuth()
   const navigate = useNavigate()
-  const schoolId = userData?.schoolId || ''
+  const { schoolId } = useSchoolId()
 
   const [activeTab, setActiveTab] = useState('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)

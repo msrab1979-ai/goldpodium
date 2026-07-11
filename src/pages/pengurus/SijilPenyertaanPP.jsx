@@ -14,6 +14,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { janaSijilPDF, namaFail } from '../../utils/sijilUtils'
@@ -28,7 +29,8 @@ function Spinner({ size = 'w-5 h-5' }) {
 }
 
 export default function SijilPenyertaanPP() {
-  const { userData, userRole } = useAuth()
+  const { userData: authData, userRole } = useAuth()
+  const userData = withPortalView(authData)
   const navigate    = useNavigate()
   const { slug }    = useParams()
   const schoolId    = userData?.schoolId  || ''

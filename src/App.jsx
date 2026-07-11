@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { viewPortal } from './hooks/useSchoolId'
 import AdminLayout from './components/AdminLayout'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 
@@ -132,6 +133,11 @@ function RequirePencatat({ children }) {
 
   if (loading) return null
 
+  // Superadmin boleh masuk portal pencatat (via SuperadminPanel → gp_view_portal)
+  if (userRole === 'superadmin') {
+    return viewPortal().schoolId ? children : <Navigate to="/superadmin" replace />
+  }
+
   if (userRole !== 'pencatat') return <Navigate to={`/${slug}`} replace />
 
   const sessionSlug = userData?.schoolSlug || ''
@@ -148,6 +154,11 @@ function RequirePengurus({ children }) {
   const location = useLocation()
 
   if (loading) return null
+
+  // Superadmin boleh masuk portal PP (via SuperadminPanel → gp_view_portal)
+  if (userRole === 'superadmin') {
+    return viewPortal().schoolId ? children : <Navigate to="/superadmin" replace />
+  }
 
   // Belum login — hantar ke login page sekolah ini (bawa slug dalam URL)
   if (!user || userRole !== 'pengurus') {

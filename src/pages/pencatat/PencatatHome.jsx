@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, getCountFromServer, query, where, doc, getDoc } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 
 function StatCard({ label, value, sub, color, icon }) {
   return (
@@ -23,7 +24,8 @@ function StatCard({ label, value, sub, color, icon }) {
 }
 
 export default function PencatatHome() {
-  const { userData } = useAuth()
+  const { userData: authData } = useAuth()
+  const userData = withPortalView(authData)
   const schoolId = userData?.schoolId || ''
   const nama     = userData?.name || userData?.nama || userData?.kodAkses || 'Pengguna'
 

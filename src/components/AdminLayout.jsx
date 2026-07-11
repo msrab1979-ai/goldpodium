@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { viewSchool } from '../hooks/useSchoolId'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '../firebase/config'
 
@@ -87,7 +88,7 @@ export default function AdminLayout({ children }) {
       if (kej.id) { navigate(`/admin/kejohanan/${kej.id}/${subpath}`); return }
     } catch { /* langkau */ }
     // sessionStorage kosong — fetch terus dari Firestore
-    const schoolId = userData?.schoolId || ''
+    const schoolId = userData?.schoolId || viewSchool().schoolId || ''
     if (!schoolId) { navigate('/admin/kejohanan-setup'); return }
     try {
       const snap = await getDocs(query(

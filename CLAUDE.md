@@ -621,6 +621,35 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - User doc ada `pin` field (plain text lama) tapi tiada `pinHash` — wajib ada `pinHash` untuk login berjaya
 - Superadmin create tenat via `SuperadminPanel.jsx` → `createAdminAccount()` → `slugIndex` auto-cipta dengan `aktif: true`
 
+## Superadmin Impersonation — Admin / Pencatat / PP (2026-07-11)
+
+### Hook berpusat `src/hooks/useSchoolId.js` — WAJIB untuk page admin baru
+- `useSchoolId()` → `{ schoolId, namaSekolah, isSuperadmin }` — resolve `gp_view_school`
+  (sessionStorage) untuk superadmin, `userData.schoolId` untuk admin biasa
+- **JANGAN** baca `userData?.schoolId` terus dalam page admin — superadmin dapat kosong
+  → page tersangkut loading (bug freeze sidebar lama). Guna hook, atau `viewSchool()`
+  untuk fungsi bukan-hook (cth. `AdminLayout`, `Panduan.getKejId`)
+- Fix freeze 2026-07-11: AdminPanel, AksesPantasPage, BukuKongsiSetup, PengesahanPeserta,
+  MedalTally, StartList, Panduan, AdminLayout — semua kini guna hook/helper
+
+### Portal Pencatat & PP untuk superadmin
+- SuperadminPanel menu ⋯ → "📝 Masuk sebagai Pencatat" / "👥 Masuk sebagai PP"
+- Konteks: sessionStorage `gp_view_portal` = `{ schoolId, schoolSlug, kodSekolah?, namaSekolah?, name }`
+  — helper `viewPortal()/setViewPortal()/clearViewPortal()/withPortalView()` dalam useSchoolId.js
+- `withPortalView(userData)` — gabung konteks portal ke userData bila role superadmin
+  (role KEKAL 'superadmin' supaya semakan bolehEdit dll lulus). Semua page portal
+  (pencatat ×5, pengurus ×5) guna pattern `const { userData: authData } = useAuth();
+  const userData = withPortalView(authData)`
+- Guard `RequirePencatat`/`RequirePengurus` (App.jsx): superadmin lulus jika
+  `viewPortal().schoolId` ada; jika tiada → redirect `/superadmin`
+- **PP perlu kodSekolah**: `PengurusLayout` papar picker sekolah (`PilihSekolahSuper`)
+  bila superadmin belum pilih; banner amber "⚡ Mod Superadmin" ada butang
+  Tukar Sekolah + Kembali ke Superadmin; `<main>` di-key `kodSekolah` supaya page remount
+- Logout dalam portal (superadmin) = keluar mod sahaja (`clearViewPortal` + `/superadmin`),
+  BUKAN logout Firebase
+- Firestore rules TIDAK diubah — `isSuperadmin()` memang dah benarkan semua tenant
+- `masukSebagaiAdmin` panggil `clearViewPortal()` — elak konteks portal stale
+
 ## SuperadminPanel UX Overhaul (2026-07-09)
 
 ### Kad Statistik Clickable + Filter

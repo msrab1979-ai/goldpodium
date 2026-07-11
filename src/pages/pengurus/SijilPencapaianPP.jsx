@@ -17,6 +17,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import {
@@ -50,7 +51,8 @@ function PingatBadge({ rank }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function SijilPencapaianPP() {
-  const { userData, userRole } = useAuth()
+  const { userData: authData, userRole } = useAuth()
+  const userData = withPortalView(authData)
   const schoolId = userData?.schoolId || ''
   const navigate    = useNavigate()
   const { slug }    = useParams()

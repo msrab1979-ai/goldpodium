@@ -26,6 +26,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import useSchoolId from '../../hooks/useSchoolId'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { cariRekodUntukAcara, formatPrestasiRekod, tahunRekod, lokasiRekod } from '../../utils/rekodUtils'
@@ -1553,8 +1554,8 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
 // ─── Halaman Utama ────────────────────────────────────────────────────────────
 
 export default function StartList() {
-  const { userRole, userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { userRole } = useAuth()
+  const { schoolId } = useSchoolId()
   // Hanya superadmin + admin boleh jana/edit heat
   const canEdit = ['superadmin', 'admin'].includes(userRole)
 

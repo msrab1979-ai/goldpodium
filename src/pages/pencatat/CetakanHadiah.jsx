@@ -16,6 +16,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import { selectFinalists } from '../../utils/finalistUtils'
 import { rekodKeyStr } from '../../utils/postRasmiUtils'
 import { resolveIsLompatTinggi } from '../../utils/startListPdfUtils'
@@ -354,7 +355,8 @@ const MEDAL_CLR = {
 const MEDAL_LBL = { 1: 'EMAS', 2: 'PERAK', 3: 'GANGSA', 4: 'T4', 5: 'T5', 6: 'T6', 7: 'T7', 8: 'T8' }
 
 export default function CetakanHadiah() {
-  const { userData } = useAuth()
+  const { userData: authData } = useAuth()
+  const userData = withPortalView(authData)
   const schoolId = userData?.schoolId || ''
   // Kejohanan
   const [kejList,       setKejList]       = useState([])

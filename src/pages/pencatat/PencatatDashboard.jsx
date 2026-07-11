@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { collection, getDocs, query, orderBy } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import { useNavigate, useParams } from 'react-router-dom'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -54,7 +55,8 @@ function KejCard({ kej, onClick }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function PencatatInputKeputusanPage() {
-  const { userData } = useAuth()
+  const { userData: authData } = useAuth()
+  const userData = withPortalView(authData)
   const navigate     = useNavigate()
   const { slug }     = useParams()
   const schoolId     = userData?.schoolId || ''

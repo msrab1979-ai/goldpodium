@@ -4,14 +4,13 @@ import {
   collection, doc, getDocs, getDoc, updateDoc, serverTimestamp, query, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
-import { useAuth } from '../../context/AuthContext'
+import useSchoolId from '../../hooks/useSchoolId'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
 export default function PengesahanPeserta() {
   const { kejId } = useParams()
-  const { userData } = useAuth()
-  const schoolId = userData?.schoolId || ''
+  const { schoolId } = useSchoolId()
 
   const [namaKej, setNamaKej]           = useState('')
   const [sekolahList, setSekolahList]   = useState([])

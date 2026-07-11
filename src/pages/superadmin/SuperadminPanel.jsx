@@ -5,6 +5,7 @@ import { createAdminAccount, hantarResetPassword } from '../../firebase/auth'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import TabAkaun from './TabAkaun'
+import { setViewPortal, clearViewPortal } from '../../hooks/useSchoolId'
 
 // ── Modal Data & Reset ────────────────────────────────────────────────────────
 
@@ -601,11 +602,24 @@ export default function SuperadminPanel() {
   const navigate = useNavigate()
 
   function masukSebagaiAdmin(s) {
+    clearViewPortal()
     sessionStorage.setItem('gp_view_school', JSON.stringify({
       schoolId: s.schoolId || s.id,
       namaSekolah: s.namaSekolah,
     }))
     navigate('/admin')
+  }
+
+  // Masuk portal pencatat/PP sebagai superadmin — konteks disimpan dalam gp_view_portal
+  function masukSebagaiPortal(s, jenis) {
+    if (!s.slug) { alert('Sekolah ini tiada slug — tidak boleh buka portal.') ; return }
+    setViewPortal({
+      schoolId: s.schoolId || s.id,
+      schoolSlug: s.slug,
+      namaSekolah: s.namaSekolah,
+      name: 'Superadmin',
+    })
+    navigate(`/${s.slug}/${jenis === 'pengurus' ? 'pengurus/dashboard' : 'pencatat/dashboard'}`)
   }
 
   const [sekolah,            setSekolah]            = useState([])
@@ -1219,6 +1233,15 @@ export default function SuperadminPanel() {
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tindakan</p>
               <p className="text-xs font-bold text-gray-700 truncate">{s.namaSekolah}</p>
             </div>
+            <button onClick={() => { setMenuTerbuka(null); masukSebagaiPortal(s, 'pencatat') }}
+              className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2">
+              <span className="text-sm">📝</span> Masuk sebagai Pencatat
+            </button>
+            <button onClick={() => { setMenuTerbuka(null); masukSebagaiPortal(s, 'pengurus') }}
+              className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-pink-50 hover:text-pink-700 flex items-center gap-2">
+              <span className="text-sm">👥</span> Masuk sebagai PP
+            </button>
+            <div className="border-t border-gray-100" />
             <button onClick={() => { setMenuTerbuka(null); resetPwAdmin(s) }}
               className="w-full text-left px-3 py-2.5 text-xs font-semibold text-gray-700 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2">
               <span className="text-sm">🔑</span> Reset Password
