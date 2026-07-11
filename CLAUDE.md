@@ -764,6 +764,16 @@ tenants/{schoolId}/langganan_sejarah/{docId}
 - Baris footer semua tenant: "Sistem ini dibina oleh **Gold Podium** · **Berminat? →**" — dua-dua link ke `/` (promo page), buka tab baru
 - Terpakai automatik semua tenant (hardcoded dalam SchoolLanding, bukan per-tenant config)
 
+## PageSpeed / Perf & A11y (2026-07-11)
+Baseline PageSpeed: promo `/` mobile 70 / desktop 96; tenant `/ppkikmn` mobile 56 / desktop 83
+(LCP mobile 7.3s — punca: bundle JS + tunggu Firestore; TBT rendah, bukan isu kod berat).
+Fix yang dibuat (terpakai semua tenant):
+- `index.html`: `preconnect` firestore + identitytoolkit, `lang="ms"`, meta description, title deskriptif
+- `SchoolLanding.jsx`: aria-label butang refresh, kontras `white/40→75` (namaAgensi) +
+  ikon refresh `white/35→70`, tab pill `gray-500→600`, landmark `<main>` balut kandungan
+- Skor 90+ mobile first-visit perlu SSR — TIDAK berbaloi, jangan cadang ubah seni bina
+- Lawatan ulangan laju (PWA cache) — skor lab first-visit sahaja
+
 ## Dasar Harga (2026-07-10)
 - **JANGAN papar sebarang harga (RM)** di promo page, demo tenant, footer atau mana-mana halaman awam
 - CTA sentiasa hubungi WhatsApp (`NO_WA` dalam `Landing.jsx`) — seksyen #harga guna kad "Bincang Terus dengan Kami"

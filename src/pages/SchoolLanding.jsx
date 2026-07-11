@@ -1634,7 +1634,7 @@ export default function SchoolLanding() {
           </div>
           {/* Tajuk */}
           <div className="flex-1 text-center min-w-0">
-            {cfg.namaAgensi && <p className="text-[9px] text-white/40 uppercase tracking-[0.2em] truncate">{cfg.namaAgensi}</p>}
+            {cfg.namaAgensi && <p className="text-[9px] text-white/75 uppercase tracking-[0.2em] truncate">{cfg.namaAgensi}</p>}
             <p className="text-sm font-black text-white tracking-[0.12em] mt-0.5 truncate">
               {cfg.namaSistem || kej?.namaKejohanan || sekolah?.namaSekolah || 'Gold Podium'}
             </p>
@@ -1647,7 +1647,8 @@ export default function SchoolLanding() {
           </div>
           {/* Refresh */}
           <button onClick={() => { setHeatCache({}); setExpandedAcara(new Set()); setJadualTick(t => t + 1) }}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/35 hover:text-white/80 transition-all shrink-0 active:scale-95">
+            aria-label="Muat semula data"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all shrink-0 active:scale-95">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
@@ -1739,6 +1740,7 @@ export default function SchoolLanding() {
         </div>
       </section>
 
+      <main>
       {/* ── Akses Pantas ── */}
       {kej && (() => {
         const activeItems = aksesPantasItems.filter(it => it.aktif && it.url)
@@ -1814,7 +1816,7 @@ export default function SchoolLanding() {
               ].filter(t => t.show).map(t => (
                 <button key={t.id} onClick={() => { setActiveTab(t.id); if (t.id === 'rekod') loadRekodAll() }}
                   className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    activeTab === t.id ? 'bg-[#003399] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    activeTab === t.id ? 'bg-[#003399] text-white shadow-sm' : 'text-gray-600 hover:text-gray-800'
                   }`}>
                   {t.label}
                 </button>
@@ -2026,7 +2028,7 @@ export default function SchoolLanding() {
                           {PERINGKAT_LIST.map(p => (
                             <button key={p.id} onClick={() => { setActivePeringkatRekod(p.id); setActiveKatRekod('') }}
                               className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                activePeringkatRekod === p.id ? 'bg-[#003399] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                                activePeringkatRekod === p.id ? 'bg-[#003399] text-white shadow-sm' : 'text-gray-600 hover:text-gray-800'
                               }`}>{p.label}</button>
                           ))}
                         </div>
@@ -2116,6 +2118,7 @@ export default function SchoolLanding() {
           <p className="text-xs text-gray-400">Admin perlu setup kejohanan dahulu.</p>
         </div>
       )}
+      </main>
 
       {/* ── Footer ── */}
       <footer className="border-t-2 border-gray-100 bg-white">

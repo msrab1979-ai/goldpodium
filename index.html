@@ -1,17 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="ms">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/logo192.png" />
+    <!-- Preconnect: potong latency sambungan pertama ke Firestore/Auth (LCP halaman tenant) -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#003399" />
+    <meta name="description" content="Gold Podium — sistem pengurusan kejohanan olahraga sekolah Malaysia. Pendaftaran atlet online, start list automatik, keputusan masa nyata, medal tally, rekod dan e-sijil." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Gold Podium" />
-    <title>Gold Podium</title>
+    <title>Gold Podium — Sistem Pengurusan Kejohanan Olahraga</title>
   </head>
   <body>
     <div id="root"></div>
