@@ -603,6 +603,8 @@ export default function SuperadminPanel() {
 
   function masukSebagaiAdmin(s) {
     clearViewPortal()
+    // Buang konteks kejohanan tenant sebelumnya — elak kejId stale bila tukar tenant
+    sessionStorage.removeItem('gp_kej_aktif')
     sessionStorage.setItem('gp_view_school', JSON.stringify({
       schoolId: s.schoolId || s.id,
       namaSekolah: s.namaSekolah,

@@ -83,12 +83,15 @@ export default function AdminLayout({ children }) {
   }
 
   async function navKejohanan(subpath) {
+    const schoolId = (isSuperadmin && viewSchool().schoolId) || userData?.schoolId || ''
     try {
       const kej = JSON.parse(sessionStorage.getItem('gp_kej_aktif') || '{}')
-      if (kej.id) { navigate(`/admin/kejohanan/${kej.id}/${subpath}`); return }
+      // Guna cache hanya bila kejohanan milik tenant semasa — elak kejId stale
+      if (kej.id && (!kej.schoolId || kej.schoolId === schoolId)) {
+        navigate(`/admin/kejohanan/${kej.id}/${subpath}`); return
+      }
     } catch { /* langkau */ }
-    // sessionStorage kosong — fetch terus dari Firestore
-    const schoolId = userData?.schoolId || viewSchool().schoolId || ''
+    // sessionStorage kosong/stale — fetch terus dari Firestore
     if (!schoolId) { navigate('/admin/kejohanan-setup'); return }
     try {
       const snap = await getDocs(query(

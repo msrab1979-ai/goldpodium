@@ -535,6 +535,13 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - Ganti footer "Log Masuk Admin" jadi card ADMIN besar
 - Modal sekarang: **PENCATAT (hijau) + ADMIN (biru gelap)**
 
+### Lupa Kata Laluan Login Admin (2026-07-12)
+- `Login.jsx` ada link "Lupa kata laluan?" bawah medan kata laluan — panggil
+  `hantarResetPassword(emel)` (`firebase/auth.js`, `sendPasswordResetEmail`)
+- Mesej maklum balas SAMA walau akaun tak wujud — elak user enumeration
+- Berfungsi untuk superadmin + semua admin tenant (Firebase Auth email/password)
+- Superadmin juga boleh reset via Firebase Console → Authentication → Reset password
+
 ### Lupa PIN PengurusLogin
 - Trigger di `PengurusLogin` (page paling logik untuk PP)
 - Flow: kod sekolah + e-mel → semak match → jana PIN 6 digit rawak → hash simpan → papar sekali
@@ -563,6 +570,9 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 
 ### KategoriSetup cleanup
 - Tab filter: whitelist `SR/SM/PPKI` sahaja (buang custom tenant seperti "SEKOLAH RENDAH")
+- **Fix 2026-07-12:** kategori jenis custom WAJIB tetap dipapar — dikumpul bawah group/tab
+  `LAIN` (`jenisOf(k)` helper). Dulu whitelist buat kategori custom HILANG terus dari
+  paparan (page nampak kosong walaupun JUMLAH > 0, cth tenant MSSDPPKI 18 kategori)
 - Modal: buang butang preset — input text sahaja + panduan biru
 - Modal: buang Bahagian 3 "Kuota Atlet Per Sekolah" — sekolah bebas daftar tanpa had
 - Table: buang kolum "Atlet / Sekolah (L | P)"
@@ -631,6 +641,23 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
   untuk fungsi bukan-hook (cth. `AdminLayout`, `Panduan.getKejId`)
 - Fix freeze 2026-07-11: AdminPanel, AksesPantasPage, BukuKongsiSetup, PengesahanPeserta,
   MedalTally, StartList, Panduan, AdminLayout — semua kini guna hook/helper
+
+### Konteks kejohanan `gp_kej_aktif` — fix stale (2026-07-12)
+- Masalah: superadmin masuk Tenant A → `gp_kej_aktif` simpan kejId Tenant A; masuk
+  Tenant B pula → menu kejohanan (Kategori/Acara/StartList/Pengesahan) navigate guna
+  kejId lama → page kosong / "Sesi Tamat"
+- Fix 1: `masukSebagaiAdmin()` (SuperadminPanel) — `removeItem('gp_kej_aktif')` setiap masuk tenant
+- Fix 2: `navKejohanan()` (AdminLayout) — cache hanya dipakai bila `kej.schoolId`
+  padan tenant semasa (`viewSchool().schoolId` untuk superadmin); tak padan → fallback
+  fetch Firestore. Semua penulis `gp_kej_aktif` memang simpan `schoolId` dalam doc
+
+### Shortcut login superadmin dari landing tenant (2026-07-12)
+- `Login.jsx`: bila role `superadmin` DAN datang dari SchoolLanding (`state.schoolSlug` ada)
+  → auto set `gp_view_school` (schoolId dari `state.schoolId`, fallback resolve `slugIndex/{slug}`)
+  + `clearViewPortal()` + buang `gp_kej_aktif` → terus ke `/admin` tenant tu
+  (sama kesan seperti tekan "Masuk" dalam SuperadminPanel)
+- Login superadmin dari `/login` terus (tanpa state slug) → ke `/superadmin` macam biasa
+- Admin tenant biasa (role `admin`) tidak terjejas — haluan ikut `HALUAN_PERANAN`
 
 ### Portal Pencatat & PP untuk superadmin
 - SuperadminPanel menu ⋯ → "📝 Masuk sebagai Pencatat" / "👥 Masuk sebagai PP"

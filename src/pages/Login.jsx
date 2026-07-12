@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getLockStatus } from '../firebase/auth'
+import { getLockStatus, hantarResetPassword } from '../firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
+import { db } from '../firebase/config'
+import { clearViewPortal } from '../hooks/useSchoolId'
 
 const HALUAN_PERANAN = {
   superadmin:    '/superadmin',
@@ -61,12 +64,44 @@ export default function Login() {
   const [ralat,    setRalat]    = useState('')
   const [muatTurun, setMuatTurun] = useState(false)
   const [maklumatKunci, setMaklumatKunci] = useState(null)
+  const [resetMesej, setResetMesej] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
 
   useEffect(() => {
-    if (user && userRole && userRole !== 'pending_setup') {
-      navigate(HALUAN_PERANAN[userRole] || '/dashboard', { replace: true })
+    if (!user || !userRole || userRole === 'pending_setup') return
+
+    // Shortcut superadmin: login dari landing tenant → terus masuk admin tenant tu
+    // (sama seperti tekan "Masuk" dalam SuperadminPanel — set gp_view_school)
+    if (userRole === 'superadmin' && slugTenant) {
+      let batal = false
+      ;(async () => {
+        try {
+          let sId  = location.state?.schoolId || ''
+          let nama = namaSekolahDariSlug
+          if (!sId) {
+            const idx = await getDoc(doc(db, 'slugIndex', slugTenant))
+            if (idx.exists()) sId = idx.data().schoolId || ''
+          }
+          if (sId && !nama) {
+            const t = await getDoc(doc(db, 'tenants', sId))
+            if (t.exists()) nama = t.data().namaSekolah || ''
+          }
+          if (batal) return
+          if (sId) {
+            clearViewPortal()
+            sessionStorage.removeItem('gp_kej_aktif')
+            sessionStorage.setItem('gp_view_school', JSON.stringify({ schoolId: sId, namaSekolah: nama }))
+            navigate('/admin', { replace: true })
+            return
+          }
+        } catch { /* fallback ke haluan biasa */ }
+        if (!batal) navigate(HALUAN_PERANAN[userRole] || '/dashboard', { replace: true })
+      })()
+      return () => { batal = true }
     }
-  }, [user, userRole, navigate])
+
+    navigate(HALUAN_PERANAN[userRole] || '/dashboard', { replace: true })
+  }, [user, userRole, navigate, slugTenant, namaSekolahDariSlug, location.state?.schoolId])
 
   useEffect(() => {
     if (!emel.trim()) { setMaklumatKunci(null); return }
@@ -85,6 +120,19 @@ export default function Login() {
     if (kod === 'auth/user-disabled')
       return 'Akaun ini telah dinyahaktifkan. Hubungi pentadbir.'
     return 'Ralat sistem. Sila cuba sebentar lagi.'
+  }
+
+  async function handleLupaPassword() {
+    setRalat('')
+    setResetMesej('')
+    if (!emel.trim()) { setRalat('Masukkan alamat emel anda dahulu, kemudian klik "Lupa kata laluan?".'); return }
+    setResetLoading(true)
+    try {
+      await hantarResetPassword(emel)
+    } catch { /* jangan dedah sama ada akaun wujud */ }
+    // Mesej sama walau akaun tak wujud — elak orang meneka emel berdaftar
+    setResetMesej(`Jika akaun untuk ${emel.trim().toLowerCase()} wujud, pautan set semula kata laluan telah dihantar ke emel tersebut. Semak juga folder Spam.`)
+    setResetLoading(false)
   }
 
   async function handleHantar(e) {
@@ -151,6 +199,16 @@ export default function Login() {
             </div>
           )}
 
+          {/* Mesej reset password */}
+          {resetMesej && (
+            <div className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-2.5">
+              <svg className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+              <p className="text-xs text-blue-700">{resetMesej}</p>
+            </div>
+          )}
+
           <form onSubmit={handleHantar} className="space-y-4">
             {/* Emel */}
             <div>
@@ -200,6 +258,16 @@ export default function Login() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                   }
+                </button>
+              </div>
+              <div className="text-right mt-1.5">
+                <button
+                  type="button"
+                  onClick={handleLupaPassword}
+                  disabled={resetLoading || muatTurun}
+                  className="text-[11px] font-semibold text-[#003399] hover:text-[#002277] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {resetLoading ? 'Menghantar…' : 'Lupa kata laluan?'}
                 </button>
               </div>
             </div>

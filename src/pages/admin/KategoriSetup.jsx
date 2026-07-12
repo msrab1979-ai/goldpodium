@@ -1008,24 +1008,27 @@ export default function KategoriSetup() {
   }
 
   const allKod = list.map(k => k.kod)
-  const filtered = filterJenis === 'semua' ? list : list.filter(k => k.jenisSekolah === filterJenis)
 
   // Tab jenis sekolah — whitelist SR/SM/PPKI sahaja.
-  // Tab custom tenant (contoh: 'SEKOLAH RENDAH') tak dipapar, sebab
-  // konsep sama dengan default SR/SM/PPKI. Data existing tak dipadam,
-  // cuma tak nampak sebagai tab berasingan.
+  // Kategori dengan jenis custom (contoh: 'SEKOLAH RENDAH', 'PENDIDIKAN KHAS')
+  // TIDAK dapat tab sendiri, tapi WAJIB tetap dipapar — dikumpul bawah 'LAIN'.
   const ALLOWED_JENIS = ['SR', 'SM', 'PPKI']
+  const jenisOf = k => ALLOWED_JENIS.includes(k.jenisSekolah) ? k.jenisSekolah : 'LAIN'
+  const adaLain = list.some(k => jenisOf(k) === 'LAIN')
+  const filtered = filterJenis === 'semua' ? list : list.filter(k => jenisOf(k) === filterJenis)
   const jenisValues = [
     ...new Set([
       ...jenisList.filter(j => ALLOWED_JENIS.includes(j)),
       ...list.map(k => k.jenisSekolah).filter(j => ALLOWED_JENIS.includes(j)),
-    ])
+    ]),
+    ...(adaLain ? ['LAIN'] : []),
   ]
 
   const JENIS_LABELS = {
     SR:   'Sekolah Rendah (SR)',
     SM:   'Sekolah Menengah (SM)',
     PPKI: 'Program Pendidikan Khas (PPKI)',
+    LAIN: 'Lain-lain (jenis custom)',
   }
   const JENIS_BARS = {
     SR:   'bg-blue-600',
@@ -1104,7 +1107,7 @@ export default function KategoriSetup() {
         </div>
         {jenisValues.map(j => (
           <div key={j} className="bg-gray-50 rounded-xl px-4 py-3 text-center">
-            <p className="text-2xl font-black text-gray-700">{list.filter(k => k.jenisSekolah === j).length}</p>
+            <p className="text-2xl font-black text-gray-700">{list.filter(k => jenisOf(k) === j).length}</p>
             <p className="text-[10px] text-gray-500 uppercase tracking-wide mt-0.5">{j}</p>
           </div>
         ))}
@@ -1130,7 +1133,7 @@ export default function KategoriSetup() {
       ) : (
         <div className="space-y-7">
           {groups.map(g => {
-            const items = filtered.filter(k => k.jenisSekolah === g.jenis)
+            const items = filtered.filter(k => jenisOf(k) === g.jenis)
             if (items.length === 0) return null
             return (
               <div key={g.jenis}>
