@@ -386,7 +386,13 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
         <div className="px-2 py-3 text-center">Lrg</div>
         <div className="px-2 py-3 text-center">BIB</div>
         <div className="px-2 py-3">Atlet / Sekolah</div>
-        <div className="px-2 py-3 text-center">Masa</div>
+        <div className="px-2 py-3 text-center">
+          Masa
+          {isAcaraHT(acara) && (
+            <span className="ml-1 text-[8px] font-black px-1 py-0.5 rounded bg-teal-400 text-white align-middle"
+              title="Hand Timing — masa bundar WA dipapar selepas taip">HT</span>
+          )}
+        </div>
         <div className="px-2 py-3 text-center">Kddk</div>
         <div className="px-2 py-3 text-center">Catatan</div>
       </div>
@@ -505,7 +511,13 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
           <div className="px-2 py-3 text-center">Lrg</div>
           <div className="px-2 py-3 text-center">No BIB</div>
           <div className="px-2 py-3">Atlet / Sekolah</div>
-          <div className="px-2 py-3 text-center">Masa</div>
+          <div className="px-2 py-3 text-center">
+          Masa
+          {isAcaraHT(acara) && (
+            <span className="ml-1 text-[8px] font-black px-1 py-0.5 rounded bg-teal-400 text-white align-middle"
+              title="Hand Timing — masa bundar WA dipapar selepas taip">HT</span>
+          )}
+        </div>
           <div className="px-2 py-3 text-center">Kddk</div>
           <div className="px-2 py-3 text-center">Catatan</div>
         </div>
@@ -841,7 +853,13 @@ function InputMassStart({ acara, heat, keputusan, onChange, sekolahMap = {}, bib
         <div className="px-2 py-3 text-center">Bil</div>
         <div className="px-2 py-3 text-center">No BIB</div>
         <div className="px-2 py-3">Atlet / Sekolah</div>
-        <div className="px-2 py-3 text-center">Masa</div>
+        <div className="px-2 py-3 text-center">
+          Masa
+          {isAcaraHT(acara) && (
+            <span className="ml-1 text-[8px] font-black px-1 py-0.5 rounded bg-teal-400 text-white align-middle"
+              title="Hand Timing — masa bundar WA dipapar selepas taip">HT</span>
+          )}
+        </div>
         <div className="px-2 py-3 text-center">Kddk</div>
         <div className="px-2 py-3 text-center">Catatan</div>
       </div>
@@ -956,7 +974,13 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
         style={{ gridTemplateColumns: '44px 1fr 96px 60px 100px' }}>
         <div className="px-2 py-3 text-center">Lrg</div>
         <div className="px-2 py-3">Sekolah / Pasukan</div>
-        <div className="px-2 py-3 text-center">Masa</div>
+        <div className="px-2 py-3 text-center">
+          Masa
+          {isAcaraHT(acara) && (
+            <span className="ml-1 text-[8px] font-black px-1 py-0.5 rounded bg-teal-400 text-white align-middle"
+              title="Hand Timing — masa bundar WA dipapar selepas taip">HT</span>
+          )}
+        </div>
         <div className="px-2 py-3 text-center">Kddk</div>
         <div className="px-2 py-3 text-center">Catatan</div>
       </div>
