@@ -492,10 +492,10 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
                     <td className="hidden sm:table-cell px-3 py-2 text-gray-500 text-[11px] max-w-[120px] truncate">{namaSkl}</td>
                   )}
                   <td className={`px-2 py-2 text-right font-mono font-bold text-[11px] ${flagged ? 'text-red-400' : 'text-gray-800'}`}>
-                    {flagged ? p.status : (hasilBundar || '—')}
-                    {htVal !== null && (
-                      <span className="ml-1 font-semibold text-[10px] text-gray-400">({fmtMasa(htVal)}h)</span>
-                    )}
+                    {flagged ? p.status
+                      : htVal !== null
+                      ? <>{fmtMasa(htVal)} <span className="font-semibold text-[10px] text-gray-400">({hasilBundar})</span></>
+                      : (hasilBundar || '—')}
                   </td>
                   {showCatatanCol && (
                     <td className="px-1.5 py-2 text-center">

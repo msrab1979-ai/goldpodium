@@ -441,7 +441,7 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
               {kp.keputusan > 0 && (
                 <span className="text-[10px] font-mono text-[#003399] font-bold">
                   {fmtMasaDisplay(kp.keputusan)}
-                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}</span>}
                 </span>
               )}
             </div>
@@ -586,7 +586,7 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
                 {kp.keputusan > 0 && (
                   <span className="text-[10px] font-mono text-[#003399] font-bold">
                   {fmtMasaDisplay(kp.keputusan)}
-                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}</span>}
                 </span>
                 )}
                 {isKonflik && (
@@ -913,7 +913,7 @@ function InputMassStart({ acara, heat, keputusan, onChange, sekolahMap = {}, bib
               {kp.keputusan > 0 && (
                 <span className="text-[10px] font-mono text-[#003399] font-bold">
                   {fmtMasaDisplay(kp.keputusan)}
-                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}</span>}
                 </span>
               )}
               {isKonflik && (
@@ -1050,7 +1050,7 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
               {kp.keputusan > 0 && (
                 <span className="text-[10px] font-mono text-[#003399] font-bold">
                   {fmtMasaDisplay(kp.keputusan)}
-                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}</span>}
                 </span>
               )}
               {isKonflik && (
@@ -2115,13 +2115,14 @@ export default function PencatatInputKeputusan() {
         const min = Math.floor(n / 60)
         const sek = (n % 60).toFixed(2).padStart(5, '0')
         const asas = min > 0 ? `${min}:${sek}` : `${Number(sek).toFixed(2)}s`
-        // HT: tambah masa bundar WA dalam kurungan — paparan sahaja
+        // HT: masa bundar WA jadi paparan UTAMA, masa asal dalam kurungan — paparan sahaja
         if (isAcaraHT(selectedAcara)) {
           const b = bundarHT(n)
           if (b !== null) {
             const bMin = Math.floor(b / 60)
-            const bSek = (b % 60).toFixed(1).padStart(4, '0')
-            return `${asas} (${bMin > 0 ? `${bMin}:${bSek}` : `${Number(bSek).toFixed(1)}`}h)`
+            const bSek = (b % 60).toFixed(2).padStart(5, '0')
+            const bFmt = bMin > 0 ? `${bMin}:${bSek}` : `${Number(bSek).toFixed(2)}s`
+            return `${bFmt} (${asas})`
           }
         }
         return asas
