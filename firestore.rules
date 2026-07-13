@@ -242,6 +242,13 @@ service cloud.firestore {
     match /tenants/{schoolId}/sekolah/{kodSekolah} {
       allow read:  if true;
       allow write: if canWriteTenant(schoolId);
+      // Lupa PIN PP (self-service dari PengurusLogin) — PP belum ada session,
+      // jadi benarkan update TERHAD kepada field PIN sahaja, mesti ada auth (anon).
+      // Nota: pinHash memang public-readable — PIN ialah kawalan lembut, bukan benteng.
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['pinHash', 'pin', 'updatedAt'])
+        && request.resource.data.pinHash is string;
     }
 
     // ─── Users per-tenant (pencatat records) ──────────────────────────────────

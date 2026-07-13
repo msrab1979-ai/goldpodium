@@ -14,7 +14,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import { doc, getDoc, updateDoc, serverTimestamp, deleteField } from 'firebase/firestore'
-import { db } from '../../firebase/config'
+import { signInAnonymously } from 'firebase/auth'
+import { db, auth } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { hashPin } from '../../utils/hashPin'
 
@@ -51,6 +52,8 @@ function LupaPinModal({ schoolId, onClose }) {
       }
       const pin6 = genPin6()
       const ph   = await hashPin(pin6)
+      // Rules wajibkan request.auth untuk reset PIN — sign in anon jika belum
+      if (!auth.currentUser) await signInAnonymously(auth)
       await updateDoc(doc(db, 'tenants', schoolId, 'sekolah', kod), {
         pinHash: ph, pin: deleteField(), updatedAt: serverTimestamp(),
       })

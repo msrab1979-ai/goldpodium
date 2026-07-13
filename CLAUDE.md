@@ -489,6 +489,25 @@ di-test emulator + deploy live + push GitHub.
 - `pencatat/CetakanHadiah` PDF + UI preview — sama logic
 - Padang biasa (bukan LT) juga terima manual override
 
+## Kategori Utils — Fix PPKI "Di luar julat" (2026-07-13)
+
+**`src/utils/kategoriUtils.js`** — util KONGSI untuk semua logik kategori umur
+(PengurusDashboard, PendaftaranSetup admin, validasiPendaftaran). JANGAN tulis
+semula `kiraKategori`/`layakUmurMSSM` lokal dalam page baru — import dari sini.
+
+- **Punca bug lama:** penapis jantina `lbl.startsWith('L'/'P')` — kod PPKI seperti
+  `BDL12`/`BDP12` (huruf jantina di TENGAH) tersingkir → semua atlet tenant PPKI
+  (cth. mssdppki) dapat "Di luar julat kategori"
+- `jantinaKategori(k)` — regex `([LP])\d` pada kod/label/nama, fallback huruf pertama,
+  tiada penanda → `null` = unisex (layak semua jantina)
+- `senaraiKategoriLayak()` — return ARRAY calon tier umurHad terendah sahaja
+  (PPKI boleh >1 calon seumur: BDP12/BLP12/BPP12; tenant biasa sentiasa 1).
+  Naik kategori KEKAL melalui `kategoriOverride` — julat bertindih 15/19 tak auto-naik
+- Semakan kelayakan acara guna `katLayak.includes(acara.kategoriKod)` (bukan `===`
+  nilai tunggal); `kategoriKod` yang ditulis ikut kategori acara didaftar jika layak
+- TukarKategoriModal kini benarkan kategori SEUMUR (adik-beradik PPKI) + lebih tinggi
+- Test: `senaraiKategoriLayak` 16 kes (data sebenar mssdppki + tenant biasa) lulus
+
 ## Rekod Detection Gate (2026-07-08)
 
 ### HANYA acara akhir/final/terus_final
@@ -543,6 +562,10 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - Superadmin juga boleh reset via Firebase Console → Authentication → Reset password
 
 ### Lupa PIN PengurusLogin
+- Fix 2026-07-13: dulu gagal "Ralat sistem" — PP belum login tiada session, rules tolak write.
+  Kini: modal `signInAnonymously` dulu; rules `sekolah/{kod}` benarkan update TERHAD
+  `hasOnly(['pinHash','pin','updatedAt'])` + `request.auth != null`. PIN = kawalan lembut
+  (pinHash public-readable); reset selamat penuh perlu Cloud Function (future)
 - Trigger di `PengurusLogin` (page paling logik untuk PP)
 - Flow: kod sekolah + e-mel → semak match → jana PIN 6 digit rawak → hash simpan → papar sekali
 - Hanya muncul bila schoolId sudah resolved dari slug

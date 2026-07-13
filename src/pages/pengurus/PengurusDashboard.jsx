@@ -24,6 +24,7 @@ import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { withPortalView } from '../../hooks/useSchoolId'
 import { validasiPendaftaran } from '../../utils/validasiPendaftaran'
+import { kiraKategori, senaraiKategoriLayak, padanJantina, warnaBadgeKategori } from '../../utils/kategoriUtils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -34,38 +35,7 @@ const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function layakUmurMSSM(tarikhLahir, umurHad, umurMin, tahunKejohanan) {
-  if (!tarikhLahir || !umurHad || !tahunKejohanan) return true
-  const tKej = Number(tahunKejohanan)
-  const tarikhTerawal = new Date(`${tKej - Number(umurHad)}-01-02`)
-  const tarikhTerkini = umurMin
-    ? new Date(`${tKej - Number(umurMin) + 1}-01-01`)
-    : new Date(`${tKej + 1}-01-01`)
-  const tLahir = new Date(tarikhLahir)
-  return tLahir >= tarikhTerawal && tLahir < tarikhTerkini
-}
-
-function kiraKategori(tarikhLahir, jantina, tahunKejohanan, kategoriList = []) {
-  if (!tarikhLahir || !tahunKejohanan) return null
-  if (kategoriList.length > 0) {
-    const filtered = kategoriList.filter(k => {
-      if (!k.kod) return false
-      if (!k.umurHad) return false
-      const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
-      if (lbl.includes('OPEN')) return false
-      if (jantina === 'L' && !lbl.startsWith('L')) return false
-      if (jantina === 'P' && !lbl.startsWith('P')) return false
-      return true
-    })
-    const candidates = filtered.filter(k =>
-      layakUmurMSSM(tarikhLahir, k.umurHad, k.umurMin, tahunKejohanan)
-    )
-    if (candidates.length === 0) return null
-    candidates.sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
-    return candidates[0].kod
-  }
-  return null
-}
+// kiraKategori / senaraiKategoriLayak / padanJantina — lihat utils/kategoriUtils.js
 
 // Kira kuota Gate 1 dari data tempatan (pendaftaranList + acaraList + kategoriList).
 // Tiada Firestore call — guna data yang dah diload dalam state.
@@ -280,12 +250,7 @@ function KategoriBadge({ kat, kategoriList = [] }) {
   if (!kat) return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">?</span>
   const found = kategoriList.find(k => (k.kod || k.id) === kat)
   const label = found?.label || found?.nama || kat
-  const lbl = label.toUpperCase()
-  let colorClass
-  if (lbl.startsWith('L')) colorClass = 'bg-blue-100 text-blue-700'
-  else if (lbl.startsWith('P')) colorClass = 'bg-pink-100 text-pink-700'
-  else if (lbl.includes('OPEN')) colorClass = 'bg-violet-100 text-violet-700'
-  else colorClass = 'bg-gray-100 text-gray-500'
+  const colorClass = warnaBadgeKategori(found || { kod: kat }, label)
   return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colorClass}`}>{label}</span>
 }
 
@@ -332,7 +297,7 @@ function AtletModal({ mode, initial, schoolId, kodSekolah, sekolahData, existing
     ? bibPrefix + String(bibNum).padStart(bibFormat, '0')
     : bibNum
 
-  const kategori = kiraKategori(form.tarikhLahir, form.jantina, tahunKej, kategoriList)
+  const kategoriCalon = senaraiKategoriLayak(form.tarikhLahir, form.jantina, tahunKej, kategoriList)
 
   const sensitiveChanged = isEdit && (
     form.jantina !== initial?.jantina ||
@@ -535,11 +500,18 @@ function AtletModal({ mode, initial, schoolId, kodSekolah, sekolahData, existing
               </div>
 
               {form.tarikhLahir && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
-                  <span className="text-[10px] text-gray-500">Kategori MSSM:</span>
-                  {kategori
-                    ? <KategoriBadge kat={kategori} kategoriList={kategoriList} />
-                    : <span className="text-[10px] text-red-500 font-semibold">Di luar julat kategori</span>}
+                <div className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-gray-500">Kategori MSSM:</span>
+                    {kategoriCalon.length > 0
+                      ? kategoriCalon.map(k => <KategoriBadge key={k.kod} kat={k.kod} kategoriList={kategoriList} />)
+                      : <span className="text-[10px] text-red-500 font-semibold">Di luar julat kategori</span>}
+                  </div>
+                  {kategoriCalon.length > 1 && (
+                    <p className="text-[10px] text-amber-600 mt-1">
+                      Atlet layak beberapa kategori — kategori sebenar ikut acara yang didaftar.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -939,14 +911,16 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
     if (!['C','Campuran'].includes(acara.jantina) && a.jantina !== acara.jantina) return false
     const pRecAtlet   = pendaftaranList.find(p => p.noKP === a.noKP)
     const overrideKat = pRecAtlet?.kategoriOverride || null
+    // Atlet mungkin layak >1 kategori seumur (cth. PPKI: BDP12/BLP12/BPP12)
+    const katLayak = overrideKat
+      ? [overrideKat]
+      : senaraiKategoriLayak(a.tarikhLahir, a.jantina, tahunKej, kategoriList).map(k => k.kod)
     if (isAcaraTerbuka) {
       const katTerbuka = acara.kategoriTerbuka || []
       if (katTerbuka.length === 0) return true  // terbuka semua kat
-      const katAtlet = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-      return katAtlet && katTerbuka.includes(katAtlet)
+      return katLayak.some(kod => katTerbuka.includes(kod))
     }
-    const katKira = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-    return katKira === acara.kategoriKod
+    return katLayak.includes(acara.kategoriKod)
   })
 
   const relayInfo   = isRelayAcara ? hadRelayInfo(acara, kategoriList) : null
@@ -1079,7 +1053,12 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
                 tarikhLahir: atlet.tarikhLahir,
                 kodSekolah:  atlet.kodSekolah,
                 namaSekolah: sekolahDataLive.namaSekolah || atlet.kodSekolah,
-                kategoriKod: kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList),
+                kategoriKod: (() => {
+                  // Ikut kategori acara yang didaftar jika atlet memang layak untuknya
+                  const layak = senaraiKategoriLayak(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList).map(k => k.kod)
+                  if (!isAcaraTerbuka && layak.includes(acara.kategoriKod)) return acara.kategoriKod
+                  return layak[0] || null
+                })(),
                 acaraIds:    [aceraId],
                 isAktif:     true,
                 isRelay:     isRelayAcara,
@@ -1246,16 +1225,16 @@ function TukarKategoriModal({ atlet, schoolId, kejohananId, tahunKej, kategoriLi
   const katSemasa = pRec?.kategoriOverride || kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
   const acaraCount = (pRec?.acaraIds || []).length
 
-  // Kategori atas sahaja — ikut jantina, lebih tinggi dari semasa (umurHad lebih besar)
+  // Kategori sama umur (cth. PPKI: BDP12/BLP12/BPP12) atau lebih tinggi — ikut jantina
   const katSemasakObj = kategoriList.find(k => (k.kod || k.id) === katSemasa)
   const umurHadSemasa = Number(katSemasakObj?.umurHad || 0)
   const katAtas = kategoriList.filter(k => {
     if (!k.kod || !k.umurHad) return false
+    if (k.kod === katSemasa) return false
     const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
     if (lbl.includes('OPEN')) return false
-    if (atlet.jantina === 'L' && !lbl.startsWith('L')) return false
-    if (atlet.jantina === 'P' && !lbl.startsWith('P')) return false
-    return Number(k.umurHad) > umurHadSemasa
+    if (!padanJantina(k, atlet.jantina)) return false
+    return Number(k.umurHad) >= umurHadSemasa
   }).sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
 
   const [pilihan, setPilihan] = useState('')
@@ -2051,14 +2030,16 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                     if (!['C','Campuran'].includes(acara.jantina) && a.jantina !== acara.jantina) return false
                     const pRecAtlet   = pendaftaranList.find(p => p.noKP === a.noKP)
                     const overrideKat = pRecAtlet?.kategoriOverride || null
+                    // Atlet mungkin layak >1 kategori seumur (cth. PPKI: BDP12/BLP12/BPP12)
+                    const katLayak = overrideKat
+                      ? [overrideKat]
+                      : senaraiKategoriLayak(a.tarikhLahir, a.jantina, tahunKej, kategoriList).map(k => k.kod)
                     if (isAcaraTerbuka2) {
                       const katTerbuka = acara.kategoriTerbuka || []
                       if (katTerbuka.length === 0) return true  // terbuka semua kat
-                      const katAtlet = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-                      return katAtlet && katTerbuka.includes(katAtlet)
+                      return katLayak.some(kod => katTerbuka.includes(kod))
                     }
-                    const kat = overrideKat || kiraKategori(a.tarikhLahir, a.jantina, tahunKej, kategoriList)
-                    return kat === acara.kategoriKod
+                    return katLayak.includes(acara.kategoriKod)
                   })
                   const selSet   = inlineSelected[aceraId] || new Set()
                   const isSaving = inlineSaving[aceraId] || false
@@ -2162,7 +2143,11 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                         }
 
                         // GATE 1 — had acara per atlet (guna kategoriList dari props)
-                        const katAtlet = kiraKategori(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList)
+                        // Ikut kategori acara didaftar jika atlet layak untuknya (kes PPKI >1 calon)
+                        const katLayakAtlet = senaraiKategoriLayak(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList).map(k => k.kod)
+                        const katAtlet = (!isAcaraTerbuka2 && katLayakAtlet.includes(acara.kategoriKod))
+                          ? acara.kategoriKod
+                          : katLayakAtlet[0] || null
                         if (!katAtlet) {
                           setInlineErr(p => ({ ...p, [aceraId]: `${atlet.nama || noKP} — kategori tidak dapat ditentukan. Semak tarikh lahir.` }))
                           setInlineSaving(p => ({ ...p, [aceraId]: false }))

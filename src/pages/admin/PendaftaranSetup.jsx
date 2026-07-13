@@ -24,6 +24,7 @@ import {
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { kiraKategori, senaraiKategoriLayak, padanJantina, warnaBadgeKategori } from '../../utils/kategoriUtils'
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -43,31 +44,7 @@ const kejDocPath    = (sId, kId)    => `tenants/${sId}/kejohanan/${kId}`
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function layakUmurMSSM(tarikhLahir, umurHad, umurMin, tahunKejohanan) {
-  if (!tarikhLahir || !umurHad || !tahunKejohanan) return true
-  const tKej = Number(tahunKejohanan)
-  const tarikhTerawal = new Date(`${tKej - Number(umurHad)}-01-02`)
-  const tarikhTerkini = umurMin
-    ? new Date(`${tKej - Number(umurMin) + 1}-01-01`)
-    : new Date(`${tKej + 1}-01-01`)
-  const tLahir = new Date(tarikhLahir)
-  return tLahir >= tarikhTerawal && tLahir < tarikhTerkini
-}
-
-function kiraKategori(tarikhLahir, jantina, tahunKejohanan, kategoriList = []) {
-  if (!tarikhLahir || !tahunKejohanan || !kategoriList.length) return null
-  const filtered = kategoriList.filter(k => {
-    if (!k.kod || !k.umurHad) return false
-    const lbl = (k.label || k.nama || k.kod || '').toUpperCase()
-    if (lbl.includes('OPEN')) return false
-    if (jantina === 'L' && !lbl.startsWith('L')) return false
-    if (jantina === 'P' && !lbl.startsWith('P')) return false
-    return layakUmurMSSM(tarikhLahir, k.umurHad, k.umurMin, tahunKejohanan)
-  })
-  if (!filtered.length) return null
-  filtered.sort((a, b) => Number(a.umurHad) - Number(b.umurHad))
-  return filtered[0].kod
-}
+// kiraKategori / senaraiKategoriLayak / padanJantina — lihat utils/kategoriUtils.js
 
 // Auto-parse IC: 6-digit prefix → tarikhLahir + jantina
 function parseIC(digits) {
@@ -117,11 +94,7 @@ function KatBadge({ kod, kategoriList = [] }) {
   if (!kod) return <span className="text-[9px] text-gray-400">—</span>
   const k = kategoriList.find(x => x.kod === kod)
   const lbl = k?.label || k?.nama || kod
-  const u = lbl.toUpperCase()
-  let cls = 'bg-gray-100 text-gray-600'
-  if (u.startsWith('L')) cls = 'bg-blue-100 text-blue-700'
-  else if (u.startsWith('P')) cls = 'bg-pink-100 text-pink-700'
-  else if (u.includes('OPEN')) cls = 'bg-violet-100 text-violet-700'
+  const cls = warnaBadgeKategori(k || { kod }, lbl)
   return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>{lbl}</span>
 }
 
@@ -619,19 +592,19 @@ function TabDaftarAcara({ schoolId, kejId, tahunKej, kategoriList }) {
   // Acara yang layak untuk atlet dipilih
   function acaraLayakAtlet(atlet) {
     if (!atlet) return []
-    const katAtlet = atlet.kategoriKod
+    // Atlet mungkin layak >1 kategori seumur (cth. PPKI: BDP12/BLP12/BPP12)
+    const katLayak = new Set(
+      senaraiKategoriLayak(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList).map(k => k.kod)
+    )
+    if (atlet.kategoriKod) katLayak.add(atlet.kategoriKod)
     return acaraList.filter(a => {
       if (a.statusAcara === 'batal') return false
-      // Semak jantina
       const kat = kategoriList.find(k => k.kod === a.kategoriKod)
       if (kat) {
         const lbl = (kat.label || kat.nama || kat.kod || '').toUpperCase()
         if (!lbl.includes('OPEN')) {
-          // Acara bukan OPEN — hanya atlet dengan kategori sama
-          if (a.kategoriKod !== katAtlet) return false
-          // Semak jantina dari label
-          if (lbl.startsWith('L') && atlet.jantina !== 'L') return false
-          if (lbl.startsWith('P') && atlet.jantina !== 'P') return false
+          if (!katLayak.has(a.kategoriKod)) return false
+          if (!padanJantina(kat, atlet.jantina)) return false
         }
       }
       return true
