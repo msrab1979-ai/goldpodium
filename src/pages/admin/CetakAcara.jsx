@@ -515,31 +515,46 @@ export default function CetakAcara() {
   }, [schoolId])
 
   // ── Load jadual apabila kejohanan loaded ──
+  // Sumber: acara.tarikhAcara (doc acara sendiri) — BUKAN koleksi 'jadual'
+  // (koleksi jadual kosong untuk tenant GP — sama fix seperti CetakKeputusan 2026-07-11)
   useEffect(() => {
     if (!kejohanan || !schoolId) return
-    getDocs(query(
-      collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'jadual'),
-      where('kejohananId', '==', kejohanan.id)
-    )).then(snap => {
-      const byDay = {}
-      // Sort client-side — elak keperluan composite index Firestore
-      const sorted = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const t = (a.tarikhAcara || '').localeCompare(b.tarikhAcara || '')
-          if (t !== 0) return t
-          return (a.masaMula || '').localeCompare(b.masaMula || '')
+    getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohanan.id, 'acara'))
+      .then(snap => {
+        const byDay = {}
+        const sorted = snap.docs
+          .map(d => {
+            const a = d.data()
+            return {
+              id: d.id,
+              aceraId:     a.aceraId || d.id,
+              noAcara:     a.noAcara,
+              namaAcara:   a.namaAcara,
+              kategoriKod: a.kategoriKod,
+              jantina:     a.jantina,
+              tarikhAcara: a.tarikhAcara || '',
+              masaMula:    a.masa || '',
+              isAktif:     a.isAktif,
+            }
+          })
+          .filter(a => a.isAktif !== false)
+          .sort((a, b) => {
+            const t = (a.tarikhAcara || '').localeCompare(b.tarikhAcara || '')
+            if (t !== 0) return t
+            const m = (a.masaMula || '99:99').localeCompare(b.masaMula || '99:99')
+            if (m !== 0) return m
+            return (Number(a.noAcara) || 999) - (Number(b.noAcara) || 999)
+          })
+        sorted.forEach(data => {
+          const tarikh = data.tarikhAcara || 'Tiada Tarikh'
+          if (!byDay[tarikh]) byDay[tarikh] = []
+          byDay[tarikh].push(data)
         })
-      sorted.forEach(data => {
-        const tarikh = data.tarikhAcara || 'Tiada Tarikh'
-        if (!byDay[tarikh]) byDay[tarikh] = []
-        byDay[tarikh].push(data)
-      })
-      const sortedDays = Object.keys(byDay).sort()
-      setJadualByDay(byDay)
-      setDays(sortedDays)
-      if (sortedDays.length > 0) setSelectedDay(sortedDays[0])
-    }).catch(e => console.warn('loadJadual:', e.message))
+        const sortedDays = Object.keys(byDay).sort()
+        setJadualByDay(byDay)
+        setDays(sortedDays)
+        if (sortedDays.length > 0) setSelectedDay(sortedDays[0])
+      }).catch(e => console.warn('loadJadual:', e.message))
   }, [kejohanan])
 
   // ── Pilih acara → load final heat + rekod ──
