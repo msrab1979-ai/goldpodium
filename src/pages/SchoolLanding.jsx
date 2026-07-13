@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import { hashPin } from '../utils/hashPin'
 import { usePWATitle } from '../hooks/usePWATitle'
 import { selectFinalists } from '../utils/finalistUtils'
+import { bundarHT, isAcaraHT } from '../utils/htUtils'
 import { cariRekodUntukAcara } from '../utils/rekodUtils'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -173,6 +174,13 @@ function LupaPinModal({ schoolId, onClose }) {
 // ─── RekodModal ───────────────────────────────────────────────────────────────
 
 const PERINGKAT_LABEL_M = { D: 'Daerah', N: 'Negeri', K: 'Kebangsaan' }
+
+// Label jenis slot khas (jadual_khas) — sama seperti Home.jsx
+const SLOT_JENIS_LABEL = {
+  perasmian: 'Perasmian Pembukaan', perasmian_penutup: 'Perasmian Penutup',
+  rehearsal: 'Rehearsal', hadiah: 'Majlis Hadiah', rehat: 'Rehat',
+  solat: 'Waktu Solat', lain: 'Lain-lain',
+}
 
 function rekodKeyHome(namaAcara, jantina, kategoriKod, peringkat) {
   const normalized = String(namaAcara || '')
@@ -426,6 +434,8 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
               const _rank      = (p.rankDalamHeat === 'undefined' || p.rankDalamHeat === '') ? null : p.rankDalamHeat
               const kddk       = isLompatTinggi ? _ked : (_ked || _rank)
               const hasilBundar = isPadang ? fmtJarak(p.keputusan) : fmtMasa(p.keputusan)
+              // HT: papar masa bundar WA dalam kurungan — paparan sahaja, ranking guna masa asal
+              const htVal      = isAcaraHT(acara) && !flagged ? bundarHT(p.keputusan) : null
               const medal      = isFinalHeat && (kddk === 1 ? '🥇' : kddk === 2 ? '🥈' : kddk === 3 ? '🥉' : null)
               const namaSkl    = sekolahMap?.[p.kodSekolah] || p.namaSekolah || p.kodSekolah || '—'
               const layakFinal = showCatatanCol && !flagged && finalistBibs.has(isRelay ? p.kodSekolah : p.noBib)
@@ -483,6 +493,9 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
                   )}
                   <td className={`px-2 py-2 text-right font-mono font-bold text-[11px] ${flagged ? 'text-red-400' : 'text-gray-800'}`}>
                     {flagged ? p.status : (hasilBundar || '—')}
+                    {htVal !== null && (
+                      <span className="ml-1 font-semibold text-[10px] text-gray-400">({fmtMasa(htVal)}h)</span>
+                    )}
                   </td>
                   {showCatatanCol && (
                     <td className="px-1.5 py-2 text-center">
@@ -1236,6 +1249,7 @@ export default function SchoolLanding() {
     }
   }, [cfg.showJadual, cfg.showKeputusan, cfg.showRekod, activeTab])
   const [acara,          setAcara]          = useState([])
+  const [slotKhas,       setSlotKhas]       = useState([])  // perasmian/rehat/solat dll dari jadual_khas
   const [jadualLoading,  setJadualLoading]  = useState(false)
   const [expandedDays,   setExpandedDays]   = useState(new Set())
   const [expandedAcara,  setExpandedAcara]  = useState(new Set())
@@ -1373,10 +1387,20 @@ export default function SchoolLanding() {
   useEffect(() => {
     if (!schoolId || !kej?.id) return
     if (jadualTick === 0) setJadualLoading(true)
-    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'), orderBy('noAcara')))
-      .then(snap => {
+    Promise.all([
+      getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'), orderBy('noAcara'))),
+      // Slot khas (perasmian/rehat/solat) — fetch sekali, bukan listener (jimat kos).
+      // AcaraSetup simpan ke 'jadualKhas'; 'jadual_khas' dibaca juga untuk data lama
+      getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'jadualKhas')).catch(() => null),
+      getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'jadual_khas')).catch(() => null),
+    ])
+      .then(([snap, slotSnap, slotSnapLama]) => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         setAcara(list)
+        setSlotKhas([
+          ...(slotSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+          ...(slotSnapLama?.docs || []).map(d => ({ id: `lama_${d.id}`, ...d.data() })),
+        ].filter(s => s.tarikhAcara))
         // Build kategori map dari data acara
         const kMap = {}
         list.forEach(a => {
@@ -1496,6 +1520,12 @@ export default function SchoolLanding() {
         if (!hariMap[t]) hariMap[t] = []
         hariMap[t].push(a)
       })
+      const slotMapPdf = {}
+      slotKhas.forEach(s => {
+        if (!slotMapPdf[s.tarikhAcara]) slotMapPdf[s.tarikhAcara] = []
+        slotMapPdf[s.tarikhAcara].push(s)
+        if (!hariMap[s.tarikhAcara]) hariMap[s.tarikhAcara] = []
+      })
       const hariKeys = Object.keys(hariMap).sort()
       let isFirst = true
 
@@ -1512,24 +1542,34 @@ export default function SchoolLanding() {
           styles: { cellPadding: { top: 3, bottom: 3, left: 5, right: 5 } }, theme: 'plain',
         })
 
-        const tableBody = items
-          .sort((a, b) => (a.masa || '99:99').localeCompare(b.masa || '99:99') || (Number(a.noAcara) || 999) - (Number(b.noAcara) || 999))
-          .map(a => {
-            const peringkatLabel = a.peringkat === 'saringan_qf' ? 'Saringan/QF'
-              : a.peringkat === 'saringan_sf'   ? 'Saringan/SF'
-              : a.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
-              : a.peringkat === 'final'         ? 'Final'
-              : a.parentAcaraId ? 'Final' : 'Terus Final'
-            return [
-              a.noAcara    || '—',
-              a.masa       || '—',
-              a.namaAcara  || '—',
-              a.kategoriKod || '—',
-              a.jantina === 'L' ? 'L' : a.jantina === 'P' ? 'P' : (a.jantina || '—'),
-              a.lokasi     || '—',
-              peringkatLabel,
-            ]
-          })
+        const gabung = [
+          ...items.map(a => ({ jenis: 'acara', masa: a.masa || '99:99', no: Number(a.noAcara) || 999, a })),
+          ...(slotMapPdf[date] || []).map(s => ({ jenis: 'slot', masa: s.masa || '99:99', no: 0, s })),
+        ].sort((x, y) => x.masa.localeCompare(y.masa) || x.no - y.no)
+
+        const slotRowIdx = []
+        const tableBody = gabung.map((row, idx) => {
+          if (row.jenis === 'slot') {
+            slotRowIdx.push(idx)
+            const label = SLOT_JENIS_LABEL[row.s.jenis] || 'Slot Khas'
+            return ['—', row.s.masa || '—', `[ ${label} ]  ${row.s.perkara}`, '', '', '', '']
+          }
+          const a = row.a
+          const peringkatLabel = a.peringkat === 'saringan_qf' ? 'Saringan/QF'
+            : a.peringkat === 'saringan_sf'   ? 'Saringan/SF'
+            : a.peringkat === 'separuh_akhir' ? 'Separuh Akhir'
+            : a.peringkat === 'final'         ? 'Final'
+            : a.parentAcaraId ? 'Final' : 'Terus Final'
+          return [
+            a.noAcara    || '—',
+            a.masa       || '—',
+            a.namaAcara  || '—',
+            a.kategoriKod || '—',
+            a.jantina === 'L' ? 'L' : a.jantina === 'P' ? 'P' : (a.jantina || '—'),
+            a.lokasi     || '—',
+            peringkatLabel,
+          ]
+        })
 
         autoTable(pdf, {
           startY: pdf.lastAutoTable.finalY,
@@ -1539,6 +1579,13 @@ export default function SchoolLanding() {
           headStyles: { fillColor: [230, 236, 255], textColor: [0, 51, 153], fontStyle: 'bold', fontSize: 8 },
           styles: { fontSize: 8.5, cellPadding: 2.5 },
           alternateRowStyles: { fillColor: [248, 250, 255] },
+          didParseCell: (data) => {
+            if (data.section === 'body' && slotRowIdx.includes(data.row.index)) {
+              data.cell.styles.fillColor = [254, 243, 199]  // amber-100
+              data.cell.styles.textColor = [146, 64, 14]    // amber-800
+              data.cell.styles.fontStyle = 'bold'
+            }
+          },
           columnStyles: {
             0: { cellWidth: 12, halign: 'center' },
             1: { cellWidth: 18, halign: 'center' },
@@ -1573,6 +1620,14 @@ export default function SchoolLanding() {
     const t = a.tarikhAcara || 'tba'
     if (!hariMap[t]) hariMap[t] = []
     hariMap[t].push(a)
+  })
+  // Slot khas ikut hari — hari yang hanya ada slot (tiada acara) turut dipapar
+  const slotByDay = {}
+  slotKhas.forEach(s => {
+    const t = s.tarikhAcara
+    if (!slotByDay[t]) slotByDay[t] = []
+    slotByDay[t].push(s)
+    if (!hariMap[t]) hariMap[t] = []
   })
   const hariKeys = Object.keys(hariMap).filter(k => k !== 'tba').sort()
   if (hariMap['tba']) hariKeys.push('tba')
@@ -1883,20 +1938,34 @@ export default function SchoolLanding() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {items
-                                  .sort((a, b) => (a.masa || '99:99').localeCompare(b.masa || '99:99') || (Number(a.noAcara) || 999) - (Number(b.noAcara) || 999))
-                                  .map((a, i) => (
+                                {[
+                                  ...items.map(a => ({ jenis: 'acara', masa: a.masa || '99:99', no: Number(a.noAcara) || 999, a })),
+                                  ...(slotByDay[date] || []).map(s => ({ jenis: 'slot', masa: s.masa || '99:99', no: 0, s })),
+                                ]
+                                  .sort((x, y) => x.masa.localeCompare(y.masa) || x.no - y.no)
+                                  .map(row => row.jenis === 'slot' ? (
+                                    <tr key={`slot_${row.s.id}`} className="bg-amber-50/70 border-b border-amber-100">
+                                      <td className="hidden sm:table-cell px-2 py-2 text-center text-[10px] text-amber-400">—</td>
+                                      <td className="px-2 py-2 text-center text-[11px] font-bold text-amber-700 font-mono">{row.s.masa || '—'}</td>
+                                      <td colSpan={5} className="px-3 py-2">
+                                        <span className="text-[9px] font-black uppercase tracking-wide bg-amber-200/70 text-amber-800 rounded px-1.5 py-0.5 mr-2">
+                                          {SLOT_JENIS_LABEL[row.s.jenis] || 'Slot Khas'}
+                                        </span>
+                                        <span className="text-[11px] font-semibold text-amber-900">{row.s.perkara}</span>
+                                      </td>
+                                    </tr>
+                                  ) : (
                                     <AcaraTableRow
-                                      key={a.id}
-                                      item={{ acara: a, masaMula: a.masa || '' }}
-                                      isExpanded={expandedAcara.has(a.id)}
-                                      onToggle={() => toggleAcara(a)}
-                                      heats={heatCache[a.id]}
-                                      isLoading={heatLoading.has(a.id)}
+                                      key={row.a.id}
+                                      item={{ acara: row.a, masaMula: row.a.masa || '' }}
+                                      isExpanded={expandedAcara.has(row.a.id)}
+                                      onToggle={() => toggleAcara(row.a)}
+                                      heats={heatCache[row.a.id]}
+                                      isLoading={heatLoading.has(row.a.id)}
                                       sekolahMap={sekolahMap}
                                       kategoriMap={kategoriMap}
                                       finalSetup={finalSetup}
-                                      rekodDNK={rekodCache[a.id]}
+                                      rekodDNK={rekodCache[row.a.id]}
                                       schoolId={schoolId}
                                     />
                                   ))}

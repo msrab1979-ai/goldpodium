@@ -261,6 +261,56 @@ User arahan tegas: JIMAT KOS FIRESTORE — halaman awam TIADA onSnapshot langsun
 - Induk yang TIDAK ikut dipadam (user padam SF/Final sahaja, bukan dari root QF) →
   `finalDijanaKe` di-clear supaya butang "Jana Final" muncul semula di StartList/pencatat
 
+## Hand Timing (HT) — Paparan Sahaja (2026-07-13)
+
+**Konsep:** acara bertanda HT (jam tangan, bukan photo-finish) papar masa bundar WA
+(0.1s naik) SEBAGAI TAMBAHAN kepada masa asal — `10.39 (10.40h)`. Kedudukan/ranking/
+Q/medal/mata/rekod KEKAL guna masa asal (`keputusan`, tidak diubah) — sengaja begitu
+supaya tidak clash bila ramai atlet dapat masa bundar sama (kedudukan tetap ikut jam).
+
+- `src/utils/htUtils.js` — `bundarHT(val)` (kira integer/sen, elak ralat float:
+  `10.30→10.3` tak naik, `10.31→10.4`), `isAcaraHT(acara)` (skip acara padang)
+- Flag `acara.adaHandTiming` (boolean, toggle dalam AcaraSetup Semak Acara + modal
+  edit acara) — disalin automatik ke acara SF/Final yang dijana (3 titik cipta:
+  `createNextAcara` ×2, `buildAcaraDoc`, `buildPayload`)
+- Paparan: SchoolLanding + Home (landing lama) + CetakanHadiah PDF + slip inline
+  pencatat + InputKeputusan pencatat (badge `HT ⏱` header + preview `→ 10.40h`
+  bawah medan input, semua jenis: lorong/mass-start/relay)
+- **JANGAN** guna nilai bundar untuk `selectFinalists`, `runPostRasmi`, ranking,
+  atau apa-apa gate — HT bukan sumber kebenaran, cuma anotasi paparan
+- Field lama `masaSebenar` (photocell tiebreak dalam finalistUtils/postRasmiUtils)
+  TIDAK berkaitan dengan HT — jangan gabung/keliru dua konsep ini
+
+## Analisis Pendaftaran — normJenis (2026-07-13)
+
+**Bug:** Tab Analisis Sekolah bandingkan `s.kategori === jenisSekolah` terus — koleksi
+`sekolah` simpan kod pendek (`SR`/`SM`) manakala koleksi `kategori` sesetengah tenant
+(PPKI) simpan teks penuh (`SEKOLAH RENDAH`/`SEKOLAH MENENGAH`). Mismatch → 0 sekolah,
+0 acara dipapar walaupun data lengkap.
+- Fix: `normJenis()` (`AnalisisPendaftaran.jsx`, fungsi tempatan bukan-export — Fast
+  Refresh perlu fail hanya eksport komponen) normalize kedua-dua format ke `SR`/`SM`,
+  nilai custom kekal. Dipakai di tapisan sekolah, tapisan kategori, dan dedupe butang
+  toggle (elak papar "SR" + "SEKOLAH RENDAH" berasingan bila data tenant bercampur)
+
+## Slot Khas — Koleksi jadualKhas (2026-07-13)
+
+**Bug:** AcaraSetup (`SlotKhas` component, `slotColPath`) SIMPAN ke koleksi
+`jadualKhas` (camelCase). Tapi SchoolLanding tak pernah baca slot langsung, dan
+Home.jsx (landing lama) BACA dari `jadual_khas` (snake_case, koleksi lain/kosong) —
+slot perasmian/rehat/solat/hadiah tak pernah muncul di paparan public.
+- Fix: SchoolLanding.jsx kini turut fetch `jadualKhas` (sekali, bukan listener —
+  ikut `jadualTick`) dan selit ke jadual hari ikut masa (baris amber + badge jenis).
+  Home.jsx dibetulkan baca `jadualKhas` juga (fetch dua-dua koleksi, gabung, untuk
+  data lama). PDF cetak jadual (kedua-dua fail) turut selit slot
+- Path: `tenants/{schoolId}/kejohanan/{kejId}/jadualKhas/{docId}`
+
+## AcaraSetup — Tab Semak Acara crash (2026-07-13)
+
+**Bug:** Butang + modal "Padam Semua Acara" dalam tab Semak Acara guna state
+`pamadSemua`/`setPamadSemua`/`pamadLoading`/`handlePamadSemua` yang dideklarasi
+dalam komponen induk `AcaraSetup`, bukan dalam `SemakAcara` — buka tab terus crash
+`pamadSemua is not defined`. Fix: state+handler dihantar sebagai props ke `SemakAcara`.
+
 ## Files Penting
 - `src/pages/admin/AksesPantasPage.jsx` — setup Akses Pantas Home (sistem bebas)
 - `src/pages/admin/AcaraSetup.jsx` — setup acara + peringkat flow + simpan `isLompatTinggi` field
@@ -449,6 +499,16 @@ di-test emulator + deploy live + push GitHub.
 | `admin/StartList.jsx` | BACA — guna `kejohananId` prop |
 | `pencatat/CetakanHadiah.jsx` | BACA — load dari kejohanan aktif |
 | `pencatat/InputKeputusan.jsx` | BACA — guna `kejId` dari URL |
+
+### Fix 2026-07-13 — gate simpan `overrideByAcara` + label QF→SF
+- **Bug:** `handleSave` (TetapanFinal) ada gate `bestHeat>0||bestTime>0` untuk
+  `sukuKeSeparuhByAcara` dan `separuhKeAkhirByAcara`, tapi `overrideByAcara` (→ Final)
+  TIADA gate — admin kosongkan kotak BH/BT → tersimpan `{bestHeat:0,bestTime:0}` →
+  `getFinalistSetup` terima nilai tu (0 ≠ null) → `selectFinalists` pilih 0 finalis →
+  Jana Final kosong. FIXED: gate sama ditambah, kosongkan kotak = balik ke default (1,3)
+- **Bug label:** baris QF→SF (UI TetapanFinal) tanda hijau bila jumlah = 8 — tapi QF→SF
+  sasaran sebenar ialah GANDAAN 8 (16 tipikal = 2 heat SF × 8 lorong). FIXED: hijau bila
+  `total % 8 === 0`, label kini tunjuk maksud terus (`= 16 → 2 heat SF penuh`)
 
 ## Cetak Keputusan Admin — Overhaul (2026-07-11, commit 02d3255)
 - `/admin/cetak-keputusan` → `CetakKeputusan.jsx`

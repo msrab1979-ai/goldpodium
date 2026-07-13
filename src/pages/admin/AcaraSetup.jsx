@@ -357,6 +357,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
       adaHeat: nextAdaHeat,
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
       isLompatTinggi: /lompat tinggi/i.test(form.namaAcaraPendek),
+      adaHandTiming: form.adaHandTiming || false,
       unitUkuran: isPadang ? 'm' : 's',
       bilanganLorong: isPadang ? null : kejDefaultLorong,
       bilanganFinalis: 8, bilanganCubaan: isPadang ? 6 : 0,
@@ -746,6 +747,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       peringkat: peringkatVal, parentAcaraId: parentAcaraIdVal,
       adaHeat: adaHeatVal,
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
+      adaHandTiming: form.adaHandTiming || false,
       unitUkuran: isPadang ? 'm' : 's',
       bilanganLorong: isPadang ? null : kejDefaultLorong,
       bilanganFinalis: 8, bilanganCubaan: isPadang ? 6 : 0,
@@ -792,6 +794,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       peringkat, parentAcaraId: parentId || null,
       adaHeat: PERINGKAT_DENGAN_HEAT.includes(peringkat),
       isWindReading: detectWindFromNama(form.namaAcaraPendek),
+      adaHandTiming: form.adaHandTiming || false,
       unitUkuran: isPadang ? 'm' : 's',
       bilanganLorong: isPadang ? null : kejDefaultLorong,
       bilanganFinalis: 8, bilanganCubaan: isPadang ? 6 : 0,
@@ -2518,7 +2521,8 @@ function HadPesertaPanel({ acaraList, schoolId, kejId, onRefresh, kategoriList =
 
 // ─── SemakAcara Tab ───────────────────────────────────────────────────────────
 
-function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUpdated }) {
+function SemakAcara({ acaraList, kategoriList, schoolId, kejId, namaKej, onHadUpdated,
+                      pamadSemua, setPamadSemua, pamadLoading, handlePamadSemua }) {
   const kejohananId = kejId
   const [fJantina,   setFJantina]   = useState('semua')
   const [fPeringkat, setFPeringkat] = useState('semua')
@@ -3491,6 +3495,10 @@ export default function AcaraSetup() {
           kejId={kejId}
           namaKej={namaKej}
           onHadUpdated={handleHadUpdated}
+          pamadSemua={pamadSemua}
+          setPamadSemua={setPamadSemua}
+          pamadLoading={pamadLoading}
+          handlePamadSemua={handlePamadSemua}
         />
       )}
 

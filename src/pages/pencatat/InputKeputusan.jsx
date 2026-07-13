@@ -25,6 +25,7 @@ import { runPostRasmi, rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { withPortalView } from '../../hooks/useSchoolId'
+import { bundarHT, isAcaraHT } from '../../utils/htUtils'
 import { useNavigate, useParams } from 'react-router-dom'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -432,7 +433,10 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
                 placeholder="m.ss.ms" disabled={flagged}
                 className="w-full border-2 border-gray-300 rounded-lg px-1 py-2 text-sm font-mono font-bold text-center text-gray-900 focus:outline-none focus:border-[#003399] bg-white disabled:bg-gray-100 disabled:text-gray-300" />
               {kp.keputusan > 0 && (
-                <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+                <span className="text-[10px] font-mono text-[#003399] font-bold">
+                  {fmtMasaDisplay(kp.keputusan)}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                </span>
               )}
             </div>
             <div className="px-1 py-2 flex items-center justify-center">
@@ -568,7 +572,10 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
                     isKonflik ? 'border-amber-400 focus:border-amber-500' : 'border-gray-300 focus:border-[#003399]'
                   }`} />
                 {kp.keputusan > 0 && (
-                  <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+                  <span className="text-[10px] font-mono text-[#003399] font-bold">
+                  {fmtMasaDisplay(kp.keputusan)}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                </span>
                 )}
                 {isKonflik && (
                   <span className="text-[9px] text-amber-600 font-bold text-center leading-tight">⚠ Masa sama</span>
@@ -811,7 +818,7 @@ function InputPadang({ acara, peserta, keputusan, onChange, sekolahMap = {}, bib
 
 // ─── Input Mass Start ─────────────────────────────────────────────────────────
 
-function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
+function InputMassStart({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const pesertaArr = heat.peserta || []
   const bilAtlet   = pesertaArr.length || 10
   const slotsAsal  = Array.from({ length: bilAtlet }, (_, i) => i + 1)
@@ -886,7 +893,10 @@ function InputMassStart({ heat, keputusan, onChange, sekolahMap = {}, bibPrefixM
                   isKonflik ? 'border-amber-400 focus:border-amber-500' : 'border-gray-300 focus:border-[#003399]'
                 }`} />
               {kp.keputusan > 0 && (
-                <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+                <span className="text-[10px] font-mono text-[#003399] font-bold">
+                  {fmtMasaDisplay(kp.keputusan)}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                </span>
               )}
               {isKonflik && (
                 <span className="text-[9px] text-amber-600 font-bold text-center leading-tight">⚠ Masa sama</span>
@@ -1014,7 +1024,10 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
                   isKonflik ? 'border-amber-400 focus:border-amber-500' : 'border-gray-300 focus:border-[#003399]'
                 }`} />
               {kp.keputusan > 0 && (
-                <span className="text-[10px] font-mono text-[#003399] font-bold">{fmtMasaDisplay(kp.keputusan)}</span>
+                <span className="text-[10px] font-mono text-[#003399] font-bold">
+                  {fmtMasaDisplay(kp.keputusan)}
+                  {isAcaraHT(acara) && <span className="text-teal-600"> → {fmtMasaDisplay(bundarHT(kp.keputusan))}h</span>}
+                </span>
               )}
               {isKonflik && (
                 <span className="text-[9px] text-amber-600 font-bold text-center leading-tight">⚠ Masa sama</span>
@@ -2077,7 +2090,17 @@ export default function PencatatInputKeputusan() {
         if (isPadangAcara) return `${n.toFixed(2)} m`
         const min = Math.floor(n / 60)
         const sek = (n % 60).toFixed(2).padStart(5, '0')
-        return min > 0 ? `${min}:${sek}` : `${Number(sek).toFixed(2)}s`
+        const asas = min > 0 ? `${min}:${sek}` : `${Number(sek).toFixed(2)}s`
+        // HT: tambah masa bundar WA dalam kurungan — paparan sahaja
+        if (isAcaraHT(selectedAcara)) {
+          const b = bundarHT(n)
+          if (b !== null) {
+            const bMin = Math.floor(b / 60)
+            const bSek = (b % 60).toFixed(1).padStart(4, '0')
+            return `${asas} (${bMin > 0 ? `${bMin}:${bSek}` : `${Number(bSek).toFixed(1)}`}h)`
+          }
+        }
+        return asas
       }
 
       function fmtTarikh(t) {
@@ -2467,6 +2490,10 @@ export default function PencatatInputKeputusan() {
               <div>
                 <p className="text-sm font-bold text-gray-800 truncate">
                   {selectedAcara?.noAcara ? `No.${selectedAcara.noAcara} · ` : ''}{selectedAcara?.namaAcara || '—'}
+                  {isAcaraHT(selectedAcara) && (
+                    <span className="ml-1.5 text-[9px] font-black px-1.5 py-0.5 rounded bg-teal-100 text-teal-700 align-middle"
+                      title="Hand Timing — masa bundar WA dipapar sebagai rujukan">HT ⏱</span>
+                  )}
                 </p>
                 <p className="text-[10px] text-gray-400">
                   {heatsLoading ? 'Memuatkan…'
@@ -2861,7 +2888,7 @@ export default function PencatatInputKeputusan() {
                         sekolahMap={sekolahMap} bibPrefixMap={bibPrefixMap} carianBib={carianBib} />
                     )}
                     {selectedAcara.jenisAcara === 'mass_start' && (
-                      <InputMassStart heat={selectedHeat} keputusan={keputusan}
+                      <InputMassStart acara={selectedAcara} heat={selectedHeat} keputusan={keputusan}
                         onChange={handleChange} sekolahMap={sekolahMap} bibPrefixMap={bibPrefixMap} carianBib={carianBib} />
                     )}
                     {['padang_lompat', 'padang_balin'].includes(selectedAcara.jenisAcara) && (

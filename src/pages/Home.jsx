@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { doc, getDoc, onSnapshot, updateDoc, deleteField, serverTimestamp, collection, query, where, getDocs, orderBy } from 'firebase/firestore'
 import { selectFinalists as _selectFinalists } from '../utils/finalistUtils'
+import { bundarHT, isAcaraHT } from '../utils/htUtils'
 import { cariRekodUntukAcara, formatPrestasiRekod, tahunRekod } from '../utils/rekodUtils'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
@@ -732,8 +733,9 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
               const kddk        = isLompatTinggi ? _ked : (_ked || _rank)
               const isSementara = !isLompatTinggi && !_ked && !!_rank
               const hasilBundar  = isPadang ? fmtJarak(p.keputusan) : fmtMasa(p.keputusan)
-              const hasHT        = !isPadang && acara.adaHandTiming && p.masaSebenar > 0
-              const hasil        = hasHT ? hasilBundar : hasilBundar
+              // HT: papar masa bundar WA dalam kurungan — paparan sahaja, ranking guna masa asal
+              const htVal        = isAcaraHT(acara) && !flagged ? bundarHT(p.keputusan) : null
+              const hasil        = hasilBundar
               const medal       = isFinalHeat && (kddk === 1 ? '🥇' : kddk === 2 ? '🥈' : kddk === 3 ? '🥉' : null)
               // Relay: semak kelayakan guna kodSekolah; individu: guna noBib
               const layakFinal  = showCatatanCol && !flagged && finalistBibs.has(isRelay ? p.kodSekolah : p.noBib)
@@ -810,11 +812,8 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
                   )}
                   <td className={`px-2 py-2 text-right font-mono font-bold text-[11px] ${flagged ? 'text-red-400' : 'text-gray-800'}`}>
                     {flagged ? p.status : (hasil || '—')}
-                    {!flagged && hasHT && (
-                      <div className="font-normal text-[9px] text-gray-400 mt-0.5">
-                        <span className="text-gray-300">Tdk Rasmi </span>
-                        <span className="font-mono font-semibold text-gray-500">{fmtMasa(p.masaSebenar)}</span>
-                      </div>
+                    {htVal !== null && (
+                      <span className="ml-1 font-normal text-[10px] text-gray-400">({fmtMasa(htVal)}h)</span>
                     )}
                   </td>
                   {showCatatanCol && (
@@ -1217,13 +1216,15 @@ export default function Home() {
       })
 
       // ── Langkah 4: Muatkan slot khas (perasmian, rehat, dll) ──
+      // AcaraSetup simpan ke 'jadualKhas' (camelCase); 'jadual_khas' dibaca untuk data lama
       if (bestKejId) {
         try {
-          const slotSnap = await getDocs(query(
-            collection(db, 'tenants', schoolId, 'kejohanan', bestKejId, 'jadual_khas'),
-            where('kejohananId', '==', bestKejId)
-          ))
-          slotSnap.docs.forEach(d => {
+          const [snapBaru, snapLama] = await Promise.all([
+            getDocs(collection(db, 'tenants', schoolId, 'kejohanan', bestKejId, 'jadualKhas')).catch(() => null),
+            getDocs(collection(db, 'tenants', schoolId, 'kejohanan', bestKejId, 'jadual_khas')).catch(() => null),
+          ])
+          const slotDocs = [...(snapBaru?.docs || []), ...(snapLama?.docs || [])]
+          slotDocs.forEach(d => {
             const s = d.data()
             if (!s.tarikhAcara) return
             items.push({

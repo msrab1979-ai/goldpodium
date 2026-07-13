@@ -650,7 +650,9 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
     try {
       const clean = {}
       Object.entries(overrides).forEach(([id, v]) => {
-        clean[id] = { bestHeat: Number(v.bestHeat) || 0, bestTime: Number(v.bestTime) || 0 }
+        // Gate: BH=0 & BT=0 tidak disimpan — elak Jana Final pilih 0 finalis
+        if (Number(v.bestHeat) > 0 || Number(v.bestTime) > 0)
+          clean[id] = { bestHeat: Number(v.bestHeat) || 0, bestTime: Number(v.bestTime) || 0 }
       })
       const cleanSuku = {}
       Object.entries(sukuOv).forEach(([id, v]) => {
@@ -795,7 +797,9 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
                   const sukuBH  = sukuRow.bestHeat !== undefined ? Number(sukuRow.bestHeat) : 1
                   const sukuBT  = sukuRow.bestTime !== undefined ? Number(sukuRow.bestTime) : 3
                   const sukuTotal = n > 0 ? n * sukuBH + sukuBT : null
-                  const sukuOk    = sukuTotal === 8
+                  // QF→SF: sasaran gandaan 8 (16 tipikal = 2 heat SF × 8 lorong), BUKAN 8
+                  const sukuOk    = sukuTotal !== null && sukuTotal > 0 && sukuTotal % 8 === 0
+                  const sukuHeatSF = sukuTotal !== null && sukuTotal > 0 ? Math.ceil(sukuTotal / 8) : 0
 
                   // SF→Final (untuk acara QF — kira bilangan heat SF dari heatCountMap)
                   const sfAceraId = sfAceraIdMap[aceraKey] || sfAceraIdMap[String(a.noAcara)] || null
@@ -857,10 +861,15 @@ export function TetapanFinal({ kategoriList, schoolId, kejId }) {
                                 className={numCls + (sukuOv[aceraKey] ? ' border-teal-300' : '')} />
                             </div>
                             {sukuTotal !== null && (
-                              <span className={`font-black text-sm ${sukuOk ? 'text-green-600' : 'text-amber-500'}`}>{sukuTotal}</span>
+                              <span className={`font-black text-sm ${sukuOk ? 'text-green-600' : 'text-amber-500'}`}>
+                                = {sukuTotal}
+                                <span className="font-semibold text-[10px] ml-1">
+                                  {sukuOk
+                                    ? `→ ${sukuHeatSF} heat SF penuh`
+                                    : sukuTotal > 0 ? `→ ${sukuHeatSF} heat SF (tak muat penuh — sasar gandaan 8, cth 16)` : ''}
+                                </span>
+                              </span>
                             )}
-                            {sukuTotal !== null && !sukuOk && stdRow &&
-                              <span className="text-[9px] text-gray-400">(std: BH={stdRow.bh}/BT={stdRow.bt})</span>}
                           </div>
                         </div>
                       )}

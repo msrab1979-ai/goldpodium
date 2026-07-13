@@ -20,6 +20,7 @@ import { withPortalView } from '../../hooks/useSchoolId'
 import { selectFinalists } from '../../utils/finalistUtils'
 import { rekodKeyStr } from '../../utils/postRasmiUtils'
 import { resolveIsLompatTinggi } from '../../utils/startListPdfUtils'
+import { bundarHT, isAcaraHT } from '../../utils/htUtils'
 
 // ─── PDF Generator (sama logik dengan InputKeputusan handleCetakHasil) ─────────
 
@@ -61,7 +62,17 @@ async function cetakHadiahPDF({
     if (isPadang) return `${n.toFixed(2)} m`
     const min = Math.floor(n / 60)
     const sek = (n % 60).toFixed(2).padStart(5, '0')
-    return min > 0 ? `${min}:${sek}` : `${Number(sek).toFixed(2)}s`
+    const asas = min > 0 ? `${min}:${sek}` : `${Number(sek).toFixed(2)}s`
+    // HT: tambah masa bundar WA dalam kurungan — paparan sahaja
+    if (isAcaraHT(acara)) {
+      const b = bundarHT(n)
+      if (b !== null) {
+        const bMin = Math.floor(b / 60)
+        const bSek = (b % 60).toFixed(1).padStart(4, '0')
+        return `${asas} (${bMin > 0 ? `${bMin}:${bSek}` : `${Number(bSek).toFixed(1)}`}h)`
+      }
+    }
+    return asas
   }
 
   function fmtTarikh(t) {

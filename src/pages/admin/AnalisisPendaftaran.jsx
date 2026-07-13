@@ -106,14 +106,25 @@ function buildAnalisis(acaraListRaw, pendaftaranDocs, kategoriList) {
 
 // ─── Helpers — Tab 2 (Analisis Sekolah) ──────────────────────────────────────
 
+// Normalize jenis sekolah — sekolah doc simpan kod pendek ('SR'/'SM') manakala
+// kategori doc mungkin simpan teks penuh ('SEKOLAH RENDAH'/'SEKOLAH MENENGAH').
+// Tanpa normalize, tenant dengan data campur (cth. PPKI) dapat 0 sekolah.
+function normJenis(s) {
+  const u = String(s || '').toUpperCase().trim()
+  if (u === 'SEKOLAH RENDAH'   || u === 'SR') return 'SR'
+  if (u === 'SEKOLAH MENENGAH' || u === 'SM') return 'SM'
+  return u  // PPKI / custom — kekal
+}
+
 function buildAnalisisBySekolah(sekolahList, acaraList, pendaftaranDocs, kategoriList, jenisSekolah) {
+  const jenisNorm = normJenis(jenisSekolah)
   // 1. Sekolah ikut jenis
   const schools = sekolahList
-    .filter(s => s.kategori === jenisSekolah)
+    .filter(s => normJenis(s.kategori) === jenisNorm)
     .sort((a, b) => (a.namaSekolah || '').localeCompare(b.namaSekolah || ''))
 
   // 2. Kategori atlet ikut jenisSekolah
-  const relevantKats = kategoriList.filter(k => k.jenisSekolah === jenisSekolah)
+  const relevantKats = kategoriList.filter(k => normJenis(k.jenisSekolah) === jenisNorm)
   const relevantKatKods = new Set(relevantKats.map(k => k.id))
   const katLabel = Object.fromEntries(relevantKats.map(k => [k.id, k.label || k.id]))
   const katUrutan = Object.fromEntries(relevantKats.map(k => [k.id, k.urutan ?? 99]))
@@ -575,9 +586,16 @@ function TabRingkasanAcara({ analisis, totalAtlet, namaKej }) {
 // ─── Tab 2: Analisis Sekolah ──────────────────────────────────────────────────
 
 function TabAnalisisSekolah({ sekolahList, acaraList, pendaftaranDocs, kategoriList, namaKej }) {
-  // Kumpul jenisSekolah dari kategori — fallback ke sekolahList.kategori jika tiada
-  const jenisFromKat = [...new Set(kategoriList.map(k => k.jenisSekolah).filter(Boolean))].sort()
-  const jenisFromSkl = [...new Set(sekolahList.map(s => s.kategori).filter(Boolean))].sort()
+  // Kumpul jenisSekolah dari kategori — fallback ke sekolahList.kategori jika tiada.
+  // Dedupe ikut nilai normalized (elak butang 'SR' + 'SEKOLAH RENDAH' serentak
+  // bila data campur) — label paparan guna teks asal pertama dijumpai.
+  const dedupeJenis = list => {
+    const seen = new Map()
+    list.filter(Boolean).forEach(j => { const n = normJenis(j); if (!seen.has(n)) seen.set(n, j) })
+    return [...seen.values()].sort()
+  }
+  const jenisFromKat = dedupeJenis(kategoriList.map(k => k.jenisSekolah))
+  const jenisFromSkl = dedupeJenis(sekolahList.map(s => s.kategori))
   const jenisOptions = jenisFromKat.length > 0 ? jenisFromKat : jenisFromSkl
 
   const [jenisSekolah, setJenisSekolah] = useState(() => jenisOptions[0] || 'SR')
