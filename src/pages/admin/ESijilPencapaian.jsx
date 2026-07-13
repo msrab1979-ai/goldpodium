@@ -205,7 +205,8 @@ function DraggableLabel({ fieldCfg, pos, style, sampleText, containerRef, onPosC
         fontWeight: style.bold ? 'bold' : 'normal',
         color:      style.warna || '#000000',
         textAlign:  style.align || 'center',
-        whiteSpace: 'nowrap',
+        whiteSpace: 'pre',        // papar line break (Enter) sama seperti PDF
+        lineHeight: 1.15,
         background: 'rgba(255,255,255,0.78)',
         border:     `2px solid ${fieldCfg.color}`,
         borderRadius: '3px',
@@ -466,13 +467,14 @@ export default function ESijilPencapaian() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
             <div className="sm:col-span-2">
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Nama Kejohanan</p>
-              <input
-                type="text"
+              <textarea
+                rows={2}
                 value={namaKejohanan}
                 onChange={e => setNamaKejohanan(e.target.value)}
                 placeholder="Contoh: Kejohanan Olahraga MSSD Kemaman 2026"
-                className={inputCls + ' w-full'}
+                className={inputCls + ' w-full resize-none'}
               />
+              <p className="text-[10px] text-gray-400 mt-1">Tekan <strong>Enter</strong> untuk pecah 2 baris.</p>
             </div>
             <div>
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Had Kedudukan</p>

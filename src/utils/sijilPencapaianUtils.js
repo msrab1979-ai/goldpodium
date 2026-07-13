@@ -242,8 +242,14 @@ export function janaSijilPencapaianPDF(data, cfg) {
     pdf.setFontSize(sty.size || 24)
     pdf.setTextColor(sty.warna || '#000000')
     pdf.setFont('helvetica', sty.bold !== false ? 'bold' : 'normal')
-    // baseline 'middle' — preview admin center teks menegak pada titik y
-    pdf.text(String(teks), pos.x * W / 100, pos.y * H / 100, { align: sty.align || 'center', baseline: 'middle' })
+    // Sokong multi-baris ('\n' dari medan admin) — blok di-center menegak pada y,
+    // padan dengan preview drag (translateY(-50%))
+    const lines = String(teks).split('\n')
+    const lineH = (sty.size || 24) * 0.3528 * 1.15
+    const y0    = pos.y * H / 100 - (lines.length - 1) / 2 * lineH
+    lines.forEach((line, i) => {
+      pdf.text(line, pos.x * W / 100, y0 + i * lineH, { align: sty.align || 'center', baseline: 'middle' })
+    })
   }
 
   function lukisMultiBaris(teksArr, pos, sty) {

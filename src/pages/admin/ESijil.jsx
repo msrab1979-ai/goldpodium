@@ -185,7 +185,8 @@ function DraggableLabel({ fieldCfg, pos, style, sampleText, containerRef, onPosC
         fontWeight: style.bold ? 'bold' : 'normal',
         color:      style.warna || '#000000',
         textAlign:  style.align || 'center',
-        whiteSpace: 'nowrap',
+        whiteSpace: 'pre',        // papar line break (Enter) sama seperti PDF
+        lineHeight: 1.15,         // padan dengan lineH penjana PDF
         background: 'rgba(255,255,255,0.78)',
         border:     `2px solid ${fieldCfg.color}`,
         borderRadius: '3px',
@@ -324,8 +325,9 @@ export default function ESijil() {
       styleNama,
       styleKejohanan:   styleKej,
       styleTarikh,
-      namaKejohanan:    namaKejohanan   || 'Nama Kejohanan Belum Ditetapkan',
-      tarikhKejohanan:  tarikhKejohanan || '15 Jun 2025',
+      // TIADA fallback dummy — medan kosong = tidak dicetak (WYSIWYG dengan sijil PP)
+      namaKejohanan,
+      tarikhKejohanan,
     })
     pdf.output('dataurlnewwindow')
   }
@@ -416,13 +418,16 @@ export default function ESijil() {
           <div className="space-y-3 max-w-xl">
             <div>
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Nama Kejohanan</p>
-              <input
-                type="text"
+              <textarea
+                rows={2}
                 value={namaKejohanan}
                 onChange={e => setNamaKejohanan(e.target.value)}
                 placeholder="Contoh: Kejohanan Olahraga Antara Murid MSSD Kemaman 2025"
-                className={inputCls + ' w-full'}
+                className={inputCls + ' w-full resize-none'}
               />
+              <p className="text-[10px] text-gray-400 mt-1">
+                Tekan <strong>Enter</strong> untuk pecah 2 baris — cth. baris 1 nama kejohanan, baris 2 daerah/tahun.
+              </p>
             </div>
             <div>
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Tarikh Kejohanan</p>

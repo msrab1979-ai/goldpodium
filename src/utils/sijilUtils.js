@@ -31,8 +31,14 @@ export function janaSijilPDF(namaAtlet, sijilCfg) {
     pdf.setFontSize(style.size || 24)
     pdf.setTextColor(style.warna || '#000000')
     pdf.setFont('helvetica', style.bold !== false ? 'bold' : 'normal')
-    // baseline 'middle' — preview admin center teks menegak pada titik y
-    pdf.text(teks, pos.x * W / 100, pos.y * H / 100, { align: style.align || 'center', baseline: 'middle' })
+    // Sokong multi-baris (admin tekan Enter dalam medan teks) — blok baris
+    // di-center menegak pada titik y, padan dengan preview drag (translateY(-50%))
+    const lines = String(teks).split('\n')
+    const lineH = (style.size || 24) * 0.3528 * 1.15 // pt → mm, line-height 1.15
+    const y0    = pos.y * H / 100 - (lines.length - 1) / 2 * lineH
+    lines.forEach((line, i) => {
+      pdf.text(line, pos.x * W / 100, y0 + i * lineH, { align: style.align || 'center', baseline: 'middle' })
+    })
   }
 
   lukis(namaAtlet,       posNama,      styleNama)

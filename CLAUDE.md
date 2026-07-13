@@ -232,6 +232,35 @@ User arahan tegas: JIMAT KOS FIRESTORE — halaman awam TIADA onSnapshot langsun
 - Animasi icon: pulse scale hover (keyframe `pulse-icon` dalam tailwind.config.js)
 - Sidebar admin: "Tetapan" dipindah ke group Utama (bawah Kejohanan)
 
+## AcaraSetup — Sisip Acara & Padam Berantai (2026-07-13)
+
+### Sisip Acara (AddAcaraRow.handleSisip)
+- Bila `noAcara` yang ditaip dah wujud → tawar "Sisip" — semua acara ≥ target nombor
+  semula +1 (padam doc lama, cipta doc baru — turun dari nombor tertinggi ke bawah
+  supaya tiada overwrite), `parentAcaraId` yang terjejas turut diselaraskan
+- Gate keselamatan: TOLAK sisip jika mana-mana acara dalam julat yang kena nombor
+  semula sudah ada `statusAcara !== 'akan_datang'` ATAU ada atlet berdaftar
+  (`acaraIds` dalam koleksi `pendaftaran`) — elak korup rujukan heat/keputusan sedia ada
+- Fix 2026-07-13: `createFinalAcara` (nama fungsi tak wujud, typo) → `createNextAcara`
+  — punca ralat "createFinalAcara is not defined" lepas sisip berjaya tapi toggle
+  "Tambah Final Serentak" gagal cipta Final. Data sisip sendiri (nombor semula + acara
+  baru) TETAP selamat walau langkah Final gagal — hanya Final tak tercipta
+
+### Padam Acara Berantai (DeleteModal overhaul)
+- `cariRantaianAcara(root, acaraList)` — BFS cari root + semua anak (QF→SF→Final) via
+  `parentAcaraId` (anak→induk) ATAU `finalDijanaKe` (induk→anak); padam 1 acara kini
+  padam SELURUH rantaian sekali gus (dulu hanya padam 1 doc, tinggalkan heat/anak yatim)
+- Scan setiap acara dalam rantaian untuk heat + `bilRasmi` (heat dengan
+  `statusKeputusan` rasmi/diterima — dah lalui `runPostRasmi`, ada pingat/mata tercatat)
+- **Gate rasmi**: kalau ada heat rasmi DAN bukan superadmin → butang padam DIKUNCI
+  (`blokRasmi`), mesej suruh padam keputusan dulu atau hubungi superadmin. Superadmin
+  boleh padam terus — rollback pingat/mata jalan automatik dulu (`rollbackPostRasmi`
+  per heat rasmi, `grantMedal` ikut peringkat final/terus_final) SEBELUM padam heat+acara
+- Urutan padam: rollback dulu (gagal → tiada apa dipadam) → padam heat → padam acara
+  (batch 400 write) — kalau proses terganggu separuh jalan, tiada heat yatim tanpa acara
+- Induk yang TIDAK ikut dipadam (user padam SF/Final sahaja, bukan dari root QF) →
+  `finalDijanaKe` di-clear supaya butang "Jana Final" muncul semula di StartList/pencatat
+
 ## Files Penting
 - `src/pages/admin/AksesPantasPage.jsx` — setup Akses Pantas Home (sistem bebas)
 - `src/pages/admin/AcaraSetup.jsx` — setup acara + peringkat flow + simpan `isLompatTinggi` field
@@ -258,6 +287,16 @@ User arahan tegas: JIMAT KOS FIRESTORE — halaman awam TIADA onSnapshot langsun
 - `pdf.text()` guna `baseline: 'middle'` — mesti padan dengan preview drag admin (`translateY(-50%)`)
 - Saiz halaman PDF ikut nisbah template (`getImageProperties`), bukan paksa A4 — template bukan-A4 tak herot
 - `ESijil.jsx` handlePreview panggil `janaSijilPDF()` yang sama dengan PP — JANGAN tulis logic PDF berasingan
+
+**Fix 2026-07-13 — medan kosong & multi-baris:**
+- Preview admin (`handlePreview`) dulu ada fallback dummy (`'15 Jun 2025'`, `'Nama Kejohanan Belum Ditetapkan'`)
+  walaupun kolum dikosongkan — preview tak sepadan PDF sebenar (PP). DIBUANG — kini `namaKejohanan`/
+  `tarikhKejohanan` dihantar terus tanpa fallback. Medan kosong = `if (!pos || !teks) return` dalam
+  `lukis()` = terus tak dicetak, WYSIWYG 100% dengan sijil PP
+- **Nama Kejohanan sokong 2 baris** — input jadi `<textarea>`, admin tekan Enter untuk pecah baris
+  (cth. baris 1 nama, baris 2 daerah/tahun). `lukis()` dalam kedua-dua util `.split('\n')`, blok
+  di-center menegak pada titik y (`y0 = pos.y - (lines.length-1)/2 * lineH`), `lineH` guna unit pt→mm
+  (`size * 0.3528 * 1.15`). Preview drag label guna `whiteSpace: 'pre'` + `lineHeight: 1.15` supaya sama
 
 **Kelayakan sijil:**
 - Sijil Penyertaan: SEMUA atlet dalam collection `atlet` (kodSekolah match) — TIADA tapisan acara.

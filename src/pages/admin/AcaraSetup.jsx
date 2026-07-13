@@ -19,10 +19,11 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   collection, getDocs, doc, setDoc, updateDoc, deleteDoc,
-  serverTimestamp, query, orderBy, where, writeBatch, getDoc,
+  serverTimestamp, query, orderBy, where, writeBatch, getDoc, deleteField,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { TetapanFinal } from './KategoriSetup'
@@ -897,7 +898,7 @@ function AddAcaraRow({ tarikhAcara, schoolId, kejId, kategoriList, acaraList, on
       await setDoc(newRef, payload)
 
       setSisipLog('Selesai!')
-      await createFinalAcara(docId)
+      await createNextAcara(docId)
       onSaved(tarikhAcara)
     } catch (e) {
       setErr('Ralat semasa sisip: ' + e.message)
@@ -2113,32 +2114,229 @@ function AcaraModal({ mode, initial, schoolId, kejId, onClose, onSaved, kategori
 
 // ─── DeleteModal ──────────────────────────────────────────────────────────────
 
-function DeleteModal({ acara, schoolId, kejId, onClose, onDeleted }) {
-  const [deleting, setDeleting] = useState(false)
-  async function handleDelete() {
-    setDeleting(true)
-    try {
-      const aceraKey = acara.noAcara || acara.aceraId || acara.id
-      await deleteDoc(doc(db, acaraColPath(schoolId, kejId), aceraKey))
-      onDeleted(); onClose()
-    } catch (e) { alert(e.message); setDeleting(false) }
+// Kunci-kunci yang mungkin merujuk acara ini (noAcara / aceraId / doc id)
+function kunciAcara(a) {
+  return [...new Set([a.noAcara, a.aceraId, a.id].filter(Boolean).map(String))]
+}
+
+// Rantaian ke bawah: acara root + semua anak (QF → SF → Final).
+// Anak dikesan via parentAcaraId (anak → induk) ATAU finalDijanaKe (induk → anak).
+function cariRantaianAcara(root, acaraList) {
+  const hasil   = [root]
+  const dilawat = new Set(kunciAcara(root))
+  let frontier  = [root]
+  while (frontier.length) {
+    const next = []
+    for (const cur of frontier) {
+      const keys = kunciAcara(cur)
+      for (const a of acaraList) {
+        const aKeys = kunciAcara(a)
+        if (aKeys.some(k => dilawat.has(k))) continue
+        const anakParent = a.parentAcaraId && keys.includes(String(a.parentAcaraId))
+        const anakDijana = cur.finalDijanaKe && aKeys.includes(String(cur.finalDijanaKe))
+        if (anakParent || anakDijana) {
+          hasil.push(a)
+          aKeys.forEach(k => dilawat.add(k))
+          next.push(a)
+        }
+      }
+    }
+    frontier = next
   }
+  return hasil
+}
+
+const STATUS_ADA_KEPUTUSAN = ['ada_keputusan', 'diterima', 'rasmi']
+const STATUS_RASMI         = ['rasmi', 'diterima'] // sudah lalui runPostRasmi
+
+function labelPeringkatPadam(a) {
+  if (a.peringkat === 'saringan_qf')   return 'SARINGAN/QF'
+  if (a.peringkat === 'saringan_sf')   return 'SARINGAN/SF'
+  if (a.peringkat === 'separuh_akhir') return 'SEPARUH AKHIR'
+  return a.parentAcaraId ? 'FINAL' : 'TERUS FINAL'
+}
+
+function DeleteModal({ acara, acaraList = [], schoolId, kejId, isSuperadmin = false, onClose, onDeleted }) {
+  const [deleting, setDeleting] = useState(false)
+  const [scanning, setScanning] = useState(true)
+  const [err,      setErr]      = useState('')
+  // [{ acara, heats: [{heatId, ...data}], bilKeputusan, bilRasmi }]
+  const [chain,    setChain]    = useState([])
+  const [kejPeringkat, setKejPeringkat] = useState('')
+
+  useEffect(() => {
+    let batal = false
+    async function scan() {
+      try {
+        const rantaian = cariRantaianAcara(acara, acaraList)
+        const heatCol  = collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat')
+        const rows = await Promise.all(rantaian.map(async a => {
+          const keys  = kunciAcara(a)
+          const snaps = await Promise.all([
+            getDocs(query(heatCol, where('aceraId', 'in', keys.slice(0, 10)))),
+            getDocs(query(heatCol, where('acaraId', 'in', keys.slice(0, 10)))),
+          ])
+          const seen  = new Set()
+          const heats = []
+          snaps.forEach(s => s.docs.forEach(d => {
+            if (seen.has(d.id)) return
+            seen.add(d.id)
+            heats.push({ heatId: d.id, ...d.data() })
+          }))
+          return {
+            acara: a, heats,
+            bilKeputusan: heats.filter(h => STATUS_ADA_KEPUTUSAN.includes(h.statusKeputusan)).length,
+            bilRasmi:     heats.filter(h => STATUS_RASMI.includes(h.statusKeputusan)).length,
+          }
+        }))
+        const kejSnap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId)).catch(() => null)
+        if (batal) return
+        setKejPeringkat(kejSnap?.exists() ? (kejSnap.data().peringkat || '') : '')
+        setChain(rows)
+      } catch (e) {
+        if (!batal) setErr('Gagal semak rantaian acara: ' + e.message)
+      } finally {
+        if (!batal) setScanning(false)
+      }
+    }
+    scan()
+    return () => { batal = true }
+  }, [acara, acaraList, schoolId, kejId])
+
+  const jumlahHeat  = chain.reduce((n, r) => n + r.heats.length, 0)
+  const jumlahRasmi = chain.reduce((n, r) => n + r.bilRasmi, 0)
+  const blokRasmi   = jumlahRasmi > 0 && !isSuperadmin
+
+  async function handleDelete() {
+    setDeleting(true); setErr('')
+    try {
+      const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const peringkatKej = PKOD[(kejPeringkat || '').toLowerCase()] || 'D'
+
+      // 1) Rollback heat rasmi DULU — kalau gagal, tiada apa dipadam
+      for (const row of chain) {
+        const a = row.acara
+        const isSaringan = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(a.peringkat || '')
+        for (const h of row.heats) {
+          if (!STATUS_RASMI.includes(h.statusKeputusan)) continue
+          const grantMedal = !isSaringan &&
+            (['final', 'terus_final'].includes(h.fasa) || row.heats.length === 1)
+          await rollbackPostRasmi(db,
+            { id: h.heatId, peserta: h.peserta || [] },
+            { ...a, id: String(a.noAcara || a.aceraId || a.id) },
+            kejId,
+            { schoolId, isRelay: a.jenisAcara === 'relay', peringkatKej, grantMedal })
+        }
+      }
+
+      // 2) Padam heat dahulu, doc acara AKHIR sekali — kalau gagal separuh jalan,
+      //    ulang padam sahaja; takkan tinggal heat yatim tanpa acara
+      const ops = []
+      chain.forEach(row => row.heats.forEach(h =>
+        ops.push(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', h.heatId))))
+      chain.forEach(row => {
+        const a = row.acara
+        ops.push(doc(db, acaraColPath(schoolId, kejId), String(a.noAcara || a.aceraId || a.id)))
+      })
+      for (let i = 0; i < ops.length; i += 400) {
+        const batch = writeBatch(db)
+        ops.slice(i, i + 400).forEach(ref => batch.delete(ref))
+        await batch.commit()
+      }
+
+      // 3) Induk yang TIDAK dipadam (user padam SF/Final sahaja) — clear finalDijanaKe
+      //    supaya butang Jana muncul semula di StartList/pencatat
+      if (acara.parentAcaraId) {
+        const dipadamKeys = new Set(chain.flatMap(r => kunciAcara(r.acara)))
+        const induk = acaraList.find(a =>
+          kunciAcara(a).includes(String(acara.parentAcaraId)) &&
+          !kunciAcara(a).some(k => dipadamKeys.has(k)))
+        if (induk) {
+          await updateDoc(
+            doc(db, acaraColPath(schoolId, kejId), String(induk.noAcara || induk.aceraId || induk.id)),
+            { finalDijanaKe: deleteField() }
+          ).catch(() => {})
+        }
+      }
+
+      onDeleted(); onClose()
+    } catch (e) {
+      setErr('Ralat memadam: ' + e.message)
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5 text-center">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-5">
         <div className="w-11 h-11 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
           <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <h3 className="text-sm font-bold text-gray-800 mb-1">Padam Acara?</h3>
-        <p className="text-xs text-gray-500 mb-1 font-mono text-[10px]">{acara.aceraId}</p>
-        <p className="text-xs text-gray-500 mb-4">Semua data heat dan keputusan dalam acara ini turut akan dipadam.</p>
+        <h3 className="text-sm font-bold text-gray-800 text-center mb-1">
+          {chain.length > 1 ? 'Padam Acara Berantai?' : 'Padam Acara?'}
+        </h3>
+        <p className="text-xs text-gray-500 text-center mb-3 font-mono text-[10px]">{acara.aceraId}</p>
+
+        {scanning ? (
+          <p className="text-xs text-gray-500 text-center py-4">Menyemak peringkat lanjutan &amp; heat…</p>
+        ) : (
+          <>
+            {chain.length > 1 && (
+              <p className="text-[11px] text-gray-600 mb-2">
+                Acara ini mempunyai peringkat lanjutan — <b>semua</b> turut akan dipadam:
+              </p>
+            )}
+            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 mb-3 max-h-48 overflow-y-auto">
+              {chain.map(row => (
+                <div key={kunciAcara(row.acara)[0]} className="flex items-center gap-2 px-3 py-2">
+                  <span className="text-[10px] font-mono font-bold text-gray-500 shrink-0">#{row.acara.noAcara}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-gray-800 truncate">{row.acara.namaAcara}</p>
+                    <p className="text-[9px] text-gray-400">
+                      {labelPeringkatPadam(row.acara)} · {row.heats.length} heat
+                      {row.bilKeputusan > 0 && ` · ${row.bilKeputusan} ada keputusan`}
+                    </p>
+                  </div>
+                  {row.bilRasmi > 0 && (
+                    <span className="text-[9px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 shrink-0">
+                      {row.bilRasmi} RASMI
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-600 text-center mb-2">
+              Jumlah: <b>{chain.length} acara</b> + <b>{jumlahHeat} heat</b> akan dipadam.
+            </p>
+            {jumlahRasmi > 0 && (blokRasmi ? (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                <p className="text-[11px] font-semibold text-red-700">
+                  🔒 {jumlahRasmi} heat sudah RASMI — pingat &amp; mata olahragawan telah direkodkan.
+                  Hanya <b>superadmin</b> boleh memadam acara ini. Padam keputusan rasmi dahulu,
+                  atau hubungi superadmin.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                <p className="text-[11px] font-semibold text-red-700">
+                  🔴 {jumlahRasmi} heat sudah RASMI — pingat &amp; mata olahragawan akan
+                  di-<b>rollback automatik</b> sebelum dipadam.
+                </p>
+              </div>
+            ))}
+          </>
+        )}
+
+        {err && <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{err}</p>}
+
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Batal</button>
-          <button onClick={handleDelete} disabled={deleting}
-            className="flex-1 py-2 text-xs font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
-            {deleting ? 'Memadamkan…' : 'Padam'}
+          <button onClick={handleDelete} disabled={deleting || scanning || blokRasmi}
+            className="flex-1 py-2 text-xs font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            {deleting ? 'Memadamkan…'
+              : chain.length > 1 ? `Ya, Padam Semua (${chain.length} acara)` : 'Padam'}
           </button>
         </div>
       </div>
@@ -3810,7 +4008,8 @@ export default function AcaraSetup() {
           onClose={() => setModal(null)} onSaved={fetchAcara} />
       )}
       {delTarget && (
-        <DeleteModal acara={delTarget} schoolId={schoolId} kejId={kejId}
+        <DeleteModal acara={delTarget} acaraList={acaraList} schoolId={schoolId} kejId={kejId}
+          isSuperadmin={isSuperadmin}
           onClose={() => setDelTarget(null)} onDeleted={fetchAcara} />
       )}
     </div>
