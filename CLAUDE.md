@@ -264,9 +264,11 @@ User arahan tegas: JIMAT KOS FIRESTORE — halaman awam TIADA onSnapshot langsun
 ## Hand Timing (HT) — Paparan Sahaja (2026-07-13)
 
 **Konsep:** acara bertanda HT (jam tangan, bukan photo-finish) papar masa bundar WA
-(0.1s naik) SEBAGAI TAMBAHAN kepada masa asal — `10.39 (10.40h)`. Kedudukan/ranking/
-Q/medal/mata/rekod KEKAL guna masa asal (`keputusan`, tidak diubah) — sengaja begitu
-supaya tidak clash bila ramai atlet dapat masa bundar sama (kedudukan tetap ikut jam).
+(0.1s naik) sebagai paparan UTAMA, masa asal dalam kurungan — `10.30s (10.21s)`
+(format pilihan user 2026-07-13, bundar dipapar 2 titik perpuluhan, tiada suffix 'h').
+Kedudukan/ranking/Q/medal/mata/rekod KEKAL guna masa asal (`keputusan`, tidak diubah)
+— sengaja begitu supaya tidak clash bila ramai atlet dapat masa bundar sama
+(kedudukan tetap ikut jam, cth. 10.21 rank 1 walaupun papar 10.30s sama dgn rank 2).
 
 - `src/utils/htUtils.js` — `bundarHT(val)` (kira integer/sen, elak ralat float:
   `10.30→10.3` tak naik, `10.31→10.4`), `isAcaraHT(acara)` (skip acara padang)
