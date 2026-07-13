@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { withPortalView } from '../../hooks/useSchoolId'
 import { useNavigate } from 'react-router-dom'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -461,7 +462,10 @@ function cetakBorangTeknikal({ acara, allHeatsList, namaKej, cfg }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CetakAcara() {
-  const { userData, userRole } = useAuth()
+  const { userData: authData, userRole } = useAuth()
+  // Superadmin masuk portal pencatat (gp_view_portal) — gabung konteks supaya
+  // schoolId/schoolSlug tak kosong (page ini dikongsi admin + pencatat)
+  const userData = withPortalView(authData)
   const navigate = useNavigate()
   const isSuperadmin  = userRole === 'superadmin'
   const isPencatat    = userRole === 'pencatat'
@@ -469,7 +473,7 @@ export default function CetakAcara() {
   const viewSchoolId = isSuperadmin
     ? (() => { try { return JSON.parse(sessionStorage.getItem('gp_view_school') || '{}').schoolId || '' } catch { return '' } })()
     : null
-  const schoolId = viewSchoolId || userData?.schoolId || ''
+  const schoolId = userData?.schoolId || viewSchoolId || ''
   const [cfg,          setCfg]          = useState({})
   const [kejohanan,    setKejohanan]    = useState(null)
   const [namaKej,      setNamaKej]      = useState('')

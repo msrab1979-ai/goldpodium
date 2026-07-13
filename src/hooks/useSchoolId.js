@@ -37,7 +37,9 @@ export function withPortalView(userData) {
 export default function useSchoolId() {
   const { userData } = useAuth()
   const isSuperadmin = userData?.role === 'superadmin'
-  const view = isSuperadmin ? viewSchool() : {}
+  // Portal pencatat/PP (gp_view_portal) diutamakan — ia hanya wujud semasa mod portal
+  // (masukSebagaiAdmin/logout portal clear-kannya); gp_view_school mungkin stale
+  const view = isSuperadmin ? (viewPortal().schoolId ? viewPortal() : viewSchool()) : {}
   return {
     schoolId: (isSuperadmin && view.schoolId) || userData?.schoolId || '',
     namaSekolah: (isSuperadmin && view.namaSekolah) || userData?.namaSekolah || '',
