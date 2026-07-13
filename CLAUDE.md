@@ -524,6 +524,10 @@ di-test emulator + deploy live + push GitHub.
 - `isSelesai(h)` = statusKeputusan dalam `['ada_keputusan','diterima','rasmi']`
 - **Menu "Cetak Acara" DIBUANG dari admin** (sidebar/dashboard/route/panduan) —
   Cetak Keputusan rangkum semua. Portal pencatat KEKAL guna `CetakAcara.jsx` (slip hadiah/juruhebah)
+- **Fix 2026-07-13:** `CetakAcara.jsx` (portal pencatat) ada bug SAMA — masih baca
+  koleksi `jadual` kosong → "Tiada acara untuk hari ini" walaupun acara penuh. Dibaiki
+  guna sumber sama (`acara.tarikhAcara`) — fix ni tak dibuat masa overhaul 02d3255 sebab
+  fail ni tak disentuh (dikira "portal pencatat, bukan admin")
 
 ## Cetak Hadiah Inline dalam InputKeputusan (2026-07-07)
 
@@ -800,6 +804,21 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
   BUKAN logout Firebase
 - Firestore rules TIDAK diubah — `isSuperadmin()` memang dah benarkan semua tenant
 - `masukSebagaiAdmin` panggil `clearViewPortal()` — elak konteks portal stale
+
+### Fix 2026-07-13 — page dikongsi admin+pencatat (Rekod.jsx, CetakAcara.jsx) tersangkut kosong
+- **Bug:** `admin/Rekod.jsx` dan `admin/CetakAcara.jsx` dipakai serentak sebagai page
+  admin (`/admin/rekod`) DAN page pencatat (`/:slug/pencatat/rekod`, `/:slug/pencatat/cetak-acara`
+  — lihat App.jsx lazy import `PencatatRekod`/`PencatatCetakAcara`). Bila superadmin
+  "Masuk sebagai Pencatat", cuma `gp_view_portal` diset — tapi dua fail ni baca
+  `gp_view_school` sahaja (konteks mod admin) → `schoolId` kosong → error Firestore
+  "Invalid collection reference" (`tenants//rekod`) / page tersangkut "Memuatkan..."
+- Fix: `Rekod.jsx` + `CetakAcara.jsx` kini `withPortalView(authData)` macam page portal lain
+- Fix tambahan `useSchoolId()` hook sendiri — utamakan `viewPortal()` bila wujud
+  (hanya wujud semasa mod portal aktif; `gp_view_school` boleh stale dari tenant admin
+  sebelumnya) — ini turut fix `StartList.jsx` pencatat yang guna hook ni terus
+- **Pengajaran:** page yang lazy-import dua kali dalam App.jsx (sekali untuk route admin,
+  sekali untuk route pencatat/pengurus) WAJIB guna `withPortalView` — jangan baca
+  `userData?.schoolId` terus walaupun nampak macam "page admin"
 
 ## SuperadminPanel UX Overhaul (2026-07-09)
 
