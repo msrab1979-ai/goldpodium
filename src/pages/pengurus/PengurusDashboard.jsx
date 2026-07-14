@@ -946,6 +946,9 @@ function DaftarModal({ acara, schoolId, kejohanan, atletSekolah, pendaftaranList
 
   async function handleSave() {
     setErr(''); setErrGate(''); setWarn('')
+    if (isRelayAcara && pasukanAvail.length === 0) {
+      return setErr(`Had ${PASUKAN_LABELS.length} pasukan sudah penuh.`)
+    }
     if (isRelayAcara && selected.length !== relayInfo.saiz) {
       return setErr(`Relay mesti tepat ${relayInfo.saiz} atlet. Pilih ${relayInfo.saiz} atlet untuk Pasukan ${pasukanPilih}.`)
     }
@@ -2021,7 +2024,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                 {isSelected && (() => {
                   const _katObj2  = kategoriList.find(k => (k.kod || k.id) === acara.kategoriKod)
                   const pasukanSediaInline = [...new Set(pesertaSek.map(p => p.pasukanRelay || 'A'))]
-                  const pasukanSediaTambah = PASUKAN_LABELS.find(l => !pasukanSediaInline.includes(l)) || 'A'
+                  const pasukanSediaTambah = PASUKAN_LABELS.find(l => !pasukanSediaInline.includes(l)) || null
                   const sudahDaftar = pesertaSek.map(p => p.noKP)
                   const isAcaraTerbuka2 = acara.isTerbuka || acara.kategoriKod === 'TERBUKA'
                   const atletLayak  = atletSekolah.filter(a => {
@@ -2117,8 +2120,14 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                         ? [...new Set(pendSnap.docs.filter(d => (d.data().acaraIds || []).includes(aceraId)).map(d => d.data().pasukanRelay || 'A'))]
                         : []
                       const pasukanUntukBatch = isRelayAcara2
-                        ? (PASUKAN_LABELS.find(l => !pasukanSediaFresh.includes(l)) || 'A')
+                        ? PASUKAN_LABELS.find(l => !pasukanSediaFresh.includes(l))
                         : null
+
+                      if (isRelayAcara2 && !pasukanUntukBatch) {
+                        setInlineErr(p => ({ ...p, [aceraId]: `Had pasukan relay sudah penuh (maks ${PASUKAN_LABELS.length} pasukan).` }))
+                        setInlineSaving(p => ({ ...p, [aceraId]: false }))
+                        return
+                      }
 
                       // ── Validate semua dulu (in-memory) — baru batch write ──
                       const batchOps = [] // { type: 'update'|'set', ref, data }
@@ -2126,6 +2135,28 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                       for (const noKP of selSet) {
                         const atlet = atletSekolah.find(a => a.noKP === noKP)
                         if (!atlet) continue
+
+                        // GATE 4 — jantina (semak semula, bukan hanya harap filter checkbox awal)
+                        if (!['C', 'Campuran'].includes(acara.jantina) && atlet.jantina !== acara.jantina) {
+                          setInlineErr(p => ({ ...p, [aceraId]: `${atlet.nama || noKP} — jantina tidak sepadan dengan acara ini.` }))
+                          setInlineSaving(p => ({ ...p, [aceraId]: false }))
+                          return
+                        }
+
+                        // GATE 3 — kelayakan umur (semak semula, bukan hanya harap filter checkbox awal)
+                        const pSediaKat = pendLiveByKP[noKP]
+                        const overrideKatCheck = pSediaKat?.kategoriOverride || null
+                        if (!overrideKatCheck) {
+                          const katLayakCheck = senaraiKategoriLayak(atlet.tarikhLahir, atlet.jantina, tahunKej, kategoriList).map(k => k.kod)
+                          const layakUntukAcaraIni = isAcaraTerbuka2
+                            ? (acara.kategoriTerbuka || []).length === 0 || katLayakCheck.some(kod => (acara.kategoriTerbuka || []).includes(kod))
+                            : katLayakCheck.includes(acara.kategoriKod)
+                          if (!layakUntukAcaraIni) {
+                            setInlineErr(p => ({ ...p, [aceraId]: `${atlet.nama || noKP} — tidak layak umur/kategori untuk acara ini.` }))
+                            setInlineSaving(p => ({ ...p, [aceraId]: false }))
+                            return
+                          }
+                        }
 
                         // GATE 6 — duplikasi
                         const pSedia = pendLiveByKP[noKP]
@@ -2302,7 +2333,9 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                             <>
                               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
                                 {isRelayAcara2
-                                  ? `Daftar Pasukan ${pasukanSediaTambah} — Pilih ${relayInfo2?.saiz || 4} Atlet (${selSet.size}/${relayInfo2?.saiz || 4})`
+                                  ? pasukanSediaTambah
+                                    ? `Daftar Pasukan ${pasukanSediaTambah} — Pilih ${relayInfo2?.saiz || 4} Atlet (${selSet.size}/${relayInfo2?.saiz || 4})`
+                                    : `Had ${PASUKAN_LABELS.length} pasukan sudah penuh`
                                   : 'Pilih Atlet'}
                               </p>
                               <div className="space-y-1">
@@ -2361,12 +2394,14 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                               )}
                               {selSet.size > 0 && (
                                 <div className="mt-2 flex items-center justify-end">
-                                  <button onClick={handleDaftar} disabled={isSaving}
+                                  <button onClick={handleDaftar} disabled={isSaving || (isRelayAcara2 && !pasukanSediaTambah)}
                                     className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#003399] text-white rounded-lg hover:bg-[#002288] disabled:opacity-50">
                                     {isSaving
                                       ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Mendaftar…</>
                                       : isRelayAcara2
-                                        ? `Daftar Pasukan ${pasukanSediaTambah} (${selSet.size} atlet)`
+                                        ? pasukanSediaTambah
+                                          ? `Daftar Pasukan ${pasukanSediaTambah} (${selSet.size} atlet)`
+                                          : `Had ${PASUKAN_LABELS.length} pasukan sudah penuh`
                                         : `Daftar ${selSet.size} Atlet`
                                     }
                                   </button>

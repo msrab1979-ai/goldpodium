@@ -22,7 +22,7 @@ import {
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import { runPostRasmi } from '../../utils/postRasmiUtils'
+import { runPostRasmi, rollbackPostRasmi } from '../../utils/postRasmiUtils'
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -151,6 +151,22 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
   async function handleSimpan() {
     setSimpan({ loading: true, ok: false, err: '' })
     try {
+      const PKOD_ADMIN = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const isSaringan = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
+      const acaraDoc = { ...acara, id: acara.id }
+      const grantMedal = !isSaringan && (heat.fasa === 'final' || heat.fasa === 'terus_final')
+
+      // Rollback WAJIB await sebelum simpan/postRasmi — kalau tak, keputusan
+      // rasmi sedia ada yang di-overwrite akan double-count pingat/mata lama.
+      if (['rasmi', 'diterima'].includes(heat.statusKeputusan)) {
+        await rollbackPostRasmi(db,
+          { id: heat.id, peserta: heat.peserta || [] },
+          acaraDoc,
+          kejId,
+          { schoolId, isRelay, peringkatKej: PKOD_ADMIN[(kejDoc?.peringkat || '').toLowerCase()] || 'D', grantMedal }
+        ).catch(e => console.warn('rollback:', e.message))
+      }
+
       const withRank    = kiraRankLorong(rows)
       const hRef        = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heat.id)
       await updateDoc(hRef, {
@@ -160,15 +176,12 @@ function ModalInputLorong({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
         dikemaskinPada:  serverTimestamp(),
       })
       // Fire-and-forget postRasmi — UI kembali segera, tally di-update background
-      const PKOD_ADMIN = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
-      const isSaringan = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
       const heatDoc  = { id: heat.id, peserta: withRank, windSpeed: windGlobal || '' }
-      const acaraDoc = { ...acara, id: acara.id }
       runPostRasmi(db, heatDoc, acaraDoc, kejId, {
         schoolId,
         mataPingat:        kejDoc?.mataPingat        || { 1: 5, 2: 3, 3: 2, 4: 1 },
         peringkatKej:      PKOD_ADMIN[(kejDoc?.peringkat || '').toLowerCase()] || 'D',
-        grantMedal:        !isSaringan && (heat.fasa === 'final' || heat.fasa === 'terus_final'),
+        grantMedal,
         isRelay,
       }).catch(e => console.warn('postRasmi (background):', e.message))
       setSimpan({ loading: false, ok: true, err: '' })
@@ -339,6 +352,22 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
   async function handleSimpan() {
     setSimpan({ loading: true, ok: false, err: '' })
     try {
+      const PKOD_ADMIN = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+      const isSaringanPadang = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
+      const acaraDoc = { ...acara, id: acara.id }
+      const grantMedal = !isSaringanPadang && (heat.fasa === 'final' || heat.fasa === 'terus_final')
+
+      // Rollback WAJIB await sebelum simpan/postRasmi — kalau tak, keputusan
+      // rasmi sedia ada yang di-overwrite akan double-count pingat/mata lama.
+      if (['rasmi', 'diterima'].includes(heat.statusKeputusan)) {
+        await rollbackPostRasmi(db,
+          { id: heat.id, peserta: heat.peserta || [] },
+          acaraDoc,
+          kejId,
+          { schoolId, isRelay: false, peringkatKej: PKOD_ADMIN[(kejDoc?.peringkat || '').toLowerCase()] || 'D', grantMedal }
+        ).catch(e => console.warn('rollback:', e.message))
+      }
+
       const withRank = kiraRankPadang(rows)
       const hRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', heat.id)
       await updateDoc(hRef, {
@@ -347,15 +376,12 @@ function ModalInputPadang({ acara, heat, atletMap, schoolId, kejId, kejDoc, onTu
         dikemaskinPada:  serverTimestamp(),
       })
       // Fire-and-forget postRasmi — UI kembali segera, tally di-update background
-      const PKOD_ADMIN = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
-      const isSaringanPadang = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
       const heatDoc  = { id: heat.id, peserta: withRank }
-      const acaraDoc = { ...acara, id: acara.id }
       runPostRasmi(db, heatDoc, acaraDoc, kejId, {
         schoolId,
         mataPingat:   kejDoc?.mataPingat   || { 1: 5, 2: 3, 3: 2, 4: 1 },
         peringkatKej: PKOD_ADMIN[(kejDoc?.peringkat || '').toLowerCase()] || 'D',
-        grantMedal:   !isSaringanPadang && (heat.fasa === 'final' || heat.fasa === 'terus_final'),
+        grantMedal,
         isRelay:      false,
       }).catch(e => console.warn('postRasmi (background):', e.message))
       setSimpan({ loading: false, ok: true, err: '' })

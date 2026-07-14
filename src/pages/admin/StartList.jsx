@@ -31,6 +31,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { cariRekodUntukAcara, formatPrestasiRekod, tahunRekod, lokasiRekod } from '../../utils/rekodUtils'
 import { selectFinalists, getFinalistSetup, getJenisTab, serpentineSeed } from '../../utils/finalistUtils'
+import { rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import {
   WA_LORONG_KUMPULAN_DEFAULT,
   WA_LORONG_HEAT_REMOVE,
@@ -535,7 +536,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
                             <th className="px-2 py-1 text-left font-bold text-gray-400">BIB</th>
                             <th className="px-2 py-1 text-left font-bold text-gray-400">Nama</th>
                             <th className="px-2 py-1 text-left font-bold text-gray-400">Sekolah</th>
-                            {selectedAcara?.isTerbuka && <th className="px-2 py-1 text-center font-bold text-orange-500">Kat</th>}
+                            {acara?.isTerbuka && <th className="px-2 py-1 text-center font-bold text-orange-500">Kat</th>}
                           </>
                         )}
                       </tr>
@@ -557,7 +558,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
                             <td className="px-2 py-1 font-mono text-gray-700">{p.noBib}</td>
                             <td className="px-2 py-1 font-semibold text-gray-800">{p.namaAtlet}</td>
                             <td className="px-2 py-1 text-gray-500">{sekolahMap[p.kodSekolah] || p.namaSekolah || p.kodSekolah}</td>
-                            {selectedAcara?.isTerbuka && <td className="px-2 py-1 text-center font-bold text-orange-600">{p.kategoriKod || '—'}</td>}
+                            {acara?.isTerbuka && <td className="px-2 py-1 text-center font-bold text-orange-600">{p.kategoriKod || '—'}</td>}
                           </tr>
                         )
                       ))}
@@ -1562,6 +1563,7 @@ export default function StartList() {
   const [selectedKej, setSelectedKej]    = useState('')
   const [namaKej, setNamaKej]            = useState('')
   const [kejDefaultLorong, setKejDefaultLorong] = useState(8)
+  const [kejPeringkat, setKejPeringkat]  = useState('')
   const [acaraList, setAcaraList]        = useState([])
   const [selectedAcara, setSelectedAcara]= useState(null)
   const [pesertaList, setPesertaList]    = useState([])  // dari pendaftaran
@@ -1672,6 +1674,7 @@ export default function StartList() {
           setSelectedKej(d.id)
           setNamaKej(d.data().namaKejohanan || '')
           setKejDefaultLorong(d.data().defaultLorong || 8)
+          setKejPeringkat(d.data().peringkat || '')
         }
       }).catch(() => {})
   }, [schoolId])
@@ -1834,6 +1837,47 @@ export default function StartList() {
     })
   }
 
+  // ── Rollback semua heat rasmi milik SATU acara (guna heat docs yang dipass —
+  // elak fetch berulang). Dipanggil untuk acara semasa DAN acara anak (Final/SF).
+  async function rollbackHeatRasmiUntukAcara(acara, heatDocs) {
+    const heatRasmi = heatDocs.filter(h => ['rasmi', 'diterima'].includes(h.statusKeputusan))
+    if (heatRasmi.length === 0) return
+
+    const PKOD = { sekolah: 'S', daerah: 'D', negeri: 'N', kebangsaan: 'K' }
+    const peringkatKej = PKOD[(kejPeringkat || '').toLowerCase()] || 'D'
+    const isSaringanAcara = ['saringan_qf', 'saringan_sf', 'separuh_akhir'].includes(acara.peringkat || '')
+    const acaraKey = acara.aceraId || acara.id
+
+    for (const h of heatRasmi) {
+      const grantMedal = !isSaringanAcara && (['final', 'terus_final'].includes(h.fasa) || heatRasmi.length === 1)
+      await rollbackPostRasmi(db,
+        { id: h.id, peserta: h.peserta || [] },
+        { ...acara, id: acaraKey },
+        selectedKej,
+        { schoolId, isRelay: acara.jenisAcara === 'relay', peringkatKej, grantMedal }
+      ).catch(e => console.warn('rollbackHeatRasmiUntukAcara:', e.message))
+    }
+  }
+
+  // ── Rollback heat Final/SF yang sudah rasmi sebelum acara saringan induknya
+  // di-reset/dipadam. Tanpa ini, "Jana Semula" boleh menulis ganti Final rasmi
+  // dengan senarai finalis baru tanpa menarik balik pingat/mata/rekod lama.
+  async function rollbackFinalHeatJikaRasmi(saringanAcara) {
+    if (!saringanAcara || !selectedKej || !schoolId) return
+    const saringanKey = saringanAcara.aceraId || saringanAcara.id
+    const saringanNo  = String(saringanAcara.noAcara || saringanKey)
+    const anakAcara = acaraList.find(a =>
+      String(a.parentAcaraId) === saringanNo || String(a.parentAcaraId) === String(saringanKey)
+    )
+    if (!anakAcara) return
+    const anakKey = anakAcara.aceraId || anakAcara.id
+    const anakSnap = await getDocs(
+      query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', anakKey))
+    )
+    const anakHeats = anakSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    await rollbackHeatRasmiUntukAcara(anakAcara, anakHeats)
+  }
+
   function gateResetMsg(bilHeat, namaAcara = '') {
     return `Jana Semula tidak dibenar.\n\n` +
       `${bilHeat} heat dalam ${namaAcara || 'acara ini'} sudah ada keputusan diinput.\n\n` +
@@ -1841,17 +1885,22 @@ export default function StartList() {
   }
 
   function gateResetSuperadminMsg(bilHeat, namaAcara = '') {
-    return `AMARAN SUPERADMIN\n\n` +
+    return `AMARAN\n\n` +
       `${bilHeat} heat dalam ${namaAcara || 'acara ini'} sudah ada keputusan.\n` +
       `Jana semula akan PADAM semua keputusan tersebut.\n\nTeruskan?`
   }
 
   async function handlePadamSemuaHeat() {
     if (!selectedAcara || !selectedKej) return
-    // Gate: semak keputusan dalam heatList yang sudah dimuatkan
-    const heatsAdaKeputusan = heatAdaKeputusan(heatList)
+    // Fetch heat TERKINI dari Firestore — heatList (React state) boleh stale jika
+    // keputusan rasmi dimasukkan di peranti/tab lain selepas acara ini dipilih di sini.
+    const aceraKeyFresh = selectedAcara.aceraId || selectedAcara.id
+    const freshSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aceraKeyFresh)))
+    const freshHeats = freshSnap.docs.map(d => ({ id: d.id, heatId: d.id, ...d.data() }))
+    // Gate: semak keputusan guna data fresh, bukan heatList yang mungkin stale
+    const heatsAdaKeputusan = heatAdaKeputusan(freshHeats)
     if (heatsAdaKeputusan.length > 0) {
-      if (userRole !== 'superadmin') {
+      if (!['superadmin', 'admin'].includes(userRole)) {
         alert(gateResetMsg(heatsAdaKeputusan.length, selectedAcara.namaAcara))
         return
       }
@@ -1859,9 +1908,15 @@ export default function StartList() {
     } else {
       if (!window.confirm('Padam semua heat? Ini akan reset start list acara ini.')) return
     }
+    if (selectedAcara.finalDijanaKe &&
+        !window.confirm(`Acara #${selectedAcara.finalDijanaKe} (Separuh Akhir/Final) sudah dijana daripada acara ini. Jika ia sudah RASMI, pingat/mata/rekod yang berkaitan akan ditarik balik secara automatik sebelum reset. Teruskan?`)) return
     try {
+      // Rollback dulu heat rasmi acara INI SENDIRI (cth Terus Final tanpa anak),
+      // kemudian heat Final/SF anak (cth acara saringan) — kedua-dua kes disokong.
+      await rollbackHeatRasmiUntukAcara(selectedAcara, freshHeats)
+      await rollbackFinalHeatJikaRasmi(selectedAcara)
       const batch = writeBatch(db)
-      heatList.forEach(h => {
+      freshHeats.forEach(h => {
         batch.delete(doc(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat', h.heatId))
       })
       await batch.commit()
@@ -1883,10 +1938,10 @@ export default function StartList() {
     try {
       const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid)))
       // Gate: semak keputusan
-      const heatsData = heatSnap.docs.map(d => d.data())
+      const heatsData = heatSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       const adaKeputusan = heatAdaKeputusan(heatsData)
       if (adaKeputusan.length > 0) {
-        if (userRole !== 'superadmin') {
+        if (!['superadmin', 'admin'].includes(userRole)) {
           alert(gateResetMsg(adaKeputusan.length, acara.namaAcara))
           setResetingAceraId(null)
           return
@@ -1896,6 +1951,15 @@ export default function StartList() {
           return
         }
       }
+      if (acara.finalDijanaKe &&
+          !window.confirm(`Acara #${acara.finalDijanaKe} (Separuh Akhir/Final) sudah dijana daripada acara ini. Jika ia sudah RASMI, pingat/mata/rekod yang berkaitan akan ditarik balik secara automatik sebelum reset. Teruskan?`)) {
+        setResetingAceraId(null)
+        return
+      }
+      // Rollback dulu heat rasmi acara INI SENDIRI (cth Terus Final tanpa anak),
+      // kemudian heat Final/SF anak (cth acara saringan) — kedua-dua kes disokong.
+      await rollbackHeatRasmiUntukAcara(acara, heatsData)
+      await rollbackFinalHeatJikaRasmi(acara)
       if (!heatSnap.empty) {
         const batch = writeBatch(db)
         heatSnap.docs.forEach(d => batch.delete(d.ref))
@@ -1948,6 +2012,11 @@ export default function StartList() {
       for (const acara of acaraAktif) {
         const aid = acara.aceraId || acara.id
         const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aid)))
+        // Rollback dulu heat rasmi acara INI SENDIRI (cth Terus Final tanpa anak),
+        // kemudian heat Final/SF anak (cth acara saringan) — kedua-dua kes disokong.
+        const heatsData = heatSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        await rollbackHeatRasmiUntukAcara(acara, heatsData)
+        await rollbackFinalHeatJikaRasmi(acara)
         if (!heatSnap.empty) {
           const batch = writeBatch(db)
           heatSnap.docs.forEach(d => batch.delete(d.ref))

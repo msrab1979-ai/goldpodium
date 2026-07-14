@@ -334,7 +334,7 @@ async function gate4_jantina(schoolId, noKP, aceraId, kejohananId) {
   }
   const jantinaAcara = acaraDoc.data().jantina
 
-  if (jantinaAcara === 'campuran') return { valid: true }
+  if (['C', 'Campuran', 'campuran'].includes(jantinaAcara)) return { valid: true }
 
   if (jantinaAtlet !== jantinaAcara) {
     const label = { L: 'Lelaki', P: 'Perempuan' }

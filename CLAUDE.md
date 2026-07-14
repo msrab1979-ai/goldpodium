@@ -978,6 +978,86 @@ Fix yang dibuat (terpakai semua tenant):
 - CTA sentiasa hubungi WhatsApp (`NO_WA` dalam `Landing.jsx`) — seksyen #harga guna kad "Bincang Terus dengan Kami"
 - Harga hanya wujud dalam Tab Akaun superadmin (rekod bayaran dalaman)
 
+## Audit 4-Fasa PP→StartList→InputKeputusan→Final (2026-07-14)
+
+User arah audit menyeluruh rantaian pendaftaran→keputusan rasmi guna Explore
+subagent (4 fasa), semua fix disahkan dengan data Firestore sebenar (bukan
+cuma UI) guna tenant `ppkikmn` sebagai sandbox test — bukan tenant produksi.
+
+### Fasa 1 — PP Pendaftaran (fix, deployed)
+- `validasiPendaftaran.js` Gate 4 jantina: check `=== 'campuran'` tapi data
+  sebenar simpan `'C'` — acara campuran GAGAL terima sesiapa. Fix: terima
+  `['C','Campuran','campuran']`
+- `PengurusDashboard.jsx` label pasukan relay A-F: bila 6 pasukan penuh,
+  `.find() || 'A'` diam-diam collide pasukan ke-7 dengan Pasukan A. Fix:
+  tolak dengan mesej "Had X pasukan sudah penuh", tiada fallback silent
+- Path B (tab "Daftar Acara") tak re-check umur/jantina semasa simpan
+  (hanya harap filter checkbox awal yang mungkin stale). Fix: tambah Gate 3/4
+  re-check dalam `handleDaftar` sebelum queue batch write
+
+### Fasa 2 — StartList/Heat (fix, deployed)
+- `pencatat/InputKeputusan.jsx` `initKeputusanDariPeserta`: peserta dengan
+  `lorong: null` (overflow bila finalis > bilangan lorong) DIBUANG dari
+  `kpMap` — hilang terus dari skrin pencatat, tiada baris, tiada amaran.
+  Fix: kunci fallback `overflow_{noBib}`, baris tambahan label "TIADA LORONG"
+  di `InputLorong` + `InputRelay`, `buildUpdatedPeserta` guna kunci sama
+
+### Fasa 3+4 — Rollback "Jana Semula"/Reset (fix, deployed, 3 bug berturut)
+**Masalah asal**: reset heat saringan clear `finalDijanaKe` senyap → admin
+boleh "Jana Final" sekali lagi → heat Final RASMI ditimpa finalis baru
+TANPA rollback pingat/mata/rekod lama → data anak yatim/double.
+
+Fix (`StartList.jsx`) — 3 bug ditemui berturut semasa test, semua dibaiki:
+1. **Gate role**: admin tenant biasa disekat reset (hanya superadmin) —
+   user putuskan admin PATUT boleh reset (dia pemilik tenant sendiri).
+   Ubah `userRole !== 'superadmin'` → `!['superadmin','admin'].includes(...)`
+   di 2 tempat (`handlePadamSemuaHeat`, `handleResetHeatAcara`)
+2. **Rollback tak cover heat "sendiri"**: `rollbackFinalHeatJikaRasmi` cuma
+   rollback heat ANAK (Final dijana dari saringan) — acara Terus Final
+   (tiada anak) di-reset terus TANPA rollback. Fix: helper baru
+   `rollbackHeatRasmiUntukAcara(acara, heatDocs)` dipanggil untuk acara
+   semasa DAN acara anak, di ketiga-tiga fungsi reset
+   (`handlePadamSemuaHeat`, `handleResetHeatAcara`, `handleResetSemuaHeat`)
+3. **`heatList` React state stale** (root cause sebenar): `heatList` diisi
+   sekali bila `selectedAcara` dipilih, TIDAK auto-refresh bila keputusan
+   rasmi dimasukkan oleh tab/peranti lain. Rollback dipanggil dengan
+   snapshot LAMA (peserta kosong) → tiada apa untuk rollback. Fix:
+   `handlePadamSemuaHeat` fetch heat TERKINI dari Firestore (`getDocs`)
+   sebelum gate/rollback/padam, bukan guna state React yang mungkin lapuk
+   (`handleResetHeatAcara`/`handleResetSemuaHeat` memang sudah fetch fresh)
+
+**Bug bonus jumpa semasa test** (bukan dari fix di atas, kod sedia ada):
+`GenerateModal` (StartList.jsx baris 539/561) guna `selectedAcara` yang
+tak wujud dalam scope komponen (patut `acara` — prop komponen) → crash
+"selectedAcara is not defined" bila preview heat untuk acara `isTerbuka`.
+Fix: tukar ke `acara`.
+
+**Fix tambahan**: `admin/InputKeputusan.jsx` (`ModalInputLorong`,
+`ModalInputPadang`) tak rollback sebelum re-save keputusan rasmi sedia ada
+(unlike laluan pencatat yang sudah betul) — risiko double-count bila admin
+edit keputusan rasmi terus. Fix: tambah rollback sebelum `updateDoc`,
+pattern sama macam pencatat (`['rasmi','diterima'].includes(heat.statusKeputusan)`)
+
+**Disahkan dengan Firestore console** (bukan cuma UI):
+- Reset heat: `acaraDetail_*`, `rekod_*` field dalam `mata_olahragawan`
+  betul-betul padam selepas fix #3; `jumlahMata`/`pingat_emas` kembali 0
+- Edit keputusan rasmi (pencatat): nilai lama ditarik balik SEBELUM nilai
+  baru ditulis — `jumlahMata`/`pingat_emas` kekal 1 set (bukan double)
+- Atlet Terbaik/Analisa Pingat, Medal Tally, Badge — semua rollback
+  serentak (kira on-the-fly dari heat + `mata_olahragawan` fields)
+- **Rekod tuntutan** (`rekod/{key}_tuntutan`) HANYA rollback jika belum
+  diluluskan admin (`aktifSnap` belum exists) — rekod yang admin dah sahkan
+  KEKAL walau keputusan sumber dipadam/edit (sengaja, elak auto-cabut
+  keputusan manusia)
+
+### Isu automation ditemui (bukan bug sistem)
+- Firebase Auth (admin, email/password) dan Anonymous Auth (pencatat/PP)
+  kongsi session dalam TAB/window sama — login pencatat/PP di tab yang
+  baru sahaja ada sesi admin → "Missing or insufficient permissions".
+  Punca: bukan bug rules, tapi auth state bercelaru. Fix: guna Incognito
+  window berasingan untuk pencatat/PP semasa testing (sudah didokumen di
+  seksyen "Auth isolation" — CLAUDE.md sedia ada, disahkan semula hari ni)
+
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
 - Jangan bagi `grantMedal: true` pada bukan acara `akhir`

@@ -474,7 +474,10 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
 function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const bilLorong   = acara.bilanganLorong || heat.bilanganLorong || 8
   const isWind      = acara.isWindReading || false
-  const slotsAsal   = Array.from({ length: bilLorong }, (_, i) => i + 1)
+  const overflowSlots = (heat.peserta || [])
+    .map((p, i) => (p.lorong == null ? `overflow_${p.noBib || i}` : null))
+    .filter(Boolean)
+  const slotsAsal   = [...Array.from({ length: bilLorong }, (_, i) => i + 1), ...overflowSlots]
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
         const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
@@ -524,7 +527,8 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
 
         {slots.map((lorong, idx) => {
           const kp       = keputusan[lorong] || {}
-          const isKosong = !kp.namaAtlet && !kp.noBib && !kp.kodSekolah && !kp.keputusan && !kp.status
+          const isOverflow = typeof lorong === 'string' && lorong.startsWith('overflow_')
+          const isKosong = !isOverflow && !kp.namaAtlet && !kp.noBib && !kp.kodSekolah && !kp.keputusan && !kp.status
           const rank     = rankMap[lorong]
           const flagged  = ['DNS', 'DNF', 'DQ'].includes(kp.status)
           const isCarian = carianBib && matchCarian(kp, carianBib, sekolahMap, bibPrefixMap)
@@ -533,6 +537,7 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
             slotsAsal.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
           )
           const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset'
+            : isOverflow ? 'bg-red-50'
             : flagged ? 'bg-red-50'
             : isKonflik ? 'bg-amber-50'
             : rank === 1 ? 'bg-yellow-50'
@@ -558,7 +563,9 @@ function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, seko
             <div key={lorong} className={`grid border-t border-gray-100 ${rowBg}`}
               style={{ gridTemplateColumns: '44px 80px 1fr 96px 60px 100px' }}>
               <div className="px-1 py-3 flex items-center justify-center">
-                <span className="text-sm font-black text-gray-700">{lorong}</span>
+                {isOverflow
+                  ? <span className="text-[9px] font-black text-red-500 text-center leading-tight">TIADA<br/>LORONG</span>
+                  : <span className="text-sm font-black text-gray-700">{lorong}</span>}
               </div>
               <div className="px-1 py-2 flex items-center">
                 <input type="text" value={kp.noBib || ''} readOnly
@@ -957,7 +964,10 @@ function InputMassStart({ acara, heat, keputusan, onChange, sekolahMap = {}, bib
 
 function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
   const bilPasukan = acara.bilPasukan || heat.bilPasukan || acara.bilanganLorong || 8
-  const slotsAsal  = Array.from({ length: bilPasukan }, (_, i) => i + 1)
+  const overflowSlots = (heat.peserta || [])
+    .map((p, i) => (p.lorong == null ? `overflow_${p.noBib || i}` : null))
+    .filter(Boolean)
+  const slotsAsal  = [...Array.from({ length: bilPasukan }, (_, i) => i + 1), ...overflowSlots]
   const slots = carianBib
     ? [...slotsAsal].sort((a, b) => {
         const matchA = matchCarian(keputusan[a] || {}, carianBib, sekolahMap, bibPrefixMap) ? 0 : 1
@@ -985,9 +995,10 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
         <div className="px-2 py-3 text-center">Catatan</div>
       </div>
 
-      {slotsAsal.map((lorong, idx) => {
+      {slots.map((lorong, idx) => {
         const kp      = keputusan[lorong] || {}
-        const isKosong = !kp.kodSekolah && !kp.keputusan && !kp.status
+        const isOverflow = typeof lorong === 'string' && lorong.startsWith('overflow_')
+        const isKosong = !isOverflow && !kp.kodSekolah && !kp.keputusan && !kp.status
         const rank    = rankMap[lorong]
         const flagged = ['DNS', 'DNF', 'DQ'].includes(kp.status)
         const isCarian  = carianBib && matchCarian(kp, carianBib, sekolahMap, bibPrefixMap)
@@ -996,6 +1007,7 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
           slotsAsal.filter(s => s !== lorong).map(s => keputusan[s]?.kedudukan).filter(v => v !== '' && v != null)
         )
         const rowBg = isCarian ? 'bg-yellow-200 ring-2 ring-yellow-400 ring-inset'
+          : isOverflow ? 'bg-red-50'
           : flagged ? 'bg-red-50'
           : isKonflik ? 'bg-amber-50'
           : rank === 1 ? 'bg-yellow-50'
@@ -1021,7 +1033,9 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
           <div key={lorong} className={`grid border-t border-gray-100 ${rowBg}`}
             style={{ gridTemplateColumns: '44px 1fr 96px 60px 100px' }}>
             <div className="px-1 py-2.5 flex items-center justify-center">
-              <span className="text-sm font-black text-gray-700">{lorong}</span>
+              {isOverflow
+                ? <span className="text-[9px] font-black text-red-500 text-center leading-tight">TIADA<br/>LORONG</span>
+                : <span className="text-sm font-black text-gray-700">{lorong}</span>}
             </div>
             <div className="px-2 py-2 flex flex-col justify-center min-w-0">
               <p className="text-sm font-bold text-gray-800 truncate">{(kp.kodSekolah && (sekolahMap[kp.kodSekolah] || kp.kodSekolah)) || '—'}</p>
@@ -1447,8 +1461,9 @@ export default function PencatatInputKeputusan() {
     const pesertaArr = heat.peserta || []
 
     if (acara.jenisAcara === 'lorong' || acara.jenisAcara === 'relay') {
-      pesertaArr.forEach(p => {
-        if (p.lorong != null) kpMap[p.lorong] = {
+      pesertaArr.forEach((p, i) => {
+        const slot = p.lorong != null ? p.lorong : `overflow_${p.noBib || i}`
+        kpMap[slot] = {
           noBib:        p.noBib || '',
           namaAtlet:    p.namaAtlet || '',
           kodSekolah:   p.kodSekolah || '',
@@ -1645,7 +1660,7 @@ export default function PencatatInputKeputusan() {
 
     const updatedPeserta = (heat.peserta || []).map((p, i) => {
       let slot
-      if (jenisAcara === 'lorong' || jenisAcara === 'relay') slot = p.lorong
+      if (jenisAcara === 'lorong' || jenisAcara === 'relay') slot = p.lorong != null ? p.lorong : `overflow_${p.noBib || i}`
       else if (jenisAcara === 'mass_start') slot = p.giliran ?? (i + 1)
       else slot = p.noBib
 
