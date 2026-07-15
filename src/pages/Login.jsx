@@ -145,6 +145,14 @@ export default function Login() {
     setMuatTurun(true)
     try {
       const sesi = await login(emel.trim(), katalaluan)
+
+      // Superadmin datang dari landing tenant → biar useEffect (baris atas)
+      // uruskan redirect terus ke /admin tenant, jangan lompat ke /superadmin dulu
+      if (sesi.role === 'superadmin' && slugTenant) {
+        setMuatTurun(false)
+        return
+      }
+
       const dest = HALUAN_PERANAN[sesi.role] || '/dashboard'
       navigate(dest, { replace: true })
     } catch (err) {

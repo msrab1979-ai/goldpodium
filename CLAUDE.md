@@ -779,13 +779,19 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
   padan tenant semasa (`viewSchool().schoolId` untuk superadmin); tak padan → fallback
   fetch Firestore. Semua penulis `gp_kej_aktif` memang simpan `schoolId` dalam doc
 
-### Shortcut login superadmin dari landing tenant (2026-07-12)
+### Shortcut login superadmin dari landing tenant (2026-07-12, fix race 2026-07-15)
 - `Login.jsx`: bila role `superadmin` DAN datang dari SchoolLanding (`state.schoolSlug` ada)
   → auto set `gp_view_school` (schoolId dari `state.schoolId`, fallback resolve `slugIndex/{slug}`)
   + `clearViewPortal()` + buang `gp_kej_aktif` → terus ke `/admin` tenant tu
   (sama kesan seperti tekan "Masuk" dalam SuperadminPanel)
 - Login superadmin dari `/login` terus (tanpa state slug) → ke `/superadmin` macam biasa
 - Admin tenant biasa (role `admin`) tidak terjejas — haluan ikut `HALUAN_PERANAN`
+- **Bug fix 2026-07-15**: `handleHantar` (submit borang log masuk) dulu `navigate(HALUAN_PERANAN[role])`
+  terus lepas `login()` berjaya — race dengan `useEffect` shortcut di atas (baris ~70) yang
+  patut redirect ke `/admin` tenant. Submit borang menang race → superadmin dari landing tenant
+  (klik "Login Staff" → "Admin") tersasar ke `/superadmin` walaupun `slugTenant` wujud dalam
+  `location.state`. Fix: `handleHantar` kini semak `sesi.role === 'superadmin' && slugTenant` dulu
+  — kalau match, biarkan `useEffect` uruskan redirect (jangan navigate terus dalam handler)
 
 ### Portal Pencatat & PP untuk superadmin
 - SuperadminPanel menu ⋯ → "📝 Masuk sebagai Pencatat" / "👥 Masuk sebagai PP"
