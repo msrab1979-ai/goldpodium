@@ -7,6 +7,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
+  onAuthStateChanged,
 } from 'firebase/auth'
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, Timestamp,
@@ -117,6 +118,96 @@ export async function getLockStatus(email) {
     return { locked: false, minutesLeft: 0 }
   } catch {
     return { locked: false, minutesLeft: 0 }
+  }
+}
+
+// ── Anonymous auth siap-pakai untuk pencatat/pengurus ─────────────────────────
+//
+// Punca "Missing or insufficient permissions" (tak konsisten) semasa login PP/
+// pencatat: session doc ditulis dengan token auth yang belum selari dengan
+// anonUid dalam path. Dua sumber race:
+//   A. Tab ini sebelum ni ada sesi Firebase Auth (Admin email/password) — PP
+//      mewarisi UID lama, `request.auth.uid == anonUid` gagal di rules.
+//   B. `auth.currentUser` belum ter-set bila setDoc dihantar terus selepas
+//      signInAnonymously (race dalaman SDK).
+//
+// ensureAnonAuth() pastikan:
+//   1. Kalau ada user BUKAN-anon dalam tab → sign out dulu (elak warisi UID Admin)
+//   2. signInAnonymously
+//   3. Tunggu onAuthStateChanged sahkan auth.currentUser === anon uid SEBELUM
+//      pulangkan — jadi write session guna token betul
+// Pulangkan uid anon yang disahkan (guna sebagai path segment + medan session).
+//
+// Logik tulen diasingkan ke resolveAnonAuth(deps) supaya boleh diuji unit
+// tanpa Firebase sebenar (lihat test-anon-race.cjs). deps menyuntik semua
+// kesan-sampingan: getCurrentUser, signOut, signInAnon, onAuthChanged.
+export async function resolveAnonAuth(deps) {
+  const { getCurrentUser, signOut, signInAnon, onAuthChanged, timeoutMs = 3000 } = deps
+
+  // 1. Buang sesi bukan-anon (cth. Admin login dalam tab sama) supaya PP tidak
+  //    mewarisi UID yang salah untuk path sessions/{anonUid}.
+  const existing = getCurrentUser()
+  if (existing && !existing.isAnonymous) {
+    try { await signOut() } catch { /* teruskan */ }
+  }
+
+  // 2. Sign in anon
+  const cred = await signInAnon()
+  const uid  = cred.user.uid
+
+  // 3. Tunggu currentUser selari dengan uid anon (max ~3s) — elak race token.
+  if (getCurrentUser()?.uid !== uid) {
+    await new Promise((resolve) => {
+      const unsub = onAuthChanged((u) => {
+        if (u && u.uid === uid) { unsub(); resolve() }
+      })
+      // Fallback: jangan gantung selamanya kalau callback tak cetus
+      setTimeout(() => { unsub(); resolve() }, timeoutMs)
+    })
+  }
+  // Pastikan token segar tersedia untuk permintaan Firestore seterusnya
+  try { await getCurrentUser()?.getIdToken() } catch { /* bukan kritikal */ }
+
+  return uid
+}
+
+// Pembalut nipis: suntik primitif Firebase sebenar ke resolveAnonAuth.
+async function ensureAnonAuth() {
+  return resolveAnonAuth({
+    getCurrentUser: () => auth.currentUser,
+    signOut:        () => firebaseSignOut(auth),
+    signInAnon:     () => signInAnonymously(auth),
+    onAuthChanged:  (cb) => onAuthStateChanged(auth, cb),
+  })
+}
+
+// Ralat permission Firestore → mesej ramah pengguna (bukan teks mentah SDK)
+function isPermissionError(err) {
+  return err?.code === 'permission-denied'
+    || /insufficient permissions|permission-denied/i.test(err?.message || '')
+}
+
+// Tulis session doc anon dengan guard auth + retry SEKALI bila permission ditolak.
+// buildData(uid) mesti pulangkan objek session (path uid & data sentiasa selari).
+// Pulangkan uid anon yang BERJAYA ditulis.
+async function writeSessionAnon(schoolId, buildData) {
+  let uid = await ensureAnonAuth()
+  try {
+    await setDoc(doc(db, 'tenants', schoolId, 'sessions', uid), buildData(uid))
+    return uid
+  } catch (err) {
+    if (!isPermissionError(err)) throw err
+    // Token mungkin belum selari — sahkan auth semula & cuba SEKALI lagi.
+    uid = await ensureAnonAuth()
+    try {
+      await setDoc(doc(db, 'tenants', schoolId, 'sessions', uid), buildData(uid))
+      return uid
+    } catch (err2) {
+      if (isPermissionError(err2)) {
+        throw new Error('Sesi tidak dapat disahkan. Sila log keluar akaun lain dalam tab ini, atau guna tetingkap Peribadi/Incognito, kemudian cuba lagi.')
+      }
+      throw err2
+    }
   }
 }
 
@@ -431,26 +522,24 @@ export async function loginPencatat(slug, kodAkses, pin) {
 
   await clearAttempts(attemptKey)
 
-  // 5. Sign in anonymously — bagi request.auth kepada Firestore rules
-  // Tiap pencatat dapat token unik walaupun kongsi PIN yang sama
-  const anonCred = await signInAnonymously(auth)
-
-  // 6. Tulis session doc — Firestore rules baca ini untuk sahkan schoolId
+  // 5+6. Sign in anonymously (buang sesi bukan-anon dulu + tunggu token selari)
+  // & tulis session doc dengan retry — elak race "Missing or insufficient
+  // permissions". Tiap pencatat dapat token unik walaupun kongsi PIN yang sama.
   //    Path: tenants/{schoolId}/sessions/{anonUid}
   //    Rules cegah cross-tenant: anonUid dari Sekolah A tak boleh cipta session di Sekolah B
-  await setDoc(doc(db, 'tenants', schoolId, 'sessions', anonCred.user.uid), {
+  const anonUid = await writeSessionAnon(schoolId, () => ({
     role:      userData.role || 'pencatat',
     schoolId,
     kodAkses,
     userDocId: userDoc.id,
     createdAt: serverTimestamp(),
     expireAt:  Timestamp.fromMillis(Date.now() + 8 * 60 * 60 * 1000),
-  })
+  }))
 
   // 7. Bina session
   return {
     uid:        userDoc.id,
-    anonUid:    anonCred.user.uid,
+    anonUid:    anonUid,
     email:      userData.email || '',
     name:       userData.nama  || kodAkses,
     role:       userData.role  || 'pencatat',
@@ -497,24 +586,23 @@ export async function loginPengurus(schoolId, kodSekolah, pin, schoolSlug = '') 
 
   await clearAttempts(attemptKey)
 
-  // Sign in anonymously — bagi request.auth kepada Firestore rules
-  const anonCred = await signInAnonymously(auth)
-
+  // Sign in anonymously (buang sesi bukan-anon dulu + tunggu token selari) —
+  // elak race "Missing or insufficient permissions" pada write session di bawah.
   // Tulis session doc — Firestore rules sahkan kodSekolah wujud dalam tenant
   //    Path: tenants/{schoolId}/sessions/{anonUid}
-  await setDoc(doc(db, 'tenants', schoolId, 'sessions', anonCred.user.uid), {
+  const anonUid = await writeSessionAnon(schoolId, () => ({
     role:       'pengurus',
     schoolId,
     kodSekolah: kodBersih,
     createdAt:  serverTimestamp(),
     expireAt:   Timestamp.fromMillis(Date.now() + 8 * 60 * 60 * 1000),
-  })
+  }))
 
   // schoolSlug disimpan dalam session — digunakan oleh RequirePengurus untuk
   // semak URL slug match session sekolah (cegah konflik multi-tenant)
   return {
     uid:         `pengurus_${schoolId}_${kodBersih}`,
-    anonUid:     anonCred.user.uid,
+    anonUid:     anonUid,
     email:       sekolahData.email || '',
     name:        sekolahData.namaSekolah || kodBersih,
     role:        'pengurus',
