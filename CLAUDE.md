@@ -613,6 +613,21 @@ semula `kiraKategori`/`layakUmurMSSM` lokal dalam page baru — import dari sini
 - TukarKategoriModal kini benarkan kategori SEUMUR (adik-beradik PPKI) + lebih tinggi
 - Test: `senaraiKategoriLayak` 16 kes (data sebenar mssdppki + tenant biasa) lulus
 
+### Debug "Tiada atlet layak" (2026-07-22)
+- **Corak kod jantina PPKI:** `jantinaKategori()` tafsir jantina dari HURUF SEBELUM
+  digit umur (`([LP])\d`). Kod corak `B-[jenis]-[jantina]NN` → huruf KE-3 = jantina.
+  Cth `BLP15` → 'P' sebelum '15' → **PEREMPUAN** (pasangan lelaki = `BLL15`).
+  Kategori doc TIADA field `jantina` — sistem SENTIASA teka dari kod.
+- **Punca "Tiada atlet layak"** (PengurusDashboard inline daftar): field `acara.jantina`
+  (dipilih manual di AcaraSetup) TAK PADAN jantina tersirat `acara.kategoriKod`.
+  Penapis `senaraiKategoriLayak(...).map(k=>k.kod).includes(acara.kategoriKod)` — bila
+  acara set 'L' tapi kategoriKod tafsir 'P', kod tak masuk senarai → 0 atlet layak.
+- **Kes sebenar:** acara 123C LOMPAT JAUH `kategoriKod:'BLP15'` tersalah tag `jantina:'L'`
+  → 0 atlet. Betulkan `jantina:'P'` (BUKAN tukar kod) → 19 atlet perempuan muncul.
+- **Ini silap tag TENANT, bukan bug sistem.** User TOLAK cadangan amaran auto
+  (jantina-vs-kod) sebab tenant lain guna corak kod berbeza — amaran keras boleh kacau
+  tenant lain. JANGAN tambah gate/amaran jantina-vs-kod global.
+
 ## Rekod Detection Gate (2026-07-08)
 
 ### HANYA acara akhir/final/terus_final
