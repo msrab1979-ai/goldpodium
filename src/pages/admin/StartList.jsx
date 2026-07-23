@@ -1716,19 +1716,42 @@ export default function StartList() {
         LORONG_KUMPULAN    = { ...WA_LORONG_KUMPULAN_DEFAULT }
         LORONG_HEAT_REMOVE = { ...WA_LORONG_HEAT_REMOVE }
       })
+    // jadualMap dibina dari doc acara (SUMBER UTAMA — acara.tarikhAcara/masa/lokasi),
+    // kemudian koleksi `jadual` di-overlay atas jika wujud (tenant lama). Koleksi
+    // `jadual` kosong untuk tenant GP → dulu Tab Hari mati; kini acara jadi sumber.
     getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'acara'), orderBy('kategoriKod')))
-      .then(snap => {
-        setAcaraList(snap.docs.map(d => { const data = d.data(); return { id: d.id, ...data, aceraId: data.aceraId || d.id } }))
+      .then(async snap => {
+        const acaraDocs = snap.docs.map(d => { const data = d.data(); return { id: d.id, ...data, aceraId: data.aceraId || d.id } })
+        setAcaraList(acaraDocs)
         setSelectedAcara(null)
-      }).catch(() => {})
-    getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'jadual')))
-      .then(snap => {
+
+        // 1) Dari acara — acara guna field `masa`, jadualMap guna `masaMula`
         const map = {}
-        snap.docs.forEach(d => {
-          const j = d.data()
-          const aid = j.aceraId || j.acaraId
-          if (aid) map[aid] = { tarikhAcara: j.tarikhAcara || '', masaMula: j.masaMula || '', lokasi: j.lokasi || '' }
+        acaraDocs.forEach(a => {
+          const aid = a.aceraId || a.id
+          map[aid] = {
+            tarikhAcara: a.tarikhAcara || '',
+            masaMula:    a.masa || a.masaMula || '',
+            lokasi:      a.lokasi || '',
+          }
         })
+
+        // 2) Overlay koleksi `jadual` (tenant lama) — nilai yang di-set di situ menang
+        try {
+          const jSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'jadual')))
+          jSnap.docs.forEach(d => {
+            const j = d.data()
+            const aid = j.aceraId || j.acaraId
+            if (!aid) return
+            const prev = map[aid] || {}
+            map[aid] = {
+              tarikhAcara: j.tarikhAcara || prev.tarikhAcara || '',
+              masaMula:    j.masaMula    || prev.masaMula    || '',
+              lokasi:      j.lokasi      || prev.lokasi      || '',
+            }
+          })
+        } catch { /* koleksi jadual mungkin tiada — abaikan, acara sudah cukup */ }
+
         setJadualMap(map)
       }).catch(() => {})
     // Fetch pengesahan semua sekolah
@@ -3431,19 +3454,32 @@ export default function StartList() {
 
       {/* ── Tab Hari ──────────────────────────────────────────────────────────── */}
       {selectedKej && viewMode === 'hari' && (() => {
-        // Kumpul semua tarikh unik dari jadualMap, sort
+        const TBA = '__tba__' // tab maya untuk acara tanpa tarikh
+        // Kumpul semua tarikh unik dari acara aktif; acara tanpa tarikh → TBA
         const tarikhSet = new Set()
-        Object.values(jadualMap).forEach(j => { if (j.tarikhAcara) tarikhSet.add(j.tarikhAcara) })
+        let adaTanpaTarikh = false
+        acaraList.forEach(a => {
+          if (a.isAktif === false) return
+          const t = jadualMap[a.aceraId || a.id]?.tarikhAcara || ''
+          if (t) tarikhSet.add(t)
+          else adaTanpaTarikh = true
+        })
+        // Tarikh sebenar dulu (sorted), tab "Belum Set" sentiasa di hujung
         const tarikhList = [...tarikhSet].sort()
+        const hariTabs = adaTanpaTarikh ? [...tarikhList, TBA] : tarikhList
 
         // Auto-pilih hari pertama jika belum ada pilihan
-        const hariAktif = selectedHari && tarikhList.includes(selectedHari)
+        const hariAktif = selectedHari && hariTabs.includes(selectedHari)
           ? selectedHari
-          : tarikhList[0] || null
+          : hariTabs[0] || null
 
         // Acara untuk hari yang dipilih, sort by masaMula → noAcara
         const acaraHari = acaraList
-          .filter(a => a.isAktif !== false && (jadualMap[a.aceraId || a.id]?.tarikhAcara || '') === hariAktif)
+          .filter(a => {
+            if (a.isAktif === false) return false
+            const t = jadualMap[a.aceraId || a.id]?.tarikhAcara || ''
+            return hariAktif === TBA ? !t : t === hariAktif
+          })
           .sort((a, b) => {
             const mA = jadualMap[a.aceraId || a.id]?.masaMula || '99:99'
             const mB = jadualMap[b.aceraId || b.id]?.masaMula || '99:99'
@@ -3453,23 +3489,28 @@ export default function StartList() {
 
         return (
           <div className="space-y-4">
-            {tarikhList.length === 0 ? (
+            {hariTabs.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm py-12 text-center">
-                <p className="text-sm text-gray-400">Tiada jadual ditetapkan. Tetapkan tarikh acara dalam Jadual Setup.</p>
+                <p className="text-sm text-gray-400">Tiada acara. Tambah acara dalam menu <b>Acara &amp; Jadual</b>.</p>
               </div>
             ) : (
               <>
                 {/* Sub-tab hari */}
                 <div className="flex flex-wrap gap-2">
-                  {tarikhList.map((t, idx) => {
-                    const label = new Date(t + 'T00:00:00').toLocaleDateString('ms-MY', { weekday: 'short', day: 'numeric', month: 'short' })
+                  {hariTabs.map((t, idx) => {
+                    const isTba = t === TBA
+                    const label = isTba
+                      ? 'Belum Set Tarikh'
+                      : new Date(t + 'T00:00:00').toLocaleDateString('ms-MY', { weekday: 'short', day: 'numeric', month: 'short' })
                     const isActive = t === hariAktif
                     return (
                       <button key={t} onClick={() => setSelectedHari(t)}
                         className={`px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-colors ${
-                          isActive ? 'bg-[#003399] text-white border-[#003399]' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                          isActive ? 'bg-[#003399] text-white border-[#003399]'
+                          : isTba ? 'bg-white text-amber-600 border-amber-300 border-dashed hover:border-amber-400'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                         }`}>
-                        Hari {idx + 1} — {label}
+                        {isTba ? '⚠ Belum Set Tarikh' : `Hari ${idx + 1} — ${label}`}
                       </button>
                     )
                   })}
@@ -3477,23 +3518,32 @@ export default function StartList() {
 
                 {/* Jadual acara hari dipilih */}
                 {hariAktif && (() => {
-                  const tarikhPapar = new Date(hariAktif + 'T00:00:00').toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                  const isTba = hariAktif === TBA
+                  const tarikhPapar = isTba
+                    ? 'Acara Belum Set Tarikh'
+                    : new Date(hariAktif + 'T00:00:00').toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
                   return (
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                         <div>
                           <p className="text-xs font-bold text-gray-800">{tarikhPapar}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">{acaraHari.length} acara dijadualkan</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            {isTba
+                              ? `${acaraHari.length} acara — isi tarikh dalam menu Acara & Jadual`
+                              : `${acaraHari.length} acara dijadualkan`}
+                          </p>
                         </div>
-                        <button
-                          onClick={() => cetakStartListByHari(hariAktif)}
-                          disabled={cetakLoading}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold border border-[#003399] text-[#003399] rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                          </svg>
-                          {cetakLoading ? 'Mencetak…' : 'Cetak Semua Hari Ini'}
-                        </button>
+                        {!isTba && (
+                          <button
+                            onClick={() => cetakStartListByHari(hariAktif)}
+                            disabled={cetakLoading}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold border border-[#003399] text-[#003399] rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                            </svg>
+                            {cetakLoading ? 'Mencetak…' : 'Cetak Semua Hari Ini'}
+                          </button>
+                        )}
                       </div>
 
                       {acaraHari.length === 0 ? (
