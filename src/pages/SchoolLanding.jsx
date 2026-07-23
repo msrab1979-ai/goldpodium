@@ -1227,7 +1227,7 @@ export default function SchoolLanding() {
   const [cfg, setCfg] = useState({
     logoKiriBase64: '', logoKananBase64: '', logoKejohananBase64: '',
     logoPenganjurBase64: '', namaOrganisasi: '', namaAgensi: '',
-    namaSistem: '',
+    bannerKejohananBase64: '', namaSistem: '',
   })
 
   usePWATitle(sekolah?.namaSekolah || cfg?.namaSistem)
@@ -1716,69 +1716,50 @@ export default function SchoolLanding() {
 
       {/* ── Hero ── */}
       <section className="bg-[#003399] text-white py-8 px-5 text-center">
-        {cfg.logoPenganjurBase64 && (
-          <div className="flex justify-center mb-3">
-            <img src={cfg.logoPenganjurBase64} alt="penganjur" className="h-9 object-contain opacity-90" />
+        {cfg.bannerKejohananBase64 ? (
+          /* Banner tenant — ganti sepenuhnya teks hero (nama/tarikh/lokasi/status) */
+          <div className="max-w-4xl mx-auto -mt-2 mb-1">
+            <img src={cfg.bannerKejohananBase64} alt={kej?.namaKejohanan || 'Banner kejohanan'}
+              className="w-full h-auto object-contain rounded-lg" />
           </div>
-        )}
-        {cfg.logoKejohananBase64 && (
-          <div className="flex justify-center mb-4">
-            <img src={cfg.logoKejohananBase64} alt="kejohanan" className="h-20 sm:h-28 object-contain drop-shadow-lg" />
-          </div>
-        )}
-        {cfg.namaOrganisasi && (
-          <p className="text-[10px] text-white/65 uppercase tracking-[0.25em] mb-2">{cfg.namaOrganisasi}</p>
-        )}
-        <h1 className="text-xl sm:text-2xl font-black text-white leading-tight mb-2">
-          {kej?.namaKejohanan || sekolah?.namaSekolah || '—'}
-        </h1>
-        {kej && (
-          <div className="flex flex-wrap items-center justify-center gap-2 mb-4 text-[11px]">
-            {kej.lokasi && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-white/70">
-                📍 {kej.lokasi}
-              </span>
+        ) : (
+          <>
+            {cfg.logoPenganjurBase64 && (
+              <div className="flex justify-center mb-3">
+                <img src={cfg.logoPenganjurBase64} alt="penganjur" className="h-9 object-contain opacity-90" />
+              </div>
             )}
-            {kej.tarikhMula && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-white/70">
-                📅 {formatTarikhRange(kej.tarikhMula, kej.tarikhTamat)}
-              </span>
+            {cfg.logoKejohananBase64 && (
+              <div className="flex justify-center mb-4">
+                <img src={cfg.logoKejohananBase64} alt="kejohanan" className="h-20 sm:h-28 object-contain drop-shadow-lg" />
+              </div>
             )}
-            {kej.statusKejohanan === 'aktif' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-500/20 border border-green-400/30 text-green-300 font-bold">
-                🟢 Sedang Berlangsung
-              </span>
+            {cfg.namaOrganisasi && (
+              <p className="text-[10px] text-white/65 uppercase tracking-[0.25em] mb-2">{cfg.namaOrganisasi}</p>
             )}
-          </div>
-        )}
-
-        {/* Tarikh + Lokasi */}
-        {kej && (
-          <div className="flex items-center justify-center gap-3 mb-5 text-white/70 text-xs flex-wrap">
-            {(kej.tarikhMula || kej.tarikhTamat) && (
-              <span className="flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                {kej.tarikhMula ? new Date(kej.tarikhMula).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                {kej.tarikhTamat && kej.tarikhTamat !== kej.tarikhMula
-                  ? ` – ${new Date(kej.tarikhTamat).toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                  : ''}
-              </span>
+            <h1 className="text-xl sm:text-2xl font-black text-white leading-tight mb-3">
+              {kej?.namaKejohanan || sekolah?.namaSekolah || '—'}
+            </h1>
+            {kej && (
+              <div className="flex flex-wrap items-center justify-center gap-2 mb-5 text-[11px]">
+                {kej.lokasi && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-white/70">
+                    📍 {kej.lokasi}
+                  </span>
+                )}
+                {(kej.tarikhMula || kej.tarikhTamat) && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-white/70">
+                    📅 {formatTarikhRange(kej.tarikhMula, kej.tarikhTamat)}
+                  </span>
+                )}
+                {kej.statusKejohanan === 'aktif' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-500/20 border border-green-400/30 text-green-300 font-bold">
+                    🟢 Sedang Berlangsung
+                  </span>
+                )}
+              </div>
             )}
-            {kej.lokasi && (
-              <>
-                <span className="opacity-30">·</span>
-                <span className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {kej.lokasi}
-                </span>
-              </>
-            )}
-          </div>
+          </>
         )}
 
         {/* Login Staff button */}

@@ -30,6 +30,8 @@ export const TETAPAN_DEFAULTS = {
   logoKejohananBase64:  '',
   logoPenganjurBase64:  '',
   namaPenganjur:        '',
+  // Banner kejohanan (base64) — jika ada, ganti teks hero landing
+  bannerKejohananBase64: '',
   // Pengumuman
   pengumuman:           '',
   isPengumumanAktif:    false,
@@ -116,18 +118,18 @@ async function mampatkanImej(file, maxDim = 512) {
 
 // ─── Logo Uploader (base64) ───────────────────────────────────────────────────
 
-function LogoUploader({ label, desc, value, onChange, maxKB = 500 }) {
+function LogoUploader({ label, desc, value, onChange, maxKB = 500, maxDim = 512, previewCls = 'max-h-20 max-w-[150px]' }) {
   const ref = useRef()
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 4 * 1024 * 1024) {
-      alert('Saiz fail melebihi 4MB. Sila pilih imej lebih kecil.')
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Saiz fail melebihi 8MB. Sila pilih imej lebih kecil.')
       return
     }
     try {
-      const dataUrl = await mampatkanImej(file, 512)
+      const dataUrl = await mampatkanImej(file, maxDim)
       if (dataUrl.length > maxKB * 1024 * 1.4) {
         alert(`Imej masih terlalu besar selepas dimampatkan. Gunakan imej lebih ringkas (bawah ${maxKB}KB).`)
         return
@@ -157,8 +159,8 @@ function LogoUploader({ label, desc, value, onChange, maxKB = 500 }) {
 
         {value ? (
           <>
-            <img src={value} alt="logo" className="max-h-20 max-w-[150px] object-contain rounded" />
-            <p className="text-[11px] text-[#003399] font-semibold">✓ Logo dimuatkan · Klik untuk tukar</p>
+            <img src={value} alt="logo" className={`${previewCls} object-contain rounded`} />
+            <p className="text-[11px] text-[#003399] font-semibold">✓ Imej dimuatkan · Klik untuk tukar</p>
           </>
         ) : (
           <>
@@ -484,6 +486,32 @@ export default function TetapanHome() {
                   placeholder="cth: Majlis Sukan Sekolah Daerah Kemaman" />
               </Field>
             </div>
+          </div>
+
+          {/* 1b. Banner Kejohanan */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+            <SectionTitle title="Banner Kejohanan"
+              desc="Muat naik banner sendiri untuk ganti hero halaman utama" />
+
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 mb-4">
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                💡 <b>Jika banner dimuat naik</b>, ia menggantikan sepenuhnya bahagian hero
+                (nama, tarikh, lokasi, status) — pastikan <b>semua maklumat sudah ada dalam banner</b> anda.
+                <br/>Jika kosong, sistem guna paparan hero lalai.
+                Imej besar akan <b>auto-dimampatkan</b> (lebar maks 1200px) — muat naik apa-apa nisbah,
+                banner dipapar lebar penuh mengikut bentuk imej.
+              </p>
+            </div>
+
+            <LogoUploader
+              label="Banner Kejohanan (pilihan)"
+              desc="Poster / spanduk kejohanan · nisbah bebas · auto-dimampatkan"
+              value={cfg.bannerKejohananBase64}
+              onChange={v => set('bannerKejohananBase64', v)}
+              maxKB={350}
+              maxDim={1200}
+              previewCls="max-h-40 max-w-full w-full"
+            />
           </div>
 
           {/* 2. Header */}
