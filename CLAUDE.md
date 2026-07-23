@@ -145,6 +145,29 @@ const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
 - `cfg` default kosong (tiada showRekod/showKeputusan/showJadual) → `undefined !== false` = `true` (selamat)
 - **JadualSetup.jsx** ada toggle `showJadual` tersendiri — sama field, tiada konflik
 
+## Banner Kejohanan + Hero Landing (2026-07-23)
+
+### Banner tenant ganti hero
+- Section "Banner Kejohanan" dalam `/admin/tetapan` → `TetapanHome.jsx` (bawah Logo Kejohanan)
+- Tenant upload banner sendiri → simpan `bannerKejohananBase64` dalam `tetapan/home` (base64)
+- **Jika ada banner** → `SchoolLanding.jsx` hero papar banner PENUH (lebar penuh, nisbah
+  ikut imej) + butang Login Staff SAHAJA. Nama/tarikh/lokasi/status teks TIDAK dipapar
+  (tenant letak semua dalam banner)
+- **Jika tiada banner** → hero default (nama kejohanan + pills lokasi/tarikh/status)
+- `LogoUploader` kini terima prop `maxDim` (default 512 untuk logo) + `previewCls`;
+  banner guna `maxDim=1200` `maxKB=350` `previewCls="max-h-40 max-w-full w-full"`
+- `mampatkanImej(file, 1200)` — auto-resize agresif ke 1200px WebP (~150–250KB) supaya
+  jimat: base64 dalam `tetapan/home` (1 bacaan, tiada query tambahan), doc kekal < 1 MiB.
+  Had tolak: fail asal > 8MB, atau > ~350KB selepas mampat
+- Kos: banner jadi LCP first-visit (+~0.3s); lawatan ulangan laju (PWA cache).
+  **JANGAN** guna Firebase Storage — belum enable untuk projek (base64 cukup)
+
+### Fix hero pengulangan (default)
+- **Bug:** hero default papar lokasi + tarikh DUA KALI — sekali dalam pills
+  (📍/📅/🟢) dan sekali lagi dalam blok "Tarikh + Lokasi" bawahnya (baris ~1755)
+- **Fix:** blok kedua DIBUANG — lokasi/tarikh/status kini muncul sekali (pills sahaja)
+- Disahkan live MSSDPPKI (banner ujian → hero jadi banner penuh; buang → hero bersih)
+
 ## PP (Pengurus Pasukan) — Nav
 - Dashboard
 - Sijil Penyertaan (`/:slug/pengurus/sijil-penyertaan`) — hide bila `tetapan/sijil.aktif === false`
