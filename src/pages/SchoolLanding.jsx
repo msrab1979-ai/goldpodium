@@ -1337,13 +1337,15 @@ export default function SchoolLanding() {
       .catch(() => setStatus('tidakJumpa'))
   }, [slug])
 
-  // ── Tetapan home (logo) — fetch sekali, jimat listener ──
+  // ── Tetapan home (logo + banner) — fetch sekali, jimat listener ──
+  // jadualTick sebagai dependency: butang "Kemaskini"/🔄 turut muat semula
+  // banner + logo + tetapan (bukan hanya acara/jadual) — tanpa refresh browser
   useEffect(() => {
     if (!schoolId) return
     getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'home'))
       .then(s => { if (s.exists()) setCfg(prev => ({ ...prev, ...s.data() })) })
       .catch(() => {})
-  }, [schoolId])
+  }, [schoolId, jadualTick])
 
   // ── Akses Pantas — fetch sekali ──
   useEffect(() => {
@@ -1386,7 +1388,7 @@ export default function SchoolLanding() {
   // Fetch sekali (bukan listener real-time) — jimat kos server
   useEffect(() => {
     if (!schoolId || !kej?.id) return
-    if (jadualTick === 0) setJadualLoading(true)
+    setJadualLoading(true) // spinner setiap fetch (load pertama + butang Kemaskini)
     Promise.all([
       getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kej.id, 'acara'), orderBy('noAcara'))),
       // Slot khas (perasmian/rehat/solat) — fetch sekali, bukan listener (jimat kos).
