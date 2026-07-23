@@ -118,7 +118,7 @@ async function mampatkanImej(file, maxDim = 512) {
 
 // ─── Logo Uploader (base64) ───────────────────────────────────────────────────
 
-function LogoUploader({ label, desc, value, onChange, maxKB = 500, maxDim = 512, previewCls = 'max-h-20 max-w-[150px]' }) {
+function LogoUploader({ label, desc, value, onChange, maxKB = 500, maxDim = 512, previewCls = 'max-h-20 max-w-[150px]', buangLabel = 'Buang logo' }) {
   const ref = useRef()
 
   async function handleFile(e) {
@@ -180,7 +180,7 @@ function LogoUploader({ label, desc, value, onChange, maxKB = 500, maxDim = 512,
       {value && (
         <button type="button" onClick={() => onChange('')}
           className="text-[11px] text-red-400 hover:text-red-600 font-medium transition-colors">
-          × Buang logo
+          × {buangLabel}
         </button>
       )}
     </div>
@@ -275,17 +275,24 @@ function HomePreview({ cfg }) {
 
       {/* Hero */}
       <div style={{ backgroundColor: cfg.warnaHero }} className="py-5 px-4 text-center space-y-2">
-        {cfg.logoPenganjurBase64 && (
-          <img src={cfg.logoPenganjurBase64} alt="penganjur" className="h-6 mx-auto object-contain opacity-80" />
-        )}
-        {cfg.logoKejohananBase64 && (
-          <img src={cfg.logoKejohananBase64} alt="kejohanan" className="h-12 mx-auto object-contain" />
-        )}
-        <p className="text-white/30 text-[7px] uppercase tracking-widest">{cfg.namaOrganisasi}</p>
-        <p className="text-white font-black text-sm leading-tight">{cfg.tajukUtama}</p>
-        <p className="text-white/60 text-[10px]">{cfg.tajukKecil}</p>
-        {cfg.namaPenganjur && (
-          <p className="text-white/40 text-[9px]">{cfg.namaPenganjur}</p>
+        {cfg.bannerKejohananBase64 ? (
+          /* Banner ganti sepenuhnya teks hero — sama seperti SchoolLanding */
+          <img src={cfg.bannerKejohananBase64} alt="banner kejohanan" className="w-full h-auto object-contain rounded" />
+        ) : (
+          <>
+            {cfg.logoPenganjurBase64 && (
+              <img src={cfg.logoPenganjurBase64} alt="penganjur" className="h-6 mx-auto object-contain opacity-80" />
+            )}
+            {cfg.logoKejohananBase64 && (
+              <img src={cfg.logoKejohananBase64} alt="kejohanan" className="h-12 mx-auto object-contain" />
+            )}
+            <p className="text-white/30 text-[7px] uppercase tracking-widest">{cfg.namaOrganisasi}</p>
+            <p className="text-white font-black text-sm leading-tight">{cfg.tajukUtama}</p>
+            <p className="text-white/60 text-[10px]">{cfg.tajukKecil}</p>
+            {cfg.namaPenganjur && (
+              <p className="text-white/40 text-[9px]">{cfg.namaPenganjur}</p>
+            )}
+          </>
         )}
       </div>
 
@@ -511,6 +518,7 @@ export default function TetapanHome() {
               maxKB={350}
               maxDim={1200}
               previewCls="max-h-40 max-w-full w-full"
+              buangLabel="Buang banner"
             />
           </div>
 
