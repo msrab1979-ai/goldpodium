@@ -56,6 +56,23 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 - `rollbackPostRasmi()` — undo medal_tally + mata_olahragawan bila PADAM keputusan rasmi
 - `kejDefaultLorong` — baca dari `kej.defaultLorong`, hantar ke GenerateModal/JanaFinalModal/JanaSemuaModal sebagai fallback jika acara tiada `bilanganLorong`
 
+### Tab Hari — sumber tarikh dari acara (fix 2026-07-23)
+- **Bug:** viewMode `'hari'` (butang Acara/Status/Hari di header) papar "Tiada jadual
+  ditetapkan" walaupun acara penuh bertarikh — `jadualMap` dibina HANYA dari koleksi
+  `jadual` yang kosong untuk tenant GP (bug SAMA yang sudah dibaiki untuk CetakKeputusan
+  + CetakAcara, tapi StartList tak disentuh masa tu)
+- **Fix:** `jadualMap` kini dibina dari doc acara (`acara.tarikhAcara` + `acara.masa`
+  — acara simpan `masa`, jadualMap guna `masaMula`) sebagai SUMBER UTAMA; koleksi
+  `jadual` di-overlay atas jika wujud (nilai di situ menang). Tenant lama kekal,
+  tenant baru/GP hidup. `jadualMap` dipakai juga oleh PDF Cetak Hari (tarikh/masa/lokasi)
+- Tab `'__tba__'` ("⚠ Belum Set Tarikh", dashed amber) auto-muncul di hujung kalau ada
+  acara `isAktif !== false` tanpa `tarikhAcara` — admin nampak acara tercicir; butang
+  "Cetak Semua Hari Ini" disorok untuk tab ini (`cetakStartListByHari` guna tarikh sebenar)
+- Butang cetak per-acara KEKAL gate sedia ada: hidup hanya bila `heatCountMap[aid] > 0`
+  (heat dijana) — status pill Dijana/Belum Jana/Tiada Peserta ikut heat+peserta count
+- Disahkan live MSSDPPKI (152 acara, 26–27 Julai): Tab Hari papar Hari 1/2 penuh
+- **JANGAN** revert ke baca koleksi `jadual` sahaja — ia kosong untuk tenant GP
+
 ### Sistem Lorong 4–8 (fix 2026-07-09)
 - `kej.defaultLorong` (4–8, set dalam KejohananSetup) kini BENAR-BENAR dipakai:
   AcaraSetup load kej doc → acara baru ditulis `bilanganLorong: kejDefaultLorong` (bukan hardcode 8)
