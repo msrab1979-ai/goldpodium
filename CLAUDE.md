@@ -185,6 +185,23 @@ const peringkatKej = PKOD[(kej.peringkat || '').toLowerCase()] || 'D'
 - **Fix:** blok kedua DIBUANG — lokasi/tarikh/status kini muncul sekali (pills sahaja)
 - Disahkan live MSSDPPKI (banner ujian → hero jadi banner penuh; buang → hero bersih)
 
+### Banner PENUH LEBAR + perf (2026-07-23)
+- **Bug user:** banner nampak "tergantung tak habis" — terkurung `max-w-4xl mx-auto`
+  (jalur biru tepi kiri/kanan) + `py-8` section = ruang biru kosong BESAR bawah banner
+  sebelum butang Login Staff / bahagian putih
+- **Fix (SchoolLanding.jsx hero):** bila ada banner, section jadi `pt-0 pb-4 px-0`
+  (bukan `py-8 px-5`); banner `w-full` PENUH (buang `max-w-4xl`), padding sisi dibuang.
+  Butang Login Staff tukar `px-2`→`px-5` (section dah `px-0`, butang perlu padding sendiri)
+- **Perf (user tak suka load time banner penuh):** banner base64 tersimpan DALAM
+  `tetapan/home` doc → tak boleh muat progresif, tunggu `getDoc` habis = LCP lambat.
+  Mitigasi TANPA upload semula: (1) `fetchpriority="high"` + `decoding="async"` pada
+  `<img>` → browser dahulukan render banner; (2) wrapper `bg-[#003399]` = placeholder
+  biru hero semasa imej muat → tiada kosong putih meloncat, terasa lebih laju
+- Kekal `object-contain` (BUKAN cover) — tinggi `h-auto` ikut nisbah imej, elak potong
+- Cara turunkan saiz fail lagi (perlu upload semula): mampat lebih agresif dalam
+  `TetapanHome.mampatkanImej` (q0.9→lebih rendah / had 350KB→lebih kecil) — belum dibuat
+- **JANGAN** kembalikan `max-w-4xl` pada banner — user mahu penuh lebar (nampak pro)
+
 ## PP (Pengurus Pasukan) — Nav
 - Dashboard
 - Sijil Penyertaan (`/:slug/pengurus/sijil-penyertaan`) — hide bila `tetapan/sijil.aktif === false`
@@ -247,6 +264,23 @@ Bila tenant ramai, "Kembali" mesti ke `/{slug}`, bukan promo page:
 - `ErrorBoundary.handleGoHome`: derive slug dari pathname dengan senarai RESERVED
   (admin/login/superadmin/dashboard/pengurus/tukar-password/privasi/syarat)
 - Sumber slug MESTI deterministik (URL param / state / input user) — JANGAN localStorage
+
+### Fix slug hilang bila refresh — query param `?from=` (2026-07-23)
+- **Bug user:** butang "← Kembali ke Laman Utama" di `/login` (& `/login/pencatat`) ke
+  promo page `/` BUKAN landing tenant `/{slug}`. Punca: `slugTenant` dibaca HANYA dari
+  `location.state?.schoolSlug` — state HILANG bila user refresh halaman login / buka
+  `/login` terus / kembali guna butang browser → slug kosong → butang ke `/`
+- **Fix:** tambah query param `?from={slug}` sebagai sumber deterministik yang KEKAL
+  selepas refresh (state kekal sebagai sumber utama, URL fallback):
+  - `SchoolLanding.jsx`: navigate `/login?from={slug}` (bukan `/login` sahaja) + state
+  - `Login.jsx`: `slugTenant = state?.schoolSlug || URLSearchParams(search).get('from')`;
+    cross-link ke Pencatat bawa `?from=` juga
+  - `PencatatLogin.jsx`: fallback `?from=` sama; cross-link balik ke `/login?from=`
+- **Tiada clash antar-tenant:** slug dari `useParams()` (URL `/{slug}`), unik per tenant
+  (doc ID `slugIndex/{slug}`). `?from=` per-navigasi, BUKAN storage kongsi — tab tenant
+  A & B masing-masing bawa slug sendiri. Ke `/` HANYA bila buka `/login` terus tanpa
+  slug (memang betul — tiada tenant untuk dituju)
+- Deployed live 2026-07-23
 
 ## SchoolLanding — Perf & Kos (2026-07-10) ⚠️ JANGAN REVERT
 User arahan tegas: JIMAT KOS FIRESTORE — halaman awam TIADA onSnapshot langsung:

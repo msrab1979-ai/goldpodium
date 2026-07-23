@@ -21,8 +21,10 @@ export default function PencatatLogin() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Boleh datang dari SchoolLanding / Login dengan state { schoolSlug }
-  const slugTenant = (location.state?.schoolSlug || '').trim().toLowerCase()
+  // Boleh datang dari SchoolLanding / Login dengan state { schoolSlug }.
+  // Fallback ke query param ?from={slug} — state hilang bila refresh / buka terus
+  const slugDariUrl = new URLSearchParams(location.search).get('from') || ''
+  const slugTenant = (location.state?.schoolSlug || slugDariUrl || '').trim().toLowerCase()
 
   const [slug,     setSlug]     = useState(slugTenant)
   const [kodAkses, setKodAkses] = useState('')
@@ -150,7 +152,7 @@ export default function PencatatLogin() {
       </div>
 
       <div className="mt-6 flex flex-col items-center gap-3">
-        <Link to="/login" state={location.state} className="text-xs text-white/50 hover:text-white/80 transition-colors">
+        <Link to={(slugTenant || slug.trim()) ? `/login?from=${encodeURIComponent((slugTenant || slug.trim()).toLowerCase())}` : '/login'} state={location.state} className="text-xs text-white/50 hover:text-white/80 transition-colors">
           Log masuk sebagai Admin →
         </Link>
         <Link

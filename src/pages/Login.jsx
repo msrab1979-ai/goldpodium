@@ -54,9 +54,12 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Boleh datang dari SchoolLanding dengan state { schoolSlug, namaSekolah }
+  // Boleh datang dari SchoolLanding dengan state { schoolSlug, namaSekolah }.
+  // Fallback ke query param ?from={slug} — state hilang bila refresh / buka /login terus,
+  // URL param kekal deterministik (JANGAN guna localStorage — lihat CLAUDE.md)
   const namaSekolahDariSlug = location.state?.namaSekolah || ''
-  const slugTenant = (location.state?.schoolSlug || '').trim().toLowerCase()
+  const slugDariUrl = new URLSearchParams(location.search).get('from') || ''
+  const slugTenant = (location.state?.schoolSlug || slugDariUrl || '').trim().toLowerCase()
 
   const [emel,     setEmel]     = useState('')
   const [katalaluan, setKatalaluan] = useState('')
@@ -303,7 +306,7 @@ export default function Login() {
       </div>
 
       <div className="mt-6 flex flex-col items-center gap-3">
-        <Link to="/login/pencatat" state={location.state} className="text-xs text-white/60 hover:text-white/90 transition-colors font-semibold">
+        <Link to={slugTenant ? `/login/pencatat?from=${encodeURIComponent(slugTenant)}` : '/login/pencatat'} state={location.state} className="text-xs text-white/60 hover:text-white/90 transition-colors font-semibold">
           Log masuk sebagai Pencatat / Urusetia →
         </Link>
         <Link to={slugTenant ? `/${slugTenant}` : '/'} className="text-xs text-white/40 hover:text-white/70 transition-colors">

@@ -1717,12 +1717,15 @@ export default function SchoolLanding() {
       <div className="h-[4px] bg-gradient-to-r from-[#cc0001] via-[#ffda00] to-[#cc0001]" />
 
       {/* ── Hero ── */}
-      <section className="bg-[#003399] text-white py-8 px-5 text-center">
+      <section className={`bg-[#003399] text-white text-center ${cfg.bannerKejohananBase64 ? 'pt-0 pb-4 px-0' : 'py-8 px-5'}`}>
         {cfg.bannerKejohananBase64 ? (
-          /* Banner tenant — ganti sepenuhnya teks hero (nama/tarikh/lokasi/status) */
-          <div className="max-w-4xl mx-auto -mt-2 mb-1">
+          /* Banner tenant PENUH LEBAR — ganti sepenuhnya teks hero (nama/tarikh/lokasi/status).
+             bg biru = placeholder semasa imej muat (elak kosong putih meloncat).
+             fetchpriority high + decoding async = LCP first-visit lebih pantas */
+          <div className="w-full bg-[#003399] mb-3">
             <img src={cfg.bannerKejohananBase64} alt={kej?.namaKejohanan || 'Banner kejohanan'}
-              className="w-full h-auto object-contain rounded-lg" />
+              fetchpriority="high" decoding="async"
+              className="w-full h-auto object-contain block" />
           </div>
         ) : (
           <>
@@ -1765,7 +1768,7 @@ export default function SchoolLanding() {
         )}
 
         {/* Login Staff button */}
-        <div className="mt-2 flex items-center gap-3 max-w-2xl mx-auto px-2">
+        <div className="mt-2 flex items-center gap-3 max-w-2xl mx-auto px-5">
           <div className="h-px flex-1 bg-white/15" />
           <button onClick={() => setStaffModal(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-white/70 hover:bg-white/20 hover:text-white text-[11px] font-medium transition-all">
@@ -2272,7 +2275,7 @@ export default function SchoolLanding() {
               )}
 
               {/* Admin */}
-              <button onClick={() => { setStaffModal(false); navigate('/login', { state: { schoolSlug: slug, schoolId, namaSekolah: sekolah?.namaSekolah } }) }}
+              <button onClick={() => { setStaffModal(false); navigate(`/login?from=${encodeURIComponent(slug)}`, { state: { schoolSlug: slug, schoolId, namaSekolah: sekolah?.namaSekolah } }) }}
                 className="w-full flex items-center gap-3 p-3.5 rounded-xl border-2 border-gray-200 hover:border-[#003399] hover:bg-blue-50/50 transition-all group text-left">
                 <span className="w-12 h-12 rounded-xl flex items-center justify-center text-white shrink-0 bg-[#003399] shadow-md group-hover:scale-105 transition-transform">
                   <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
