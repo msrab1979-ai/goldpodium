@@ -838,13 +838,20 @@ sekolah, disimpan dalam doc `tenants/{schoolId}/sekolah/{kodSekolah}`):
 
 ### 1. `Bypass Tarikh` — field `bypassDeadline` (boolean)
 - Toggle ON/OFF (`doToggleBypass` — SekolahSetup.jsx). Badge amber "BYPASS TARIKH".
-- **Dikuatkuasa di `PengurusDashboard.jsx`**: `pendaftaranTutup = tamatDaftarLepas && !sekolahData?.bypassDeadline`
-  - ON → PP boleh daftar semula walaupun `tarikhTamatDaftar` sudah lepas
-  - OFF → ikut tarikh tutup (kelakuan asal)
+- **Satu butang buka SEMUA sekatan pendaftaran** untuk sekolah tu:
+  1. **Tarikh tutup** (`PengurusDashboard.jsx`): `pendaftaranTutup = tamatDaftarLepas && !sekolahData?.bypassDeadline`
+     — ON → boleh add/buang atlet walau `tarikhTamatDaftar` lepas; OFF → ikut tarikh.
+     (Butang "Buang" atlet memang guna `!pendaftaranTutup`, jadi turut terbuka.)
+  2. **Heat sudah dijana** (GATE 8, add atlet): `if (heatSnap.size > 0 && !bypassAktif)`
+     dgn `bypassAktif = sekolahSnap.data().bypassDeadline` — ON → PP boleh add atlet
+     walau heat dah dijana untuk acara tu.
+- **Aliran:** admin ON Bypass Tarikh → PP add/edit/buang atlet → admin jana heat SEMULA
+  di StartList → admin OFF Bypass Tarikh (kunci balik). PP tak nampak perubahan start
+  list sampai admin jana heat semula.
 - PP nampak **banner HIJAU** "Pendaftaran Dibuka Semula oleh Pentadbir" bila
   `tamatDaftarLepas && bypassDeadline` (ganti banner merah "Tempoh Tamat").
 - **Fix 2026-07-24:** dulu `bypassDeadline` DITULIS tapi TAK PERNAH DIBACA (butang draf,
-  tiada kesan). Kini disambung ke gate `pendaftaranTutup`.
+  tiada kesan). Kini disambung ke `pendaftaranTutup` DAN GATE 8.
 
 ### 2. `Bypass Sahkan` — field `bypassPengesahan` (boolean)
 - Toggle ON/OFF. Dikuatkuasa di `PengurusDashboard.jsx:isDikunci` (buka kunci PP yang

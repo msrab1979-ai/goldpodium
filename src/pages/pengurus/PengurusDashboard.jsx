@@ -2094,7 +2094,11 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                       ])
 
                       // GATE 8 — heat sudah dijana?
-                      if (heatSnap.size > 0) {
+                      // bypassDeadline (admin: Daftar Sekolah → "Bypass Tarikh") membenarkan
+                      // sekolah ini add/edit/buang atlet walaupun heat sudah dijana.
+                      // Admin WAJIB jana heat semula di StartList selepas PP siap ubah.
+                      const bypassAktif = sekolahSnap.exists() && sekolahSnap.data().bypassDeadline
+                      if (heatSnap.size > 0 && !bypassAktif) {
                         setInlineErr(p => ({ ...p, [aceraId]: 'Pendaftaran ditutup — heat sudah dijana untuk acara ini.' }))
                         setInlineSaving(p => ({ ...p, [aceraId]: false }))
                         return
