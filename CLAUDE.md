@@ -836,8 +836,9 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 Admin → Daftar Sekolah, kolum tindakan setiap baris ada **2 butang bypass** (per
 sekolah, disimpan dalam doc `tenants/{schoolId}/sekolah/{kodSekolah}`):
 
-### 1. `Bypass Tarikh` — field `bypassDeadline` (boolean)
-- Toggle ON/OFF (`doToggleBypass` — SekolahSetup.jsx). Badge amber "BYPASS TARIKH".
+### 1. `Buka Daftar` — field `bypassDeadline` (boolean, label lama "Bypass Tarikh")
+- Toggle ON/OFF (`doToggleBypass` — SekolahSetup.jsx). Badge amber "BUKA DAFTAR".
+- **Nota:** field Firestore kekal `bypassDeadline` (elak migrasi) — cuma label UI je "Buka Daftar".
 - **Satu butang buka SEMUA sekatan pendaftaran** untuk sekolah tu:
   1. **Tarikh tutup** (`PengurusDashboard.jsx`): `pendaftaranTutup = tamatDaftarLepas && !sekolahData?.bypassDeadline`
      — ON → boleh add/buang atlet walau `tarikhTamatDaftar` lepas; OFF → ikut tarikh.
@@ -845,8 +846,8 @@ sekolah, disimpan dalam doc `tenants/{schoolId}/sekolah/{kodSekolah}`):
   2. **Heat sudah dijana** (GATE 8, add atlet): `if (heatSnap.size > 0 && !bypassAktif)`
      dgn `bypassAktif = sekolahSnap.data().bypassDeadline` — ON → PP boleh add atlet
      walau heat dah dijana untuk acara tu.
-- **Aliran:** admin ON Bypass Tarikh → PP add/edit/buang atlet → admin jana heat SEMULA
-  di StartList → admin OFF Bypass Tarikh (kunci balik). PP tak nampak perubahan start
+- **Aliran:** admin ON Buka Daftar → PP add/edit/buang atlet → admin jana heat SEMULA
+  di StartList → admin OFF Buka Daftar (kunci balik). PP tak nampak perubahan start
   list sampai admin jana heat semula.
 - PP nampak **banner HIJAU** "Pendaftaran Dibuka Semula oleh Pentadbir" bila
   `tamatDaftarLepas && bypassDeadline` (ganti banner merah "Tempoh Tamat").

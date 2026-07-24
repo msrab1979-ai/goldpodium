@@ -1830,7 +1830,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
   }, [tarikhTamatDaftar])
 
   const tamatDaftarLepas  = tarikhTamatDaftar && new Date() > new Date(tarikhTamatDaftar)
-  // bypassDeadline (di-set admin: Daftar Sekolah → butang "Bypass Tarikh"):
+  // bypassDeadline (di-set admin: Daftar Sekolah → butang "Buka Daftar"):
   // ON → sekolah ini boleh daftar semula walaupun tarikh tamat sudah lepas.
   // OFF → ikut tarikh tutup yang ditetapkan.
   const pendaftaranTutup  = tamatDaftarLepas && !sekolahData?.bypassDeadline
@@ -2094,7 +2094,7 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
                       ])
 
                       // GATE 8 — heat sudah dijana?
-                      // bypassDeadline (admin: Daftar Sekolah → "Bypass Tarikh") membenarkan
+                      // bypassDeadline (admin: Daftar Sekolah → "Buka Daftar") membenarkan
                       // sekolah ini add/edit/buang atlet walaupun heat sudah dijana.
                       // Admin WAJIB jana heat semula di StartList selepas PP siap ubah.
                       const bypassAktif = sekolahSnap.exists() && sekolahSnap.data().bypassDeadline

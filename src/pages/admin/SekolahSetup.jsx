@@ -1435,7 +1435,7 @@ export default function SekolahSetup() {
                       <div className="flex flex-wrap gap-1">
                         <StatusBadge aktif={s.isAktif} />
                         {s.bypassDeadline && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">BYPASS TARIKH</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">BUKA DAFTAR</span>
                         )}
                         {s.bypassPengesahan && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">BYPASS SAHKAN</span>
@@ -1459,8 +1459,8 @@ export default function SekolahSetup() {
                                   ? 'border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100'
                                   : 'border-gray-200 text-gray-500 hover:bg-gray-50'
                               }`}
-                              title={s.bypassDeadline ? 'Bypass tarikh tamat aktif — klik untuk matikan' : 'Buka semula (tarikh tamat)'}>
-                              {s.bypassDeadline ? '✓ Bypass Tarikh' : 'Bypass Tarikh'}
+                              title={s.bypassDeadline ? 'Buka Daftar aktif — PP boleh add/edit/buang atlet walau tarikh tamat / heat dijana. Klik untuk kunci semula.' : 'Buka semula pendaftaran (abai tarikh tamat + heat sudah dijana)'}>
+                              {s.bypassDeadline ? '✓ Buka Daftar' : 'Buka Daftar'}
                             </button>
                             <button onClick={() => doToggleBypassPengesahan(s)}
                               className={`px-2.5 py-1.5 text-[10px] font-semibold border rounded transition-colors ${
