@@ -831,6 +831,32 @@ const isFinalPeringkat = ['akhir', 'final', 'terus_final'].includes(acaraDoc.per
 - Data: `pengesahan/{kodSekolah}` per kejohanan + `sekolah/{kodSekolah}.bypassPengesahan`
 - **Tapis sekolah**: baca `pendaftaran` kejohanan → ambil `kodSekolah` unik → match koleksi `sekolah` — sekolah yang tak daftar tidak dipapar (selamat untuk old + new tenant)
 
+## SekolahSetup — Butang Bypass Per Sekolah (2026-07-24)
+
+Admin → Daftar Sekolah, kolum tindakan setiap baris ada **2 butang bypass** (per
+sekolah, disimpan dalam doc `tenants/{schoolId}/sekolah/{kodSekolah}`):
+
+### 1. `Bypass Tarikh` — field `bypassDeadline` (boolean)
+- Toggle ON/OFF (`doToggleBypass` — SekolahSetup.jsx). Badge amber "BYPASS TARIKH".
+- **Dikuatkuasa di `PengurusDashboard.jsx`**: `pendaftaranTutup = tamatDaftarLepas && !sekolahData?.bypassDeadline`
+  - ON → PP boleh daftar semula walaupun `tarikhTamatDaftar` sudah lepas
+  - OFF → ikut tarikh tutup (kelakuan asal)
+- PP nampak **banner HIJAU** "Pendaftaran Dibuka Semula oleh Pentadbir" bila
+  `tamatDaftarLepas && bypassDeadline` (ganti banner merah "Tempoh Tamat").
+- **Fix 2026-07-24:** dulu `bypassDeadline` DITULIS tapi TAK PERNAH DIBACA (butang draf,
+  tiada kesan). Kini disambung ke gate `pendaftaranTutup`.
+
+### 2. `Bypass Sahkan` — field `bypassPengesahan` (boolean)
+- Toggle ON/OFF. Dikuatkuasa di `PengurusDashboard.jsx:isDikunci` (buka kunci PP yang
+  sudah sahkan peserta). Butang sama juga di `PengesahanPeserta.jsx`.
+
+### DIBUANG KEKAL: butang "Buka Acara" (2026-07-24)
+- Dulu ada butang ke-3 "Buka Acara" + modal + field `sekolah.pendaftaranBukaAcara.{aceraId}`
+  (buka semula pendaftaran per-acara selepas heat dijana). **Dibuang kekal** atas arahan
+  user (flow terlalu banyak/rumit). GATE 8 (`heatSnap.size > 0`) memang tak pernah baca
+  field ini — jadi butang tu draf tak berfungsi. **JANGAN** tambah balik konsep bypass
+  per-acara; guna reset/jana heat semula di StartList kalau perlu ubah peserta selepas heat.
+
 ## Pengurusan Pengguna (UserManagement) — Pencatat Login
 
 - Route admin: `/admin/pengurusan-pengguna` → `UserManagement.jsx`

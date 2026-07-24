@@ -1830,7 +1830,10 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
   }, [tarikhTamatDaftar])
 
   const tamatDaftarLepas  = tarikhTamatDaftar && new Date() > new Date(tarikhTamatDaftar)
-  const pendaftaranTutup  = tamatDaftarLepas
+  // bypassDeadline (di-set admin: Daftar Sekolah → butang "Bypass Tarikh"):
+  // ON → sekolah ini boleh daftar semula walaupun tarikh tamat sudah lepas.
+  // OFF → ikut tarikh tutup yang ditetapkan.
+  const pendaftaranTutup  = tamatDaftarLepas && !sekolahData?.bypassDeadline
 
   // Hanya acara saringan (tanpa parentAcaraId)
   const jenisShort = { lorong:'Lorong', mass_start:'Mass', padang_lompat:'Lompat', padang_balin:'Balin', relay:'Relay' }
@@ -1908,6 +1911,18 @@ function TabDaftar({ schoolId, kodSekolah, sekolahData, kejohanan, tahunKej, kat
           <div>
             <p className="text-xs font-bold text-red-800">Tempoh Pendaftaran Telah Tamat — {formatDeadlineMY(tarikhTamatDaftar)}</p>
             <p className="text-[10px] text-red-600 mt-0.5">Senarai peserta boleh dilihat. Pendaftaran baru tidak dibenarkan.</p>
+          </div>
+        </div>
+      )}
+
+      {tamatDaftarLepas && sekolahData?.bypassDeadline && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+          <svg className="w-4 h-4 shrink-0 text-green-600 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 018 0m-4 6v3m-6 5h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+          </svg>
+          <div>
+            <p className="text-xs font-bold text-green-800">Pendaftaran Dibuka Semula oleh Pentadbir</p>
+            <p className="text-[10px] text-green-600 mt-0.5">Tarikh tutup ({formatDeadlineMY(tarikhTamatDaftar)}) sudah lepas, tetapi pentadbir membenarkan sekolah anda daftar semula. Sila lengkapkan pendaftaran secepat mungkin.</p>
           </div>
         </div>
       )}
