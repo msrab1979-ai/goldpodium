@@ -1,5 +1,15 @@
 # Goldpodium — Claude Code Notes
 
+## ⏸ Kerja KIV (belum siap — sambung bila user minta)
+- **Jenis Institusi Dinamik** (KIV 2026-07-26, sambung selepas kejohanan mssdppki habis
+  27 Jul 2026): buang SR/SM/PPKI paksa, tenant urus jenis sendiri (rumah sukan dll).
+  Punca 15/19 nampak di PP = silap setup tenant (jenisSekolah "SEKOLAH RENDAH" bukan "SR"),
+  BUKAN bug. Pelan+risiko SIAP di memori `project_jenis_institusi_dinamik.md`. Trigger:
+  "sambung tenant baru" / "sambung kerja jenis institusi". Fail diubah: auto.js
+  createAdminAccount, KategoriSetup.jsx, SekolahSetup.jsx. Kunci: doc jenisSekolah TIADA
+  →fallback lama; WUJUD(walau []) →tenant baru urus sendiri (tukar `list>0`→`exists()`).
+  **JANGAN sentuh data mssdppki, JANGAN ubah kod/doc ID kategori.**
+
 ## Stack
 - React + Vite + TailwindCSS
 - Firebase Firestore (multi-tenant: `tenants/{schoolId}/...`)
