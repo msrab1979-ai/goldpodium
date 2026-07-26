@@ -20,7 +20,7 @@ import {
   query, where, orderBy, serverTimestamp, onSnapshot, runTransaction,
 } from 'firebase/firestore'
 import { selectFinalists, getFinalistSetup, serpentineSeed } from '../../utils/finalistUtils'
-import { assignLorongFinal, detectJenisLorong, WA_LORONG_KUMPULAN_DEFAULT, deserializeKumpulan, resolveIsLompatTinggi } from '../../utils/startListPdfUtils'
+import { assignLorongFinal, detectJenisLorong, WA_LORONG_KUMPULAN_DEFAULT, deserializeKumpulan, resolveIsLompatTinggi, buatStartListPDFUnified } from '../../utils/startListPdfUtils'
 import { runPostRasmi, rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
@@ -1302,6 +1302,7 @@ export default function PencatatInputKeputusan() {
   const [bilHeatSF,      setBilHeatSF]     = useState(2)
   const [cetakLoading,   setCetakLoading]  = useState(false)
   const [cetakBilangan,  setCetakBilangan] = useState(3)
+  const [cetakFinalStartListLoading, setCetakFinalStartListLoading] = useState(false)
 
   // Accordion open state — key = kategoriKod
   const [accordionOpen, setAccordionOpen] = useState({})
@@ -2067,6 +2068,44 @@ export default function PencatatInputKeputusan() {
       showToast('Ralat jana: ' + e.message, 'err', 5000)
     } finally {
       setJanaFinalLoading(false)
+    }
+  }
+
+  // ── Cetak Start List acara seterusnya (Final/SF) selepas Jana — 4 salinan ──
+  // PDF start list SAHAJA (lorong + nama, tiada keputusan/pingat) — bukan
+  // cetak Hadiah. Guna util KONGSI yang sama dengan admin StartList supaya
+  // format seragam. Tidak sentuh Firestore/medal_tally — cetak sahaja.
+  async function handleCetakFinalStartList() {
+    if (!finalDijanaKe || !selectedAcara || !schoolId) return
+    setCetakFinalStartListLoading(true)
+    try {
+      const nextAcara = acaraList.find(a => String(a.noAcara || a.aceraId || a.id) === String(finalDijanaKe))
+      if (!nextAcara) { showToast('Acara seterusnya tidak dijumpai.', 'err', 4000); return }
+      const nextAcaraId = nextAcara.aceraId || nextAcara.id
+      const heatSnap = await getDocs(query(
+        collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'),
+        where('aceraId', '==', nextAcaraId)
+      ))
+      const nextHeats = heatSnap.docs.map(d => ({ id: d.id, heatId: d.id, ...d.data() }))
+      if (nextHeats.length === 0) { showToast('Tiada heat dijumpai untuk acara seterusnya.', 'err', 4000); return }
+
+      const kategoriList = Object.entries(kategoriMap).map(([kod, label]) => ({ kod, label }))
+      const pdf = buatStartListPDFUnified({
+        acara: nextAcara,
+        heats: nextHeats,
+        namaKej: homeCfg?.tajukUtama || kejData?.namaKejohanan || 'Kejohanan Olahraga',
+        jadual: {},
+        namaSekolahMap: sekolahMap,
+        kategoriList,
+        logoKiri: homeCfg?.logoKiriBase64 || null,
+        logoKanan: homeCfg?.logoKananBase64 || null,
+        bibPrefixMap,
+      })
+      pdf.save(`StartList_${nextAcaraId}_${Date.now()}.pdf`)
+    } catch (e) {
+      showToast('Gagal cetak: ' + e.message, 'err', 5000)
+    } finally {
+      setCetakFinalStartListLoading(false)
     }
   }
 
@@ -3022,6 +3061,27 @@ export default function PencatatInputKeputusan() {
                     bibPrefixMap={bibPrefixMap}
                     lorongKumpulan={lorongKumpulan}
                   />
+                )}
+
+                {/* Cetak Start List acara seterusnya — muncul lepas Jana Final berjaya.
+                    PDF start list 4 salinan (lorong+nama sahaja, TIADA pingat) — bukan
+                    cetak Hadiah. Tidak sentuh medal_tally/Firestore. */}
+                {isSaringanAcara && finalDijanaKe && (
+                  <div className="pb-1">
+                    <button onClick={handleCetakFinalStartList} disabled={cetakFinalStartListLoading}
+                      className="w-full py-3 text-sm font-bold rounded-xl bg-white border-2 border-[#003399] text-[#003399] hover:bg-blue-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                      {cetakFinalStartListLoading ? (
+                        <span>Menjana PDF…</span>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                          </svg>
+                          <span>Cetak Start List Acara #{finalDijanaKe} (4 Salinan)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

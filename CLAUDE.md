@@ -617,6 +617,18 @@ di-test emulator + deploy live + push GitHub.
 - Load `homeCfg` (logo) dari `tenants/{schoolId}/tetapan/home`
 - Load `kategoriMap` dari `tenants/{schoolId}/kejohanan/{kejId}/kategori`
 
+### Cetak Start List Acara Seterusnya (pencatat, 2026-07-26)
+- Selepas pencatat tekan "Jana Final" untuk acara saringan, muncul butang
+  **"Cetak Start List Acara #{finalDijanaKe} (4 Salinan)"** (putih+border biru, beza
+  dari butang hijau Cetak Hadiah) — `pencatat/InputKeputusan.jsx` `handleCetakFinalStartList`
+- Guna util KONGSI `buatStartListPDFUnified` (sama admin StartList) → 4 salinan:
+  JURUHEBAH / CALL ROOM / TEKNIKAL / FAIL — lorong+nama SAHAJA (tiada keputusan/pingat)
+- **READ-ONLY**: hanya baca heat + jana PDF, TIADA tulis Firestore / TIADA sentuh medal_tally
+- Gate paparan: `isSaringanAcara && finalDijanaKe` (muncul hanya lepas Final dijana)
+- Butang Cetak HADIAH (`handleCetakHasil`) KEKAL gate asal `isRasmi && isFinalHeatType
+  && !isSaringanAcara` — cuba longgar utk saringan pernah dibuat tapi DI-ROLLBACK
+  (saringan tiada pingat, cetak Hadiah utk saringan mengelirukan). JANGAN buka semula.
+
 ## Fixes Kritikal SF/Final (2026-07-07)
 
 ### 1. SF heat carry-over keputusan dari QF
