@@ -665,16 +665,18 @@ const PALETTE = ['#003399','#166534','#7c3aed','#b45309','#0e7490','#9f1239','#3
 
 function sortAndRankRows(rows) {
   rows.sort((a, b) => {
-    if (b.emas   !== a.emas)   return b.emas   - a.emas
-    if (b.perak  !== a.perak)  return b.perak  - a.perak
-    if (b.gangsa !== a.gangsa) return b.gangsa - a.gangsa
+    if (b.emas    !== a.emas)    return b.emas    - a.emas
+    if (b.perak   !== a.perak)   return b.perak   - a.perak
+    if (b.gangsa  !== a.gangsa)  return b.gangsa  - a.gangsa
+    if ((b.tempat4||0) !== (a.tempat4||0)) return (b.tempat4||0) - (a.tempat4||0)
+    if ((b.tempat5||0) !== (a.tempat5||0)) return (b.tempat5||0) - (a.tempat5||0)
     return (a.namaSekolah || '').localeCompare(b.namaSekolah || '')
   })
   let curR = 0
   return rows.map((r, i, arr) => {
     if (i === 0) { curR = 1; return { ...r, rank: 1 } }
     const prev = arr[i - 1]
-    const tie  = ['emas','perak','gangsa'].every(k => r[k] === prev[k])
+    const tie  = ['emas','perak','gangsa','tempat4','tempat5'].every(k => (r[k]||0) === (prev[k]||0))
     if (!tie) curR++
     return { ...r, rank: curR }
   })
