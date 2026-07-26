@@ -1,6 +1,10 @@
 # Goldpodium — Claude Code Notes
 
 ## ⏸ Kerja KIV (belum siap — sambung bila user minta)
+- **TUTUP DAFTAR #214 (mssdppki, SEGERA)** — user buka `bypassDeadline:true` semua sekolah
+  utk PP daftar acara #214; WAJIB tutup balik: `COMMIT=1 GP_ADMIN_EMAIL=.. GP_ADMIN_PASSWORD=..
+  node tutup-daftar-semua.cjs` → `bypassDeadline:false` semua, kunci semula. Lepas #214
+  diubah, jana heat semula #214 di StartList. Trigger: "tutup daftar"/"tutup 214".
 - **Jenis Institusi Dinamik** (KIV 2026-07-26, sambung selepas kejohanan mssdppki habis
   27 Jul 2026): buang SR/SM/PPKI paksa, tenant urus jenis sendiri (rumah sukan dll).
   Punca 15/19 nampak di PP = silap setup tenant (jenisSekolah "SEKOLAH RENDAH" bukan "SR"),
