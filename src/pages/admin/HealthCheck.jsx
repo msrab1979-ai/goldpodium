@@ -369,6 +369,17 @@ export default function HealthCheck() {
   const [tfScanning,  setTfScanning]  = useState(false)
   const [tfScanList,  setTfScanList]  = useState(null)   // [{ ...nilai }] senarai suspek dari scan
 
+  // ── Scan Acara Tiada Atlet (0 pendaftaran) — amaran sahaja, TIADA tulis ──
+  const [taScanning, setTaScanning] = useState(false)
+  const [taScanList, setTaScanList] = useState(null)   // [{ acara, adaHeat }]
+  const [taLog,      setTaLog]      = useState([])
+
+  // ── Scan Status Penuh Semua Acara (saringan/final/terus final) — amaran sahaja ──
+  const [ssScanning, setSsScanning] = useState(false)
+  const [ssScanList, setSsScanList] = useState(null)   // [{ acara, jenis, nP, bilL, adaHeat, adaKeputusan, masalah[], ok }]
+  const [ssHanyaMasalah, setSsHanyaMasalah] = useState(false)
+  const [ssLog,      setSsLog]      = useState([])
+
   // Nilai satu acara: kira peserta/lorong/gate. Kongsi antara Semak-satu & Scan.
   // sekolahBypassCache: Map(kod → bool) supaya scan tak baca doc sekolah berulang.
   async function tfNilaiAcara(acara, acaraList, pendData, kejId, sekolahBypassCache) {
@@ -473,6 +484,105 @@ export default function HealthCheck() {
       setTfLog([`❌ Ralat scan: ${e.message}`])
     }
     setTfScanning(false)
+  }
+
+  // Scan SEMUA acara aktif (bukan relay) yg 0 pendaftaran — amaran sahaja
+  async function taScan() {
+    setTaScanning(true)
+    setTaScanList(null)
+    setTaLog([])
+    try {
+      const kejId = await getKejId()
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
+      const acaraList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
+      const pendData = pendSnap.docs.map(d => d.data())
+
+      // Acara aktif, bukan relay, tiada pendaftaran langsung.
+      // Abai acara anak final (parentAcaraId ada) — memang normal 0 pendaftaran
+      // (peserta dijana dari saringan, bukan didaftar terus).
+      const kosong = acaraList.filter(a =>
+        a.isAktif !== false &&
+        a.jenisAcara !== 'relay' &&
+        !a.parentAcaraId &&
+        pendData.filter(p => (p.acaraIds || []).includes(a.id)).length === 0
+      )
+      // Semak sama ada acara kosong ini pun tiada heat (betul-betul sunyi)
+      const hasil = []
+      for (const a of kosong) {
+        const h = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', a.id)))
+        hasil.push({ acara: a, adaHeat: h.size > 0 })
+      }
+      hasil.sort((x, y) => String(x.acara.noAcara).localeCompare(String(y.acara.noAcara)))
+      setTaScanList(hasil)
+    } catch (e) {
+      setTaLog([`❌ Ralat scan: ${e.message}`])
+    }
+    setTaScanning(false)
+  }
+
+  // Scan STATUS PENUH semua acara — kategori peringkat + flag masalah. Amaran sahaja.
+  const FINAL_PERINGKAT = ['akhir', 'final', 'terus_final', 'final_p']
+  async function ssScan() {
+    setSsScanning(true)
+    setSsScanList(null)
+    setSsLog([])
+    try {
+      const kejId = await getKejId()
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
+      const acaraList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
+      const pendData = pendSnap.docs.map(d => d.data())
+      const heatSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'))
+      // Map aceraId → { adaHeat, adaKeputusan } (satu bacaan koleksi heat, tiada query per-acara)
+      const heatByAcara = new Map()
+      heatSnap.docs.forEach(h => {
+        const hd = h.data()
+        const aid = hd.aceraId || hd.acaraId
+        if (!aid) return
+        const cur = heatByAcara.get(aid) || { adaHeat: false, adaKeputusan: false }
+        cur.adaHeat = true
+        if (['rasmi', 'diterima'].includes(hd.statusKeputusan)) cur.adaKeputusan = true
+        heatByAcara.set(aid, cur)
+      })
+
+      const aktif = acaraList
+        .filter(a => a.isAktif !== false && a.jenisAcara !== 'relay')
+        .sort((x, y) => String(x.noAcara).localeCompare(String(y.noAcara)))
+
+      const hasil = aktif.map(a => {
+        const nP   = pendData.filter(p => (p.acaraIds || []).includes(a.id)).length
+        const bilL = a.bilanganLorong || 8
+        const hInfo = heatByAcara.get(a.id) || { adaHeat: false, adaKeputusan: false }
+        const isSaringan = SARINGAN_PERINGKAT.includes(a.peringkat)
+        const isFinal    = FINAL_PERINGKAT.includes(a.peringkat)
+        const adaParent  = !!a.parentAcaraId
+        const jenis = isSaringan ? 'Saringan' : (adaParent ? 'Final (anak)' : (isFinal ? 'Terus Final' : (a.peringkat || '—')))
+
+        const masalah = []
+        // 1. Saringan peserta ≤ lorong → patut terus final
+        if (isSaringan && nP > 0 && nP <= bilL)
+          masalah.push(`Saringan tapi peserta (${nP}) ≤ lorong (${bilL}) — patut TERUS FINAL.`)
+        // 2. Ada pendaftaran tapi heat belum jana
+        if (nP > 0 && !hInfo.adaHeat)
+          masalah.push(`Ada ${nP} pendaftaran tapi heat BELUM dijana.`)
+        // 3. Final / terus final: 0 peserta (final anak tak dikira — peserta dari saringan)
+        if (isFinal && !adaParent && nP === 0 && !hInfo.adaHeat)
+          masalah.push(`Terus final tapi TIADA peserta & tiada heat.`)
+        // 4. Final anak: parent tergantung / tak dijana
+        if (adaParent) {
+          const parent = acaraList.find(p => p.id === a.parentAcaraId)
+          if (!parent) masalah.push(`Final anak tapi parent #${a.parentAcaraId} TIADA (rantaian putus).`)
+          else if (!hInfo.adaHeat && !(heatByAcara.get(parent.id)?.adaHeat)) masalah.push(`Final anak tapi heat belum dijana (parent #${parent.noAcara} pun belum).`)
+        }
+
+        return { acara: a, jenis, nP, bilL, adaHeat: hInfo.adaHeat, adaKeputusan: hInfo.adaKeputusan, masalah, ok: masalah.length === 0 }
+      })
+      setSsScanList(hasil)
+    } catch (e) {
+      setSsLog([`❌ Ralat scan: ${e.message}`])
+    }
+    setSsScanning(false)
   }
 
   // Terima nilai acara terus (dari scan atau semak-satu)
@@ -1457,6 +1567,141 @@ export default function HealthCheck() {
           {tfLog.length > 0 && (
             <div className="space-y-1 pt-1">
               {tfLog.map((l, i) => (
+                <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Panel Scan Acara Tiada Atlet ── */}
+      <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+        <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+          </svg>
+          <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">Scan Acara Tiada Atlet (0 Pendaftaran)</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Acara <span className="font-semibold">aktif</span> yang <span className="font-semibold">tiada sesiapa daftar</span> (0 pendaftaran). Mungkin acara tercicir / patut disemak atau dipadam. <span className="font-semibold">Amaran sahaja — panel ini TIDAK mengubah apa-apa.</span> Acara anak final (dijana dari saringan) diabaikan.</p>
+
+          <button onClick={taScan} disabled={taScanning}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors w-full justify-center">
+            {taScanning ? 'Mengimbas...' : '🔍 Scan Semua Acara Tiada Atlet'}
+          </button>
+
+          {taScanList && (
+            <div className="space-y-2">
+              {taScanList.length === 0 ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] font-semibold text-gray-600">✓ Semua acara aktif ada sekurang-kurangnya 1 pendaftaran — tiada acara kosong.</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[10px] font-bold text-gray-500 uppercase">{taScanList.length} acara aktif · 0 pendaftaran</p>
+                  {taScanList.map((it) => (
+                    <div key={it.acara.id} className="border border-gray-200 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-gray-800 truncate">#{it.acara.noAcara} {it.acara.namaAcara}</p>
+                        <p className="text-[10px] text-gray-500">
+                          <span className="font-mono">{it.acara.peringkat || '—'}</span>
+                          {it.acara.kategoriKod && <> · {it.acara.kategoriKod}</>}
+                          {' · '}
+                          {it.adaHeat
+                            ? <span className="text-amber-600 font-semibold">ada heat (tanpa peserta berdaftar)</span>
+                            : <span className="text-gray-400">tiada heat</span>}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 whitespace-nowrap">SEMAK MANUAL</span>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-gray-400 pt-1">Padam acara kosong (jika perlu) di <span className="font-semibold">Acara &amp; Jadual</span> — panel ini tidak memadam.</p>
+                </>
+              )}
+            </div>
+          )}
+
+          {taLog.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {taLog.map((l, i) => (
+                <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Panel Scan Status Penuh Semua Acara ── */}
+      <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
+        <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/>
+          </svg>
+          <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Semak Status Semua Acara (Saringan / Final / Terus Final)</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Papar <span className="font-semibold">semua acara</span> + peringkat + peserta + status heat. Baris <span className="text-emerald-600 font-semibold">✓</span> = OK; baris <span className="text-amber-600 font-semibold">⚠</span> = ada isu (saringan tak cukup · pendaftaran tanpa heat · terus final kosong · rantaian final putus). <span className="font-semibold">Amaran sahaja — TIDAK mengubah apa-apa.</span></p>
+
+          <div className="flex items-center gap-2">
+            <button onClick={ssScan} disabled={ssScanning}
+              className="flex-1 flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors justify-center">
+              {ssScanning ? 'Mengimbas...' : '🔍 Semak Status Semua Acara'}
+            </button>
+            {ssScanList && (
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none">
+                <input type="checkbox" checked={ssHanyaMasalah} onChange={e => setSsHanyaMasalah(e.target.checked)}
+                  className="accent-blue-600"/>
+                Isu sahaja
+              </label>
+            )}
+          </div>
+
+          {ssScanList && (() => {
+            const bilMasalah = ssScanList.filter(x => !x.ok).length
+            const senarai = ssHanyaMasalah ? ssScanList.filter(x => !x.ok) : ssScanList
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 text-[10px] font-bold uppercase">
+                  <span className="text-gray-500">{ssScanList.length} acara</span>
+                  <span className="text-emerald-600">{ssScanList.length - bilMasalah} OK</span>
+                  <span className={bilMasalah > 0 ? 'text-amber-600' : 'text-gray-400'}>{bilMasalah} isu</span>
+                </div>
+                {senarai.length === 0 ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <p className="text-[11px] font-semibold text-emerald-700">✓ Tiada isu — semua acara OK.</p>
+                  </div>
+                ) : senarai.map((it) => (
+                  <div key={it.acara.id} className={`border rounded-lg px-3 py-2 ${it.ok ? 'border-gray-200' : 'border-amber-200 bg-amber-50/40'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-gray-800 truncate">
+                          <span className={it.ok ? 'text-emerald-600' : 'text-amber-600'}>{it.ok ? '✓' : '⚠'}</span> #{it.acara.noAcara} {it.acara.namaAcara}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          <span className="font-semibold">{it.jenis}</span> · <span className="font-bold text-blue-600">{it.nP}</span>/{it.bilL} lorong ·
+                          {it.adaHeat ? <span className="text-gray-600"> heat {it.adaKeputusan ? '(rasmi)' : '(draf)'}</span> : <span className="text-gray-400"> tiada heat</span>}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 text-[9px] font-bold rounded px-2 py-1 whitespace-nowrap ${it.ok ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-amber-700 bg-amber-100 border border-amber-200'}`}>
+                        {it.ok ? 'OK' : `${it.masalah.length} ISU`}
+                      </span>
+                    </div>
+                    {!it.ok && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {it.masalah.map((m, i) => (
+                          <p key={i} className="text-[9px] text-amber-700">• {m}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
+          {ssLog.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {ssLog.map((l, i) => (
                 <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
               ))}
             </div>

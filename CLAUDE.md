@@ -119,8 +119,22 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
   ('C') tak ditapis; peserta tanpa field jantina dibiar lalu (tenant lama, elak regresi).
   Diguna di 3 tempat StartList kumpul peserta — JANGAN pecah corak.
 
-## Health Check — Panel "Jadikan Terus Final" (2026-07-27)
-- `admin/HealthCheck.jsx` panel hijau. Masalah: acara di-tag saringan tapi peserta ≤
+## Health Check — 3 Panel Scan (2026-07-27)
+`admin/HealthCheck.jsx` ada 3 panel scan (semua read-only kecuali butang ⚡ Terus Final):
+1. **🟢 Jadikan Terus Final** (`tfScan`/`tfNilaiAcara`) — scan saringan peserta≤lorong,
+   ada butang ⚡ apply (tulis). Detail di bawah.
+2. **🟠 Scan Acara Tiada Atlet** (`taScan`) — acara aktif, bukan relay, BUKAN anak final
+   (`!parentAcaraId`), 0 pendaftaran. AMARAN sahaja (tiada tulis). Papar ada/tiada heat.
+3. **🔵 Semak Status Semua Acara** (`ssScan`) — SEMUA acara aktif (bukan relay) +
+   peringkat (Saringan/Final(anak)/Terus Final) + peserta/lorong + status heat
+   (rasmi/draf/tiada). Flag 4 isu: saringan≤lorong · pendaftaran tanpa heat · terus final
+   0 peserta+0 heat · final anak parent putus/heat belum jana. Toggle "Isu sahaja".
+   AMARAN sahaja. Heat dibaca SEKALI (map aceraId→{adaHeat,adaKeputusan}), bukan query
+   per-acara — jimat. `FINAL_PERINGKAT=['akhir','final','terus_final','final_p']`.
+   Disahkan live mssdppki: 149 acara · 105 OK · 44 isu (majoriti terus final 0 peserta).
+
+### Panel "Jadikan Terus Final" — detail
+- Masalah: acara di-tag saringan tapi peserta ≤
   bilanganLorong → patut terus final; jika tidak `grantMedal=false` → **medal tak masuk**.
 - **🔍 Scan Semua** — auto-cari acara saringan (bukan relay, aktif) yg `0<peserta≤lorong`;
   baris SELAMAT ada butang "⚡ Terus Final", baris SEKAT papar sebab. Atau **taip No Acara**.
