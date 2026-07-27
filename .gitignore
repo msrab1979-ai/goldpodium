@@ -40,15 +40,33 @@ Thumbs.db
 *.log
 logs/
 
-# Scripts sensitif (ada API key hardcode)
+# Scripts sensitif / sekali-guna (kes-spesifik tenant, bukan kod produk)
 fix-*.cjs
+fix-*.mjs
 check-*.cjs
 audit-*.cjs
 ghost-*.cjs
 peek-*.cjs
 restore-*.cjs
 add-*.cjs
+diag-*.cjs
+diag-*.mjs
+semak-*.cjs
+cari-*.cjs
+kira-*.cjs
+kat-*.cjs
+deep-*.cjs
+detail-*.cjs
+siasat-*.cjs
+rujuk-*.cjs
+sahkan-*.cjs
+banding-*.cjs
+verify-*.cjs
+buka-*.cjs
+tutup-*.cjs
 scripts/
+# NOTA: 3 fail loader ESM (ext-loader/register-loader/firebase-config-stub) SENGAJA
+# TIDAK diabai — alat guna semula untuk skrip yg import src/ util. Lihat CLAUDE.md.
 
 # Fail KOAM tersasar / tools
 KOAM_MASTER_BRIEF.md

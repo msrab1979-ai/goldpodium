@@ -131,6 +131,40 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 - `grantMedal` BUKAN field doc — dikira dari peringkat+fasa masa `runPostRasmi`. Cukup ubah
   `peringkat`. Detail penuh + kes 111/121 di memori `project_saringan_tak_cukup.md`.
 
+### Kaedah SKRIP bila panel SEKAT (heat sudah rasmi) — 2026-07-27
+Panel HealthCheck SENGAJA sekat acara yg heat `statusKeputusan` rasmi/diterima (gate ke-3,
+elak rosak medal). Untuk kes begini (keputusan DAH masuk, cuma `peringkat` tertinggal
+`saringan_sf`), guna skrip node yg import LOGIK SISTEM SEBENAR (bukan tulis medal manual):
+- **Corak skrip** (lihat `fix-119-medal.mjs`, `fix-113-medal.mjs` sbg templat): set
+  `acara.peringkat='akhir'`, kemudian panggil `runPostRasmi(db, heatDoc, acaraDocBaru, kejId,
+  {schoolId, mataPingat, peringkatKej, grantMedal:true, isRelay})` — config SAMA seperti
+  `pencatat/InputKeputusan.jsx`. Medal masuk guna logik betul (rank on-the-fly, R1 transaction).
+- **DRY RUN dulu** (tiada `--write`) → papar siapa dapat medal → sahkan → jalan `--write`.
+- **Auth WAJIB**: rules halang tulis tanpa auth. Skrip `signInWithEmailAndPassword` guna
+  `VITE_SUPERADMIN_EMAIL` + `ADMIN_PASSWORD` (env, USER taip password — Claude JANGAN taip).
+  Jalan: `ADMIN_PASSWORD='...' node --import ./register-loader.mjs fix-119-medal.mjs --write`
+- **Loader ESM untuk import src/**: `package.json` type:module + Vite guna import tanpa `.js`
+  dan `import.meta.env`. Node tak boleh. Penyelesaian (fail KEKAL dalam repo root):
+  `ext-loader.mjs` (resolve hook: tambah `.js` bila gagal + redirect `firebase/config` →
+  `firebase-config-stub.mjs`), `firebase-config-stub.mjs` (bina `db` dari env, ganti
+  `import.meta.env`), `register-loader.mjs` (daftar hook via `module.register` — WAJIB guna
+  `--import ./register-loader.mjs`, BUKAN `--loader` yg daftar lambat). Guna semula utk mana2
+  skrip yg import util src (postRasmiUtils, dll).
+
+### Kes TERUS FINAL yg BELUM rasmi (panel benarkan) — 2026-07-27
+Acara saringan peserta ≤ lorong + heat BELUM rasmi (cth 213: 6/8 peserta, `status:—`):
+panel papar butang hijau ⚡ Terus Final, admin klik terus. Skrip `fix-213-terusfinal.mjs`
+buat perkara sama (set `peringkat=akhir` + padam anak final kosong SELEPAS sahkan 0 heat +
+0 pendaftaran + `parentAcaraId` padan). Medal TAK masuk lagi — atlet belum lari; masuk
+sendiri bila admin isi keputusan di InputKeputusan (peringkat dah betul → auto grantMedal).
+
+### Pindah peserta silap acara/heat — kes 232A→232B (BIB tak sync) — 2026-07-27
+Peserta boleh wujud di heat SALAH (tersalah masuk masa jana) + BIB tak konsisten antara
+doc pendaftaran vs heat (BIB pendaftaran ditukar SELEPAS heat dijana → heat lama simpan BIB
+lama). SUMBER KEBENARAN = doc pendaftaran. `fix-pindah-232.mjs`: (1) selaras BIB lama→baru
+dlm SEMUA heat peserta itu, (2) buang dari peserta[] heat salah, tambah ke peserta[] heat
+betul (lorong kosong, kategoriKod ikut acara destinasi). JANGAN buang — pindah sahaja.
+
 ## Rekod System (TERKINI)
 
 ### Peringkat Rekod
