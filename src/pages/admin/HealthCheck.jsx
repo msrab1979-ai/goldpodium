@@ -359,6 +359,152 @@ export default function HealthCheck() {
     setResetting(false)
   }
 
+  // ── Jadikan Terus Final (saringan peserta tak cukup) ─────────────────────────
+  const SARINGAN_PERINGKAT = ['saringan_qf', 'saringan_sf', 'separuh_akhir']
+  const [tfNoAcara,   setTfNoAcara]   = useState('')
+  const [tfSemak,     setTfSemak]     = useState(null)   // { acara, nP, bilL, anakFinal, gateGagal[], selamat, kejId }
+  const [tfChecking,  setTfChecking]  = useState(false)
+  const [tfApplying,  setTfApplying]  = useState(false)
+  const [tfLog,       setTfLog]       = useState([])
+  const [tfScanning,  setTfScanning]  = useState(false)
+  const [tfScanList,  setTfScanList]  = useState(null)   // [{ ...nilai }] senarai suspek dari scan
+
+  // Nilai satu acara: kira peserta/lorong/gate. Kongsi antara Semak-satu & Scan.
+  // sekolahBypassCache: Map(kod → bool) supaya scan tak baca doc sekolah berulang.
+  async function tfNilaiAcara(acara, acaraList, pendData, kejId, sekolahBypassCache) {
+    const pesertaAcara = pendData.filter(p => (p.acaraIds || []).includes(acara.id))
+    const nP = pesertaAcara.length
+    const bilL = acara.bilanganLorong || 8
+
+    const anakFinal = acaraList.find(a => a.parentAcaraId === acara.id) || null
+    let anakKosong = false
+    if (anakFinal) {
+      const ah = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', anakFinal.id)))
+      const ap = pendData.filter(p => (p.acaraIds || []).includes(anakFinal.id))
+      anakKosong = ah.size === 0 && ap.length === 0
+    }
+
+    const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acara.id)))
+    const adaKeputusan = heatSnap.docs.some(h => ['rasmi', 'diterima'].includes(h.data().statusKeputusan))
+
+    const kodSekolahAcara = [...new Set(pesertaAcara.map(p => p.kodSekolah).filter(Boolean))]
+    let bypassAda = false
+    const bypassSekolah = []
+    for (const kod of kodSekolahAcara) {
+      let by = sekolahBypassCache?.get(kod)
+      if (by === undefined) {
+        const sSnap = await getDoc(doc(db, 'tenants', schoolId, 'sekolah', kod))
+        by = sSnap.exists() && sSnap.data().bypassDeadline === true
+        sekolahBypassCache?.set(kod, by)
+      }
+      if (by) { bypassAda = true; bypassSekolah.push(kod) }
+    }
+
+    const gateGagal = []
+    if (!SARINGAN_PERINGKAT.includes(acara.peringkat))
+      gateGagal.push(`Bukan acara saringan (peringkat: ${acara.peringkat}) — tak perlu ubah.`)
+    if (nP === 0)
+      gateGagal.push(`Tiada peserta berdaftar (0) — tak boleh tentukan.`)
+    else if (nP > bilL)
+      gateGagal.push(`Peserta (${nP}) melebihi lorong (${bilL}) — memang PERLU saringan.`)
+    if (adaKeputusan)
+      gateGagal.push(`Heat sudah ada keputusan rasmi — handle manual (elak rosak medal).`)
+    if (bypassAda)
+      gateGagal.push(`Daftar masih DIBUKA (bypass ON): ${bypassSekolah.join(', ')} — tutup daftar dulu, peserta boleh berubah.`)
+
+    return { acara, nP, bilL, anakFinal, anakKosong, adaKeputusan, bypassAda, gateGagal, selamat: gateGagal.length === 0, kejId }
+  }
+
+  async function tfJalanSemak() {
+    const noAcara = tfNoAcara.trim()
+    if (!noAcara) return
+    setTfChecking(true)
+    setTfSemak(null)
+    setTfLog([])
+    try {
+      const kejId = await getKejId()
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
+      const acaraList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const acara = acaraList.find(a => a.id === noAcara || String(a.noAcara) === noAcara)
+      if (!acara) { setTfLog([`❌ Acara "${noAcara}" tidak dijumpai.`]); setTfChecking(false); return }
+
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
+      const pendData = pendSnap.docs.map(d => d.data())
+      const nilai = await tfNilaiAcara(acara, acaraList, pendData, kejId, new Map())
+      setTfSemak(nilai)
+    } catch (e) {
+      setTfLog([`❌ Ralat: ${e.message}`])
+    }
+    setTfChecking(false)
+  }
+
+  // Scan SEMUA acara saringan yg peserta ≤ lorong (calon terus final)
+  async function tfScan() {
+    setTfScanning(true)
+    setTfScanList(null)
+    setTfSemak(null)
+    setTfLog([])
+    try {
+      const kejId = await getKejId()
+      const acaraSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'))
+      const acaraList = acaraSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const pendSnap = await getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'pendaftaran'))
+      const pendData = pendSnap.docs.map(d => d.data())
+      const cache = new Map()
+
+      // Calon: peringkat saringan, bukan relay, aktif
+      const calon = acaraList.filter(a =>
+        SARINGAN_PERINGKAT.includes(a.peringkat) &&
+        a.jenisAcara !== 'relay' &&
+        a.isAktif !== false
+      )
+      const hasil = []
+      for (const a of calon) {
+        const nP = pendData.filter(p => (p.acaraIds || []).includes(a.id)).length
+        const bilL = a.bilanganLorong || 8
+        // Hanya papar yg peserta ≤ lorong (calon terus final) — abai yg memang perlu saringan
+        if (nP > 0 && nP <= bilL) {
+          hasil.push(await tfNilaiAcara(a, acaraList, pendData, kejId, cache))
+        }
+      }
+      hasil.sort((x, y) => String(x.acara.noAcara).localeCompare(String(y.acara.noAcara)))
+      setTfScanList(hasil)
+    } catch (e) {
+      setTfLog([`❌ Ralat scan: ${e.message}`])
+    }
+    setTfScanning(false)
+  }
+
+  // Terima nilai acara terus (dari scan atau semak-satu)
+  async function tfJadikanFinal(nilai) {
+    const n = nilai || tfSemak
+    if (!n || !n.selamat) return
+    const { acara, anakFinal, anakKosong, kejId } = n
+    let padamAnak = false
+    if (anakFinal && anakKosong) {
+      padamAnak = window.confirm(`Acara #${acara.noAcara} ada anak final KOSONG (#${anakFinal.noAcara}). Padam anak final ini sekali?\n\nOK = padam · Batal = biar (cuma tukar peringkat)`)
+    }
+    if (!window.confirm(`Jadikan acara #${acara.noAcara} ${acara.namaAcara} TERUS FINAL?\n\nPeringkat ${acara.peringkat} → akhir. Heat & peserta KEKAL.${padamAnak ? `\nAnak final #${anakFinal.noAcara} akan DIPADAM.` : ''}`)) return
+    setTfApplying(true)
+    setTfLog([`🔧 Memproses acara #${acara.noAcara}...`])
+    try {
+      await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', acara.id),
+        { peringkat: 'akhir', updatedAt: serverTimestamp() })
+      setTfLog(l => [...l, `✓ Peringkat ditukar → akhir (terus final)`])
+      if (padamAnak) {
+        await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', anakFinal.id))
+        setTfLog(l => [...l, `✓ Anak final #${anakFinal.noAcara} dipadam`])
+      }
+      setTfLog(l => [...l, `✅ #${acara.noAcara} selesai — masukkan keputusan di InputKeputusan → medal masuk automatik.`])
+      setTfSemak(null)
+      // Buang baris ni dari senarai scan (dah dibaiki)
+      setTfScanList(prev => prev ? prev.filter(x => x.acara.id !== acara.id) : prev)
+    } catch (e) {
+      setTfLog(l => [...l, `❌ Ralat: ${e.message}`])
+    }
+    setTfApplying(false)
+  }
+
   // ── Pindah Peserta Antara Heat ───────────────────────────────────────────────
   const [pindahAcaraId, setPindahAcaraId] = useState('')
   const [pindahNoBib,   setPindahNoBib]   = useState('')
@@ -1198,6 +1344,119 @@ export default function HealthCheck() {
           {resetLog.length > 0 && (
             <div className="space-y-1 pt-1">
               {resetLog.map((l, i) => (
+                <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Panel Jadikan Terus Final ── */}
+      <div className="bg-white rounded-xl border border-emerald-200 overflow-hidden">
+        <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
+          <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide">Jadikan Terus Final (Saringan Peserta Tak Cukup)</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11px] text-gray-500">Acara saringan yang peserta <span className="font-semibold">≤ bilangan lorong</span> sepatutnya terus final. Panel semak selamat dahulu (4 gate) sebelum tukar. Heat & peserta <span className="font-semibold">KEKAL</span>.</p>
+
+          {/* Butang Scan Semua */}
+          <button onClick={tfScan} disabled={tfScanning}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors w-full justify-center">
+            {tfScanning ? 'Mengimbas...' : '🔍 Scan Semua Acara Saringan (Cari Calon Terus Final)'}
+          </button>
+
+          {/* Hasil scan */}
+          {tfScanList && (
+            <div className="space-y-2">
+              {tfScanList.length === 0 ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] font-semibold text-gray-600">✓ Tiada acara saringan yang peserta tak cukup — semua OK.</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[10px] font-bold text-gray-500 uppercase">{tfScanList.length} acara saringan · peserta ≤ lorong</p>
+                  {tfScanList.map((it) => (
+                    <div key={it.acara.id} className="border border-gray-200 rounded-lg px-3 py-2 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-gray-800 truncate">#{it.acara.noAcara} {it.acara.namaAcara}</p>
+                          <p className="text-[10px] text-gray-500">
+                            <span className="font-mono">{it.acara.peringkat}</span> · <span className="font-bold text-emerald-600">{it.nP}</span>/{it.bilL} lorong
+                            {it.anakFinal && <> · anak #{it.anakFinal.noAcara} {it.anakKosong ? '(kosong)' : '(ADA)'}</>}
+                          </p>
+                        </div>
+                        {it.selamat && (
+                          <button onClick={() => tfJadikanFinal(it)} disabled={tfApplying}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg disabled:opacity-40 transition-colors shrink-0 whitespace-nowrap">
+                            ⚡ Terus Final
+                          </button>
+                        )}
+                      </div>
+                      {!it.selamat && (
+                        <div className="bg-amber-50 border border-amber-100 rounded px-2 py-1 space-y-0.5">
+                          {it.gateGagal.map((g, i) => (
+                            <p key={i} className="text-[9px] text-amber-700">• {g}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="border-t border-gray-100 pt-3">
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="block text-[10px] font-bold text-gray-500 mb-1">Atau taip No Acara</label>
+              <input value={tfNoAcara} onChange={e => { setTfNoAcara(e.target.value); setTfSemak(null); setTfLog([]) }}
+                placeholder="cth: 121"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300"/>
+            </div>
+            <button onClick={tfJalanSemak} disabled={tfChecking || !tfNoAcara.trim()}
+              className="px-4 py-2 bg-[#003399] hover:bg-[#002288] text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors shrink-0">
+              {tfChecking ? 'Menyemak...' : 'Semak'}
+            </button>
+          </div>
+
+          {/* Hasil semak */}
+          {tfSemak && (
+            <div className="space-y-2 pt-1">
+              <div className="bg-gray-50 rounded-lg px-3 py-2 text-[11px] text-gray-700 space-y-0.5">
+                <p><span className="font-semibold">#{tfSemak.acara.noAcara}</span> {tfSemak.acara.namaAcara} · <span className="font-mono">{tfSemak.acara.peringkat}</span></p>
+                <p>Peserta: <span className={`font-bold ${tfSemak.nP > tfSemak.bilL ? 'text-red-600' : 'text-emerald-600'}`}>{tfSemak.nP}</span> / {tfSemak.bilL} lorong
+                  {tfSemak.anakFinal && <> · Anak final: #{tfSemak.anakFinal.noAcara} {tfSemak.anakKosong ? '(kosong)' : '(ADA data)'}</>}
+                </p>
+              </div>
+              {tfSemak.selamat ? (
+                <>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <p className="text-[11px] font-bold text-emerald-700">✅ Selamat jadikan terus final</p>
+                  </div>
+                  <button onClick={() => tfJadikanFinal()} disabled={tfApplying}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+                    {tfApplying ? 'Memproses...' : '⚡ Jadikan Terus Final'}
+                  </button>
+                </>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+                  <p className="text-[11px] font-bold text-amber-700">⚠ Tidak selamat / tak perlu — sebab:</p>
+                  {tfSemak.gateGagal.map((g, i) => (
+                    <p key={i} className="text-[10px] text-amber-700 pl-2">• {g}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          </div>
+
+          {tfLog.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {tfLog.map((l, i) => (
                 <p key={i} className="text-[10px] font-mono bg-gray-50 rounded px-2 py-1 text-gray-700 break-all">{l}</p>
               ))}
             </div>

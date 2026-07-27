@@ -940,26 +940,22 @@ function TabMedalTally({ schoolId, kejId, bilKed = 3, namaKej, tarikhMula, tarik
               // Kumpul kategori dari katMap — ikut jenisSekolah sekolah + urutan
               // grpKey dalam buildKatDetail = `${jantina}_${kategoriKod}` (dari kat_ field postRasmi)
               // Tunjuk semua kategori yang ada dalam katMap, tapi row yang tiada pingat jadi fade
+              // FIX: papar ikut pingat SEBENAR sekolah (detail.grp), BUKAN tapis
+              // ikut jenisSekolah kategori vs t.kategori. Tapisan lama buang semua
+              // baris bila jenisSekolah ("SEKOLAH MENENGAH"/default "SR") tak padan
+              // t.kategori ("SM") → pecahan kosong walaupun pingat ada. katMap kekal
+              // sumber label + urutan sahaja (fallback kod bila tiada dalam katMap).
               const katKombos = (() => {
                 const grp = detail?.grp || {}
-                // Kumpul semua grpKeys yang ada dalam grp — `L_L12A`, `P_P12` dsb
-                const grpKeys = new Set(Object.keys(grp).filter(k => k !== 'L_RELAY' && k !== 'P_RELAY'))
-                const result = []
-                Object.entries(katMap)
-                  .filter(([, info]) => !t.kategori || t.kategori === 'Lain-lain' || info.jenisSekolah === t.kategori)
-                  .sort((a, b) => (a[1].urutan ?? 99) - (b[1].urutan ?? 99))
-                  .forEach(([kod, info]) => {
-                    // Cari jantina yang exist dalam grp untuk kod ini
-                    const jantinas = ['L', 'P'].filter(j => grpKeys.has(`${j}_${kod}`))
-                    if (jantinas.length > 0) {
-                      jantinas.forEach(j => result.push({ kod, label: info.label || kod, j }))
-                    } else {
-                      // Row tiada pingat — teka jantina dari label prefix
-                      const guessJ = /^L/i.test(info.label || kod) ? 'L' : /^P/i.test(info.label || kod) ? 'P' : 'L'
-                      result.push({ kod, label: info.label || kod, j: guessJ })
-                    }
+                const grpKeys = Object.keys(grp).filter(k => !k.endsWith('_RELAY'))
+                return grpKeys
+                  .map(gk => {
+                    const j   = gk.slice(0, gk.indexOf('_'))
+                    const kod = gk.slice(gk.indexOf('_') + 1)
+                    const info = katMap[kod] || {}
+                    return { kod, j, label: info.label || kod, urutan: info.urutan ?? 99 }
                   })
-                return result
+                  .sort((a, b) => (a.urutan - b.urutan) || a.kod.localeCompare(b.kod))
               })()
 
               return (

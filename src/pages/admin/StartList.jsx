@@ -65,6 +65,26 @@ const STATUS_HEAT = {
   selesai:      { label: 'Selesai',      color: 'bg-green-100 text-green-700' },
 }
 
+/**
+ * Tapis peserta untuk sesuatu acara dari senarai pendaftaran mentah.
+ * 1. Match aceraId/doc id dalam acaraIds (sumber utama)
+ * 2. GUARD JANTINA — walau acaraIds rosak (pendaftaran lama sebelum Gate 4, atau
+ *    silap tick acara silang jantina), peserta jantina berbeza TIDAK masuk start
+ *    list. Acara campuran ('C'/'Campuran') tidak ditapis. Peserta tanpa field
+ *    jantina dibiar lalu (tenant lama) supaya tiada regresi.
+ * Guna di ketiga-tiga tempat StartList kumpul peserta — jangan pecah corak.
+ */
+function tapisPesertaAcara(pesertaAll, acara) {
+  const aliases = new Set([acara.aceraId, acara.id].filter(Boolean))
+  const jAcara = acara.jantina
+  const tapisJantina = jAcara === 'L' || jAcara === 'P'  // bukan campuran / kosong
+  return (pesertaAll || []).filter(p => {
+    if (!(p.acaraIds || []).some(id => aliases.has(id))) return false
+    if (tapisJantina && (p.jantina === 'L' || p.jantina === 'P') && p.jantina !== jAcara) return false
+    return true
+  })
+}
+
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ' +
   'focus:outline-none focus:ring-2 focus:ring-[#003399]/25 focus:border-[#003399] bg-gray-50'
 
@@ -658,10 +678,8 @@ function EditLorongModal({ heat, acara, kejohananId, onClose, onSaved, sekolahMa
 
 async function generateHeatsForAcara({ acara, pesertaAll, kejohananId, schoolId, caraDraw, skipJikaAda, namaSekolahMap = {}, atletBibMap = {}, defaultLorong = 8 }) {
   const aceraKey = acara.aceraId || acara.id
-  // Kumpul semua alias — aceraId field dan doc id
-  const aceraAliases = new Set([acara.aceraId, acara.id].filter(Boolean))
-  // Tapis peserta untuk acara ini (guna aliases supaya match walaupun aceraId ≠ doc id)
-  const peserta = pesertaAll.filter(p => (p.acaraIds || []).some(id => aceraAliases.has(id)))
+  // Tapis peserta untuk acara ini (alias-match + guard jantina)
+  const peserta = tapisPesertaAcara(pesertaAll, acara)
   if (peserta.length === 0) return { status: 'skip', sebab: 'tiada peserta' }
 
   // Semak heat sedia ada
@@ -1357,8 +1375,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
     getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'pendaftaran'))
       .then(snap => {
         const all = snap.docs.map(d => d.data())
-        const aliases = new Set([acara.aceraId, acara.id].filter(Boolean))
-        setPeserta(all.filter(p => (p.acaraIds || []).some(id => aliases.has(id))))
+        setPeserta(tapisPesertaAcara(all, acara))
       })
       .catch(() => {})
       .finally(() => setLoadingP(false))
@@ -1810,20 +1827,14 @@ export default function StartList() {
     }
     setLoading(true)
     const aceraKey = selectedAcara.aceraId || selectedAcara.id
-    // Kumpul semua alias yang mungkin — aceraId field, doc id, dan noAcara
-    const aceraAliases = new Set([
-      selectedAcara.aceraId,
-      selectedAcara.id,
-    ].filter(Boolean))
     try {
       const [pendSnap, heatSnap, rekod] = await Promise.all([
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'pendaftaran'))),
         getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', selectedKej, 'heat'), where('aceraId', '==', aceraKey))),
         cariRekodUntukAcara(schoolId, selectedAcara),
       ])
-      const peserta = pendSnap.docs
-        .map(d => d.data())
-        .filter(p => (p.acaraIds || []).some(id => aceraAliases.has(id)))
+      // Tapis peserta (alias-match + guard jantina)
+      const peserta = tapisPesertaAcara(pendSnap.docs.map(d => d.data()), selectedAcara)
       setPesertaList(peserta)
       setHeatList(heatSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.noHeat ?? 0) - (b.noHeat ?? 0)))
       setRekodAcara(rekod)

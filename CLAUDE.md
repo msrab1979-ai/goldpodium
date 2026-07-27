@@ -1,10 +1,6 @@
 # Goldpodium — Claude Code Notes
 
 ## ⏸ Kerja KIV (belum siap — sambung bila user minta)
-- **TUTUP DAFTAR #214 (mssdppki, SEGERA)** — user buka `bypassDeadline:true` semua sekolah
-  utk PP daftar acara #214; WAJIB tutup balik: `COMMIT=1 GP_ADMIN_EMAIL=.. GP_ADMIN_PASSWORD=..
-  node tutup-daftar-semua.cjs` → `bypassDeadline:false` semua, kunci semula. Lepas #214
-  diubah, jana heat semula #214 di StartList. Trigger: "tutup daftar"/"tutup 214".
 - **Jenis Institusi Dinamik** (KIV 2026-07-26, sambung selepas kejohanan mssdppki habis
   27 Jul 2026): buang SR/SM/PPKI paksa, tenant urus jenis sendiri (rumah sukan dll).
   Punca 15/19 nampak di PP = silap setup tenant (jenisSekolah "SEKOLAH RENDAH" bukan "SR"),
@@ -113,6 +109,27 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 - Semak `allHeatRasmi` — semua heat phase selesai + disahkan
 - Semak `finalExists` — guna `finalDijanaKe` untuk saringan_qf/sf + separuh_akhir; guna `h.fasa==='final'` untuk terus_final
 - Bila jana: tulis `finalDijanaKe` ke acara saringan supaya butang hilang
+
+### Guard Jantina StartList (fix 2026-07-27)
+- **Punca:** StartList kumpul peserta 100% ikut `acaraIds` doc pendaftaran, TIADA tapisan
+  jantina. Doc pendaftaran rosak (silap tick acara silang jantina / data lama sebelum
+  Gate 4 kuatkuasa) → peserta P bocor masuk start list acara L. Kes mssdppki: 100m 209/210.
+- **Fix:** helper `tapisPesertaAcara(pesertaAll, acara)` — alias-match (`aceraId`/doc id)
+  + guard jantina: peserta `jantina` beza dgn `acara.jantina` (L/P) DIBUANG. Acara campuran
+  ('C') tak ditapis; peserta tanpa field jantina dibiar lalu (tenant lama, elak regresi).
+  Diguna di 3 tempat StartList kumpul peserta — JANGAN pecah corak.
+
+## Health Check — Panel "Jadikan Terus Final" (2026-07-27)
+- `admin/HealthCheck.jsx` panel hijau. Masalah: acara di-tag saringan tapi peserta ≤
+  bilanganLorong → patut terus final; jika tidak `grantMedal=false` → **medal tak masuk**.
+- **🔍 Scan Semua** — auto-cari acara saringan (bukan relay, aktif) yg `0<peserta≤lorong`;
+  baris SELAMAT ada butang "⚡ Terus Final", baris SEKAT papar sebab. Atau **taip No Acara**.
+- **4 GATE sekat:** bukan saringan · peserta 0 atau >lorong · heat ada `statusKeputusan`
+  rasmi/diterima (elak rosak medal) · ada sekolah `bypassDeadline=true` (daftar terbuka).
+- Aksi: `peringkat→akhir` + tawar padam anak final KOSONG (parent=acara, tiada heat/pend).
+  Heat/peserta/keputusan TAK disentuh. Admin masuk keputusan di InputKeputusan → medal masuk.
+- `grantMedal` BUKAN field doc — dikira dari peringkat+fasa masa `runPostRasmi`. Cukup ubah
+  `peringkat`. Detail penuh + kes 111/121 di memori `project_saringan_tak_cukup.md`.
 
 ## Rekod System (TERKINI)
 

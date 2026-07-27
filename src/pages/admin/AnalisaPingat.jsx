@@ -126,16 +126,29 @@ export default function AnalisaPingat() {
         })
 
         // 5. Load semua acara → heat final → kira pingat
-        const acaraSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara')))
+        // Perf: ambil SELURUH koleksi heat SEKALI (1 query) — bukan 1 query per acara
+        // (loop N+1 dulu = ratusan query berturut → load lambat). Tapis ikut aceraId dalam JS.
+        const [acaraSnap, allHeatSnap] = await Promise.all([
+          getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara'), orderBy('noAcara'))),
+          getDocs(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat')),
+        ])
         const aMap = {}
+
+        // Kumpul heat ikut aceraId
+        const heatByAcara = {}
+        allHeatSnap.docs.forEach(hDoc => {
+          const aid = hDoc.data().aceraId
+          if (!aid) return
+          if (!heatByAcara[aid]) heatByAcara[aid] = []
+          heatByAcara[aid].push(hDoc)
+        })
 
         for (const aDoc of acaraSnap.docs) {
           const ad = aDoc.data()
           if (ad.jenisAcara === 'relay') continue
           const isFinalAcara = !!ad.parentAcaraId
 
-          const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', aDoc.id)))
-          for (const hDoc of heatSnap.docs) {
+          for (const hDoc of (heatByAcara[aDoc.id] || [])) {
             const hd = hDoc.data()
             const fasaOk = FASA_FINAL.includes(hd.fasa) || (isFinalAcara && hd.fasa == null)
             if (!fasaOk)                                  continue
