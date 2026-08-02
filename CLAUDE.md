@@ -1,14 +1,23 @@
 # Goldpodium — Claude Code Notes
 
-## ⏸ Kerja KIV (belum siap — sambung bila user minta)
-- **Jenis Institusi Dinamik** (KIV 2026-07-26, sambung selepas kejohanan mssdppki habis
-  27 Jul 2026): buang SR/SM/PPKI paksa, tenant urus jenis sendiri (rumah sukan dll).
-  Punca 15/19 nampak di PP = silap setup tenant (jenisSekolah "SEKOLAH RENDAH" bukan "SR"),
-  BUKAN bug. Pelan+risiko SIAP di memori `project_jenis_institusi_dinamik.md`. Trigger:
-  "sambung tenant baru" / "sambung kerja jenis institusi". Fail diubah: auto.js
-  createAdminAccount, KategoriSetup.jsx, SekolahSetup.jsx. Kunci: doc jenisSekolah TIADA
-  →fallback lama; WUJUD(walau []) →tenant baru urus sendiri (tukar `list>0`→`exists()`).
-  **JANGAN sentuh data mssdppki, JANGAN ubah kod/doc ID kategori.**
+## Jenis Institusi Dinamik (SIAP + deployed 2026-08-02, commit 907b5e8)
+Tenant urus jenis institusi sendiri — SR/SM/PPKI TIDAK lagi dipaksa. Kejohanan rumah
+sukan boleh guna RUMAH MERAH/BIRU dll.
+- **Mekanisme:** doc `tenants/{id}/tetapan/jenisSekolah` TIADA → tenant lama → fallback
+  `['SR','SM','PPKI']`. Doc WUJUD (walau `list:[]`) → tenant baru → urus 100% sendiri.
+  Syarat load guna `snap.exists()` sahaja (BUKAN `list.length>0` — kalau tidak `list:[]`
+  diabai → fallback silap).
+- **Tenant baru mula FRESH kosong:** `auth.js createAdminAccount()` tulis
+  `jenisSekolah={list:[]}`. Setup Kategori papar amber "⚠ Tiada jenis — cipta di Daftar
+  Sekolah dulu"; admin kena cipta jenis sebelum tambah kategori. TIADA SR/SM/PPKI muncul.
+- **Field Jenis Institusi** (modal kategori) = `<select>` dari jenisList (dulu input teks
+  bebas → punca typo "SEKOLAH RENDAH" vs "SR"). Data lama (nilai luar senarai) kekal via
+  `option "(lama)"` + tab `LAIN` — tiada kategori hilang.
+- **Cipta/padam jenis:** SekolahSetup → Jenis Sekolah/Kategori. Safety net: tolak padam
+  jenis TERAKHIR (`jenisList.length<=1`).
+- **Serasi belakang disahkan:** mssdppki + demo (doc TIADA) fallback kekal, ZERO regresi.
+- **JANGAN** sentuh data mssdppki; JANGAN ubah kod/doc ID kategori (`BPL12` — putus
+  rujukan acara/heat/medal). Detail penuh: memori `project_jenis_institusi_dinamik.md`.
 
 ## Stack
 - React + Vite + TailwindCSS
