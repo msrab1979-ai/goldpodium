@@ -1093,7 +1093,8 @@ export default function SekolahSetup() {
     if (!schoolId) return
     try {
       const snap = await getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'))
-      if (snap.exists() && (snap.data().list || []).length > 0) setJenisList(snap.data().list)
+      // Doc WUJUD (walau list:[]) = tenant baru urus jenis sendiri. Doc TIADA = fallback.
+      if (snap.exists()) setJenisList(snap.data().list || [])
       else setJenisList(['SR', 'SM', 'PPKI'])
     } catch { setJenisList(['SR', 'SM', 'PPKI']) }
   }
@@ -1109,6 +1110,12 @@ export default function SekolahSetup() {
   }
 
   async function padamJenis(nama) {
+    // Safety net: sekurang-kurangnya 1 jenis mesti kekal — kategori perlu jenis untuk
+    // dikumpulkan; senarai kosong buat modal kategori tersekat "cipta jenis dahulu".
+    if (jenisList.length <= 1) {
+      alert('Sekurang-kurangnya 1 jenis institusi mesti kekal.')
+      return
+    }
     const next = jenisList.filter(j => j !== nama)
     await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'), { list: next }, { merge: true })
     setJenisList(next)

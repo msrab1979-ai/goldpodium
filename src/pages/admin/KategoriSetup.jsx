@@ -23,8 +23,6 @@ import {
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 
-const JENIS_DEFAULTS = ['SR', 'SM', 'PPKI']
-
 const EMPTY_FORM = {
   kod: '', label: '', nama: '', jenisSekolah: 'SR',
   umurHad: '', umurMin: '',
@@ -222,7 +220,7 @@ function KategoriTable({ items, tahun, onEdit, onDelete, onToggle }) {
 
 // ─── KategoriModal ────────────────────────────────────────────────────────────
 
-function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisValues = [], schoolId, kejId }) {
+function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisList = [], schoolId, kejId }) {
   const isEdit = mode === 'edit'
   const [form, setForm] = useState(initial || EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -236,6 +234,7 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
     const kodBersih = form.kod.trim().toUpperCase().replace(/\s/g, '')
     if (!kodBersih) return setErr('Kod kategori wajib diisi.')
     if (!form.nama.trim()) return setErr('Nama kategori wajib diisi.')
+    if (!form.jenisSekolah) return setErr('Jenis institusi wajib dipilih. Cipta jenis di Daftar Sekolah dahulu.')
     if (!isEdit && allKod.includes(kodBersih)) return setErr(`Kod "${kodBersih}" sudah wujud.`)
     if (form.umurMin && form.umurHad && Number(form.umurMin) >= Number(form.umurHad))
       return setErr('Umur Min mesti lebih kecil dari Umur Had. Cth: Min=9, Had=12.')
@@ -338,25 +337,30 @@ function KategoriModal({ mode, initial, onClose, onSaved, allKod, tahun, jenisVa
                 <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
                   Jenis Institusi<span className="text-red-500 ml-0.5">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={form.jenisSekolah}
-                  onChange={e => set('jenisSekolah', e.target.value.toUpperCase())}
-                  placeholder="cth: SR, SM, PPKI, IPT..."
-                  className={inputCls}
-                  autoComplete="off"
-                />
-                {/* Panduan ringkas untuk tenant */}
+                {jenisList.length === 0 ? (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[10px] leading-relaxed text-amber-800">
+                    <p className="font-bold mb-0.5">⚠ Tiada jenis institusi</p>
+                    <p>Cipta jenis institusi dahulu di <strong>Daftar Sekolah → Jenis Sekolah / Kategori</strong> (cth: SR, SM, RUMAH MERAH) sebelum tambah kategori.</p>
+                  </div>
+                ) : (
+                  <select
+                    value={form.jenisSekolah}
+                    onChange={e => set('jenisSekolah', e.target.value)}
+                    className={inputCls}
+                  >
+                    {/* Data lama: nilai semasa tak dalam senarai — kekalkan supaya tak hilang */}
+                    {form.jenisSekolah && !jenisList.includes(form.jenisSekolah) && (
+                      <option value={form.jenisSekolah}>{form.jenisSekolah} (lama)</option>
+                    )}
+                    {jenisList.map(j => (
+                      <option key={j} value={j}>{j}</option>
+                    ))}
+                  </select>
+                )}
                 <div className="mt-2 p-2.5 rounded-lg bg-blue-50/60 border border-blue-100 text-[10px] leading-relaxed text-gray-600">
                   <p className="font-bold text-[#003399] mb-0.5">💡 Panduan:</p>
-                  <p>Contoh nilai: <span className="font-bold">SR</span> (Sekolah Rendah), <span className="font-bold">SM</span> (Sekolah Menengah), <span className="font-bold">PPKI</span>, <span className="font-bold">IPT</span>, <span className="font-bold">KOLEJ</span>.</p>
-                  <p className="mt-1">Guna <strong>kod pendek</strong> dan <strong>konsisten</strong> — kategori dengan kod sama akan dikumpulkan bersama dalam paparan medal tally &amp; laporan.</p>
+                  <p>Jenis institusi diurus di <strong>Daftar Sekolah</strong>. Kategori dengan jenis sama dikumpulkan bersama dalam paparan medal tally &amp; laporan.</p>
                 </div>
-                {form.jenisSekolah && (
-                  <p className="text-[10px] text-gray-400 mt-1.5">
-                    Nilai semasa: <span className="font-bold text-gray-700">{form.jenisSekolah}</span>
-                  </p>
-                )}
               </div>
             </div>
           </div>
@@ -978,7 +982,9 @@ export default function KategoriSetup() {
     if (!schoolId) return
     getDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'))
       .then(s => {
-        if (s.exists() && (s.data().list || []).length > 0) setJenisList(s.data().list)
+        // Doc WUJUD (walau list:[]) = tenant baru urus jenis sendiri (tiada fallback).
+        // Doc TIADA = tenant lama → fallback SR/SM/PPKI.
+        if (s.exists()) setJenisList(s.data().list || [])
         else setJenisList(['SR', 'SM', 'PPKI'])
       })
       .catch(() => setJenisList(['SR', 'SM', 'PPKI']))
@@ -1018,18 +1024,15 @@ export default function KategoriSetup() {
 
   const allKod = list.map(k => k.kod)
 
-  // Tab jenis sekolah — whitelist SR/SM/PPKI sahaja.
-  // Kategori dengan jenis custom (contoh: 'SEKOLAH RENDAH', 'PENDIDIKAN KHAS')
-  // TIDAK dapat tab sendiri, tapi WAJIB tetap dipapar — dikumpul bawah 'LAIN'.
-  const ALLOWED_JENIS = ['SR', 'SM', 'PPKI']
-  const jenisOf = k => ALLOWED_JENIS.includes(k.jenisSekolah) ? k.jenisSekolah : 'LAIN'
+  // Tab jenis sekolah — jenis SAH ditentukan oleh tenant sendiri (jenisList dari
+  // tetapan/jenisSekolah). Tenant lama (doc TIADA) → jenisList = ['SR','SM','PPKI'].
+  // Kategori dengan jenis di luar jenisList (data lama / typo) tetap DIPAPAR —
+  // dikumpul bawah tab 'LAIN' supaya tiada kategori hilang dari paparan.
+  const jenisOf = k => jenisList.includes(k.jenisSekolah) ? k.jenisSekolah : 'LAIN'
   const adaLain = list.some(k => jenisOf(k) === 'LAIN')
   const filtered = filterJenis === 'semua' ? list : list.filter(k => jenisOf(k) === filterJenis)
   const jenisValues = [
-    ...new Set([
-      ...jenisList.filter(j => ALLOWED_JENIS.includes(j)),
-      ...list.map(k => k.jenisSekolah).filter(j => ALLOWED_JENIS.includes(j)),
-    ]),
+    ...jenisList,
     ...(adaLain ? ['LAIN'] : []),
   ]
 
@@ -1158,15 +1161,15 @@ export default function KategoriSetup() {
       )}
 
       {modal?.mode === 'add' && (
-        <KategoriModal mode="add" initial={{ ...EMPTY_FORM, urutan: list.length + 1 }}
+        <KategoriModal mode="add" initial={{ ...EMPTY_FORM, jenisSekolah: jenisList[0] || '', urutan: list.length + 1 }}
           onClose={() => setModal(null)} onSaved={fetchList}
-          allKod={allKod} tahun={tahun} jenisValues={jenisValues}
+          allKod={allKod} tahun={tahun} jenisList={jenisList}
           schoolId={schoolId} kejId={kejId} />
       )}
       {modal?.mode === 'edit' && (
         <KategoriModal mode="edit" initial={modal.data}
           onClose={() => setModal(null)} onSaved={fetchList}
-          allKod={allKod.filter(k => k !== modal.data?.kod)} tahun={tahun} jenisValues={jenisValues}
+          allKod={allKod.filter(k => k !== modal.data?.kod)} tahun={tahun} jenisList={jenisList}
           schoolId={schoolId} kejId={kejId} />
       )}
       {delTarget && (

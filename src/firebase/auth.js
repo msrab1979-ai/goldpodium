@@ -471,6 +471,14 @@ export async function createAdminAccount({ namaSekolah, emelAdmin, namaAdmin, da
     createdAt: serverTimestamp(),
   })
 
+  // Jenis institusi dinamik — tenant baru mula KOSONG (urus jenis 100% sendiri).
+  // Doc WUJUD (walau list:[]) = penanda tenant baru → tiada fallback SR/SM/PPKI.
+  // Tenant lama (doc TIADA) kekal guna fallback — jangan tulis doc ini untuk mereka.
+  await setDoc(doc(db, 'tenants', schoolId, 'tetapan', 'jenisSekolah'), {
+    list:      [],
+    createdAt: serverTimestamp(),
+  })
+
   return {
     uid,
     schoolId,
