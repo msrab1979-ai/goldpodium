@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { viewPortal } from './hooks/useSchoolId'
+import useSessionGuard from './hooks/useSessionGuard'
 import AdminLayout from './components/AdminLayout'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 
@@ -126,6 +127,29 @@ function AdminRoute({ children }) {
   )
 }
 
+// Skrin ringkas semasa sesi disahkan/dipulihkan — elak "kelip" ke halaman login
+// sedangkan sesi sebenarnya masih sah (cth. selepas F5 atau peranti bangun tidur).
+function SkrinSesi({ mesej }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-6">
+      <div className="text-center">
+        <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-sm font-semibold text-gray-700">{mesej}</p>
+      </div>
+    </div>
+  )
+}
+
+// Pembalut yang menguatkuasakan token selari dengan sesi tab untuk pencatat/PP.
+// Diasingkan sebagai komponen sendiri sebab hook tidak boleh dipanggil selepas
+// `return` awal dalam guard (peraturan hooks React).
+function JagaSesi({ children, ketikaMati }) {
+  const status = useSessionGuard()
+  if (status === 'checking') return <SkrinSesi mesej="Menyemak sesi anda…" />
+  if (status === 'invalid')  return ketikaMati
+  return children
+}
+
 // Guard pencatat — slug dalam URL mesti match session
 function RequirePencatat({ children }) {
   const { userRole, loading, userData } = useAuth()
@@ -143,7 +167,13 @@ function RequirePencatat({ children }) {
   const sessionSlug = userData?.schoolSlug || ''
   if (sessionSlug && sessionSlug !== slug) return <Navigate to={`/${slug}`} replace />
 
-  return children
+  // Sesi wujud tapi token hilang → cuba pulih senyap; gagal → balik ke landing
+  // tenant (ada modal Akses Staff), bukan ralat permission mentah.
+  return (
+    <JagaSesi ketikaMati={<Navigate to={`/${slug}`} replace />}>
+      {children}
+    </JagaSesi>
+  )
 }
 
 // Guard khusus pengurus — semak slug dalam URL match schoolId dalam session
@@ -174,7 +204,12 @@ function RequirePengurus({ children }) {
     }
   }
 
-  return children
+  // Sesi wujud tapi token hilang → cuba pulih senyap; gagal → balik ke login PP.
+  return (
+    <JagaSesi ketikaMati={<Navigate to={`/${slug}/pengurus`} replace />}>
+      {children}
+    </JagaSesi>
+  )
 }
 
 function NavigateToPengurusDashboard() {

@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app"
 import { getFirestore } from "firebase/firestore"
-import { getAuth } from "firebase/auth"
+import { getAuth, setPersistence, browserSessionPersistence } from "firebase/auth"
 import { getStorage } from "firebase/storage"
 import { getAnalytics, isSupported } from "firebase/analytics"
 
@@ -18,6 +18,22 @@ const app = initializeApp(firebaseConfig)
 export const db      = getFirestore(app)
 export const auth    = getAuth(app)
 export const storage = getStorage(app)
+
+// ── Sesi Firebase Auth per-TAB (bukan per-browser) ───────────────────────────
+// Default Firebase = browserLocalPersistence (localStorage) → SATU identiti
+// sahaja untuk seluruh browser. Kesannya: admin + pencatat + PP (atau tenant
+// a/b/c/d/e) yang login serentak saling menimpa token — tab lama nampak masih
+// login (sebab `gp_session` disimpan dalam sessionStorage, per-tab) tetapi
+// setiap tulis Firestore gagal `permission-denied` tanpa amaran.
+//
+// browserSessionPersistence letak token Firebase dalam sessionStorage — SKOP
+// SAMA dengan `gp_session`. Setiap tab dapat identiti sendiri, jadi semua
+// peranan/tenant boleh dibuka serentak tanpa clash dan tanpa perlu Incognito.
+//
+// Kesan: tutup tab = log keluar (tiada restore). Itu memang tingkah laku
+// sedia ada dari sudut pengguna — `gp_session` pun sessionStorage.
+// JANGAN tukar balik ke browserLocalPersistence.
+setPersistence(auth, browserSessionPersistence).catch(() => { /* fallback default */ })
 
 // Analytics — hanya aktif dalam browser (bukan SSR/bot)
 isSupported().then(yes => { if (yes) getAnalytics(app) })

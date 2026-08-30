@@ -204,11 +204,68 @@ async function writeSessionAnon(schoolId, buildData) {
       return uid
     } catch (err2) {
       if (isPermissionError(err2)) {
-        throw new Error('Sesi tidak dapat disahkan. Sila log keluar akaun lain dalam tab ini, atau guna tetingkap Peribadi/Incognito, kemudian cuba lagi.')
+        throw new Error('Sesi tidak dapat disahkan. Sila muat semula halaman (tekan F5) dan cuba log masuk sekali lagi.')
       }
       throw err2
     }
   }
+}
+
+// ── Pulih sesi anon (pencatat/PP) bila token hilang ──────────────────────────
+//
+// Dipanggil oleh useSessionGuard bila token Firebase tidak lagi selari dengan
+// `anonUid` dalam `gp_session` (token luput, tab didua-kan, peranti tidur lama).
+// Ia sign-in anon SEMULA, tulis session doc baharu, dan kemas kini `gp_session`
+// dengan anonUid terkini — pengguna terus bekerja tanpa taip PIN lagi.
+//
+// PIN tidak disemak semula di sini dengan sengaja: sesi asal SUDAH disahkan
+// dengan PIN, dan `gp_session` per-tab tidak boleh dicapai oleh tenant lain.
+// Rules tetap menguatkuasakan kesahihan — untuk pencatat, `userDocId`+`kodAkses`
+// mesti wujud dalam tenant; untuk PP, `kodSekolah` mesti wujud. Sesi yang telah
+// dipadam pentadbir akan GAGAL di rules, jadi tiada laluan pintas keselamatan.
+export async function pulihSesiAnon(sesi) {
+  if (!sesi?.schoolId || !sesi?.role) throw new Error('Sesi tidak lengkap.')
+
+  const { schoolId, role } = sesi
+  const lapan = () => Timestamp.fromMillis(Date.now() + 8 * 60 * 60 * 1000)
+
+  let anonUid
+  if (role === 'pencatat') {
+    if (!sesi.userDocId && !sesi.uid) throw new Error('Sesi pencatat tidak lengkap.')
+    anonUid = await writeSessionAnon(schoolId, () => ({
+      role:      'pencatat',
+      schoolId,
+      kodAkses:  sesi.kodAkses || '',
+      userDocId: sesi.userDocId || sesi.uid,
+      createdAt: serverTimestamp(),
+      expireAt:  lapan(),
+    }))
+  } else if (role === 'pengurus') {
+    if (!sesi.kodSekolah) throw new Error('Sesi pengurus tidak lengkap.')
+    anonUid = await writeSessionAnon(schoolId, () => ({
+      role:       'pengurus',
+      schoolId,
+      kodSekolah: sesi.kodSekolah,
+      createdAt:  serverTimestamp(),
+      expireAt:   lapan(),
+    }))
+  } else {
+    throw new Error('Peranan tidak menyokong pemulihan sesi anon.')
+  }
+
+  // Selaraskan gp_session dengan anonUid baharu — kalau tidak, logout nanti
+  // cuba padam session doc lama yang sudah tiada.
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (raw) {
+      const s = JSON.parse(raw)
+      s.anonUid  = anonUid
+      s._savedAt = Date.now()
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(s))
+    }
+  } catch { /* bukan kritikal */ }
+
+  return anonUid
 }
 
 // ── Login — Email + Password (Firebase Auth) ──────────────────────────────────
@@ -323,6 +380,11 @@ export async function loginWithEmail(email, password) {
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 
+// Log keluar TAB INI sahaja.
+// Firebase Auth guna browserSessionPersistence (lihat firebase/config.js), jadi
+// firebaseSignOut hanya menyentuh sesi tab semasa — tab lain (peranan/tenant
+// berbeza) tidak terjejas. JANGAN kembalikan persistence ke localStorage; kalau
+// dikembalikan, logout di sini akan membunuh sesi semua tab serentak.
 export async function logoutAll() {
   // Padam session doc dulu (sebelum sign out — perlu request.auth untuk delete)
   try {

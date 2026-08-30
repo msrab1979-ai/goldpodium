@@ -631,9 +631,19 @@ di-test emulator + deploy live + push GitHub.
 - KejohananSetup: field `tempoBantahan` + `timerAutoRasmi` telah DIBUANG — tidak dipakai dalam sistem
 - KejohananSetup: ada field `defaultLorong` (4–8, default 8) — guna sebagai fallback lorong untuk StartList
 
-### Auth isolation
-- PP (Anonymous Auth) dan Admin (Firebase Auth) kongsi localStorage — jangan buka dalam tab browser yang sama
-- Guna incognito/InPrivate untuk PP
+### Auth isolation — SESI PER-TAB (fix 2026-08-31)
+- **DULU:** PP (Anonymous Auth) dan Admin (Firebase Auth) kongsi localStorage —
+  satu identiti Firebase untuk SELURUH browser. Login kedua menimpa yang pertama
+  secara senyap; tab lama kekal nampak "login" (sebab `gp_session` sessionStorage)
+  tapi setiap tulis Firestore gagal `permission-denied`. Terpaksa guna Incognito.
+- **SEKARANG:** `firebase/config.js` set `browserSessionPersistence` — token
+  Firebase disimpan dalam **sessionStorage**, skop SAMA dengan `gp_session`.
+  Setiap tab dapat identiti sendiri. Admin + pencatat + PP + banyak tenant
+  (slug a/b/c/d/e) boleh login SERENTAK. **Incognito tidak lagi diperlukan.**
+- Logout kini berskop tab — log keluar satu tab TIDAK membunuh tab lain
+- Kesan: tutup tab = log keluar (tiada restore). Sama seperti tingkah laku
+  `gp_session` sedia ada, jadi tiada perubahan dari sudut pengguna
+- **JANGAN** tukar balik ke `browserLocalPersistence` — clash akan kembali
 
 ## finalSetup Path — WAJIB Per-Kejohanan (2026-07-07)
 
@@ -1286,6 +1296,60 @@ pattern sama macam pencatat (`['rasmi','diterima'].includes(heat.statusKeputusan
   Punca: bukan bug rules, tapi auth state bercelaru. Fix: guna Incognito
   window berasingan untuk pencatat/PP semasa testing (sudah didokumen di
   seksyen "Auth isolation" — CLAUDE.md sedia ada, disahkan semula hari ni)
+  **DIBAIKI 2026-08-31**: persistence per-tab — semua peranan boleh login
+  serentak dalam browser sama, Incognito tidak lagi perlu untuk ujian
+
+## Sesi Serentak — Banyak Slug / Banyak Peranan (fix 2026-08-31)
+
+**Aduan user:** login serentak banyak slug (a/b/c/d/e), atau admin+pencatat+PP
+tenant SAMA, berlaku clash. Target pengguna beginner — tak boleh suruh guna Incognito.
+
+### Punca teras
+Sistem ada DUA lapisan sesi dengan SKOP BERBEZA:
+| Lapisan | Skop | Lokasi |
+|---|---|---|
+| Firebase Auth (token) | **localStorage** — SELURUH browser | default `getAuth()` |
+| Sesi app (`gp_session`) | **sessionStorage** — per-tab | `AuthContext.jsx` |
+
+Firebase default `browserLocalPersistence` = SATU identiti untuk seluruh browser.
+Login kedua menimpa token login pertama. UI tab lama kekal nampak "sudah login"
+(sebab `gp_session` per-tab masih ada) tetapi setiap tulis Firestore terus gagal
+`permission-denied` — beginner nampak sistem rosak tanpa amaran.
+
+4 senario clash: (1) admin+PP tenant sama — `ensureAnonAuth` signOut paksa buang
+token admin; (2) pencatat+PP — UID anon kedua matikan yang pertama; (3) tenant A+B
+serentak; (4) logout satu tab membunuh SEMUA tab.
+
+### Fix
+1. **`firebase/config.js`** — `setPersistence(auth, browserSessionPersistence)`.
+   Token Firebase pindah ke sessionStorage = skop SAMA dengan `gp_session`.
+   Setiap tab dapat identiti sendiri. **Ini fix teras.**
+2. **`hooks/useSessionGuard.js`** (baru) — sahkan `auth.currentUser.uid` selari
+   dengan `userData.anonUid`. Tak selari → pulih SENYAP; gagal → hantar ke login
+   dengan mesej faham, bukan `permission-denied` mentah. Guna `onAuthStateChanged`
+   supaya F5 tidak tersalah anggap sesi mati.
+3. **`firebase/auth.js` → `pulihSesiAnon(sesi)`** (baru) — sign-in anon semula +
+   tulis session doc + selaraskan `anonUid` dalam `gp_session` (WAJIB, kalau tidak
+   logout cuba padam doc lama). PIN tidak disemak semula (sesi asal sudah sah);
+   rules tetap kuatkuasa — userDocId/kodAkses/kodSekolah palsu tetap DITOLAK.
+4. **`App.jsx`** — `<JagaSesi>` balut `RequirePencatat` + `RequirePengurus`.
+   Hook dipanggil dalam komponen berasingan (peraturan hooks — guard ada
+   `return` awal). Skrin "Menyemak sesi anda…" elak kelip ke login.
+
+### Disahkan
+- `test-sesi-multitab.cjs` — 20/20 (model browser: mod lama clash vs mod baru bersih)
+- `test-pulih-sesi-rules.cjs` — 24/24 emulator (sesi serentak, isolasi tenant,
+  pemulihan tidak boleh pintas rules)
+- `test-multitenant-rules.cjs` 30/30 + `test-anon-race.cjs` 11/11 — tiada regresi
+- **Browser sebenar**: 5 tab serentak, 5 UID berbeza, SEMUA `getIdToken(true)`
+  berjaya; tab admin kekal `isAnonymous:false` walau 4 login anon selepasnya;
+  logout tab 5 tidak jejas tab 1/3; `localStorage` kosong sepenuhnya
+
+### Nota
+- Satu UID anon BOLEH pegang sesi >1 tenant, tetapi hanya dengan kelayakan SAH
+  untuk tenant itu (sama seperti login biasa) — tulis data silang-tenant tetap
+  DITOLAK kedua-dua arah. Bukan kelemahan; disahkan dalam ujian rules.
+- **JANGAN** tukar balik `browserLocalPersistence` — clash kembali serta-merta
 
 ## Jangan Buat
 - Jangan bina `separuh_akhir` dalam dropdown manual
@@ -1295,4 +1359,6 @@ pattern sama macam pencatat (`['rasmi','diterima'].includes(heat.statusKeputusan
 - Jangan guna `h.peringkat` dalam heat doc — field itu tidak wujud, guna `h.fasa`
 - Jangan simpan `noKP` dalam heat docs, rekod, medal_tally, tuntutan (PDPA — public readable)
 - Jangan deploy ke peringkat daerah/negeri sebelum Firestore rules diketatkan
+- Jangan tukar Firebase Auth ke `browserLocalPersistence` — punca clash sesi
+  banyak slug/peranan (lihat "Sesi Serentak"); kekalkan `browserSessionPersistence`
 - **Jangan ubah kod tanpa izin user**
