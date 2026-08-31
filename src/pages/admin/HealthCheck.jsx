@@ -615,6 +615,105 @@ export default function HealthCheck() {
     setTfApplying(false)
   }
 
+  // ── PDF Kertas Keputusan AJK (dari hasil tfScan) ─────────────────────────────
+  // Senarai acara saringan yang peserta ≤ lorong, untuk dibawa ke mesyuarat AJK
+  // teknikal. Setiap baris ada ruang tandatangan/keputusan supaya AJK boleh tanda
+  // SETUJU / TOLAK sebelum admin apply. PDF sahaja — TIADA tulis Firestore.
+  const [tfPdfing, setTfPdfing] = useState(false)
+
+  async function tfCetakPDF() {
+    if (!tfScanList || tfScanList.length === 0) return
+    setTfPdfing(true)
+    try {
+      const { default: jsPDF } = await import('jspdf')
+      const { default: autoTable } = await import('jspdf-autotable')
+
+      // Nama kejohanan untuk header
+      let namaKej = ''
+      try {
+        const kejId = await getKejId()
+        const kSnap = await getDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId))
+        namaKej = kSnap.exists() ? (kSnap.data().namaKejohanan || kSnap.data().nama || '') : ''
+      } catch { /* tajuk kosong — bukan kritikal */ }
+
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const now = new Date().toLocaleString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+      pdf.setFillColor(0, 51, 153)
+      pdf.rect(0, 0, pageW, 22, 'F')
+      pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255)
+      pdf.text('KERTAS KEPUTUSAN AJK — ACARA SARINGAN PESERTA TIDAK CUKUP', pageW / 2, 10, { align: 'center' })
+      pdf.setFontSize(8); pdf.setFont('helvetica', 'normal')
+      pdf.text(namaKej || 'Kejohanan', pageW / 2, 16, { align: 'center' })
+
+      pdf.setTextColor(100, 100, 100); pdf.setFontSize(7.5)
+      pdf.text(`Dicetak: ${now}`, 14, 28)
+      const bilSelamat = tfScanList.filter(x => x.selamat).length
+      pdf.text(`${tfScanList.length} acara dikenal pasti · ${bilSelamat} sedia untuk tindakan`, pageW - 14, 28, { align: 'right' })
+
+      autoTable(pdf, {
+        startY: 32,
+        head: [['Bil', 'No', 'Nama Acara', 'Kat', 'Peserta', 'Lorong', 'Status Semasa', 'Cadangan', 'Keputusan AJK']],
+        body: tfScanList.map((it, i) => [
+          i + 1,
+          String(it.acara.noAcara ?? '—'),
+          it.acara.namaAcara || '—',
+          it.acara.kategoriKod || '—',
+          String(it.nP),
+          String(it.bilL),
+          it.selamat ? 'Sedia ditukar' : (it.gateGagal[0] || 'Disekat'),
+          it.selamat ? 'TERUS FINAL' : 'Semak manual',
+          '',   // ruang kosong — AJK tulis tangan
+        ]),
+        styles: { fontSize: 7.5, cellPadding: 2.5, valign: 'middle' },
+        headStyles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 10 },
+          1: { halign: 'center', cellWidth: 14, font: 'courier' },
+          2: { cellWidth: 62 },
+          3: { halign: 'center', cellWidth: 18, font: 'courier' },
+          4: { halign: 'center', cellWidth: 16 },
+          5: { halign: 'center', cellWidth: 16 },
+          6: { cellWidth: 52 },
+          7: { halign: 'center', cellWidth: 26, fontStyle: 'bold' },
+          8: { cellWidth: 40 },   // ruang tulis tangan
+        },
+        // Warna baris ikut status: hijau = selamat, kelabu = disekat
+        didParseCell: (data) => {
+          if (data.section !== 'body') return
+          const it = tfScanList[data.row.index]
+          if (!it) return
+          if (it.selamat && data.column.index === 7) {
+            data.cell.styles.textColor = [15, 123, 90]
+          } else if (!it.selamat) {
+            data.cell.styles.textColor = [120, 120, 120]
+          }
+        },
+      })
+
+      // Blok tandatangan
+      let y = (pdf.lastAutoTable?.finalY || 60) + 12
+      const pageH = pdf.internal.pageSize.getHeight()
+      if (y > pageH - 32) { pdf.addPage(); y = 20 }
+      pdf.setDrawColor(180, 180, 180); pdf.setTextColor(80, 80, 80); pdf.setFontSize(8)
+      pdf.line(14, y + 12, 78, y + 12)
+      pdf.text('Pengerusi AJK Teknikal', 14, y + 17)
+      pdf.line(100, y + 12, 164, y + 12)
+      pdf.text('Setiausaha', 100, y + 17)
+      pdf.line(186, y + 12, 250, y + 12)
+      pdf.text('Tarikh', 186, y + 17)
+
+      pdf.setFontSize(7); pdf.setTextColor(130, 130, 130)
+      pdf.text('Nota: Acara berstatus "Sedia ditukar" boleh terus diproses di Health Check selepas kelulusan AJK.', 14, y + 25)
+
+      pdf.save(`Keputusan_AJK_Terus_Final_${new Date().toISOString().slice(0, 10)}.pdf`)
+    } catch (e) {
+      setTfLog(l => [...l, `❌ Ralat PDF: ${e.message}`])
+    }
+    setTfPdfing(false)
+  }
+
   // ── Pindah Peserta Antara Heat ───────────────────────────────────────────────
   const [pindahAcaraId, setPindahAcaraId] = useState('')
   const [pindahNoBib,   setPindahNoBib]   = useState('')
@@ -1487,7 +1586,13 @@ export default function HealthCheck() {
                 </div>
               ) : (
                 <>
-                  <p className="text-[10px] font-bold text-gray-500 uppercase">{tfScanList.length} acara saringan · peserta ≤ lorong</p>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-[10px] font-bold text-gray-500 uppercase">{tfScanList.length} acara saringan · peserta ≤ lorong</p>
+                    <button onClick={tfCetakPDF} disabled={tfPdfing}
+                      className="px-3 py-1.5 bg-white border border-blue-300 hover:bg-blue-50 text-blue-700 text-[10px] font-bold rounded-lg disabled:opacity-40 transition-colors whitespace-nowrap">
+                      {tfPdfing ? 'Menjana...' : '📄 Cetak Kertas Keputusan AJK'}
+                    </button>
+                  </div>
                   {tfScanList.map((it) => (
                     <div key={it.acara.id} className="border border-gray-200 rounded-lg px-3 py-2 space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
