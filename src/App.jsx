@@ -34,6 +34,7 @@ const Olahragawan        = lazy(() => import('./pages/admin/Olahragawan'))
 const AnalisaPingat      = lazy(() => import('./pages/admin/AnalisaPingat'))
 const ResetSistem        = lazy(() => import('./pages/admin/ResetSistem'))
 const HealthCheck        = lazy(() => import('./pages/admin/HealthCheck'))
+const SemakAcaraSihat    = lazy(() => import('./pages/admin/SemakAcaraSihat'))
 const PencatatLayout     = lazy(() => import('./pages/pencatat/PencatatLayout'))
 const PencatatHome       = lazy(() => import('./pages/pencatat/PencatatHome'))
 const PencatatInputKej   = lazy(() => import('./pages/pencatat/PencatatDashboard'))
@@ -296,6 +297,7 @@ function AppRoutes() {
         <Route path="/admin/analisa-pingat" element={<AdminRoute><AnalisaPingat /></AdminRoute>} />
         <Route path="/admin/reset" element={<AdminRoute><ResetSistem /></AdminRoute>} />
         <Route path="/admin/health" element={<AdminRoute><HealthCheck /></AdminRoute>} />
+        <Route path="/admin/semak-acara" element={<AdminRoute><SemakAcaraSihat /></AdminRoute>} />
         <Route path="/admin/analisis-pendaftaran" element={<AdminRoute><AnalisisPendaftaran /></AdminRoute>} />
         <Route path="/admin/backup" element={<AdminRoute><Backup /></AdminRoute>} />
         <Route path="/admin/panduan" element={<AdminRoute><Panduan /></AdminRoute>} />

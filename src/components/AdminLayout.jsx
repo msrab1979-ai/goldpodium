@@ -23,6 +23,7 @@ const NAV = [
       { label: 'Acara & Jadual',  icon: '📅', path: '/admin/jadual' },
       { label: 'Start List',          icon: '📋', path: '/admin/startlist' },
       { label: 'Pengesahan Peserta', icon: '✅', path: '/admin/pengesahan-peserta' },
+      { label: 'Semak Acara',    icon: '🔍', path: '/admin/semak-acara' },
       { label: 'Pengguna',     icon: '👤', path: '/admin/pengguna' },
       { label: 'Pendaftaran',  icon: '📝', path: '/admin/analisis-pendaftaran' },
       { label: 'Rekod',        icon: '🎖️', path: '/admin/rekod' },
