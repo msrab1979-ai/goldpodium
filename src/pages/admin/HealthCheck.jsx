@@ -398,6 +398,17 @@ export default function HealthCheck() {
     const heatSnap = await getDocs(query(collection(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat'), where('aceraId', '==', acara.id)))
     const adaKeputusan = heatSnap.docs.some(h => ['rasmi', 'diterima'].includes(h.data().statusKeputusan))
 
+    // Heat berfasa 'heat' (saringan) — perlu ditukar ke 'final' serentak dengan
+    // peringkat. Kalau tidak, `grantMedal` gagal syarat KEDUA dan pingat TIDAK
+    // masuk walaupun peringkat sudah betul:
+    //   admin/InputKeputusan   : grantMedal = !isSaringan && heat.fasa === 'final'|'terus_final'
+    //   pencatat/InputKeputusan: grantMedal = !isSaringan && (fasa final || heats.length === 1)
+    // Sengaja dikumpul walau acara sudah berperingkat final — panel Semak Status
+    // menggunakannya untuk mengesan acara yang sudah ditukar tetapi fasa tertinggal.
+    const heatFasaSalah = heatSnap.docs
+      .filter(h => h.data().fasa === 'heat')
+      .map(h => ({ id: h.id, noHeat: h.data().noHeat ?? null }))
+
     const kodSekolahAcara = [...new Set(pesertaAcara.map(p => p.kodSekolah).filter(Boolean))]
     let bypassAda = false
     const bypassSekolah = []
@@ -423,7 +434,8 @@ export default function HealthCheck() {
     if (bypassAda)
       gateGagal.push(`Daftar masih DIBUKA (bypass ON): ${bypassSekolah.join(', ')} — tutup daftar dulu, peserta boleh berubah.`)
 
-    return { acara, nP, bilL, anakFinal, anakKosong, adaKeputusan, bypassAda, gateGagal, selamat: gateGagal.length === 0, kejId }
+    return { acara, nP, bilL, anakFinal, anakKosong, adaKeputusan, bypassAda, heatFasaSalah,
+             gateGagal, selamat: gateGagal.length === 0, kejId }
   }
 
   async function tfJalanSemak() {
@@ -589,18 +601,36 @@ export default function HealthCheck() {
   async function tfJadikanFinal(nilai) {
     const n = nilai || tfSemak
     if (!n || !n.selamat) return
-    const { acara, anakFinal, anakKosong, kejId } = n
+    const { acara, anakFinal, anakKosong, kejId, heatFasaSalah = [] } = n
     let padamAnak = false
     if (anakFinal && anakKosong) {
       padamAnak = window.confirm(`Acara #${acara.noAcara} ada anak final KOSONG (#${anakFinal.noAcara}). Padam anak final ini sekali?\n\nOK = padam · Batal = biar (cuma tukar peringkat)`)
     }
-    if (!window.confirm(`Jadikan acara #${acara.noAcara} ${acara.namaAcara} TERUS FINAL?\n\nPeringkat ${acara.peringkat} → akhir. Heat & peserta KEKAL.${padamAnak ? `\nAnak final #${anakFinal.noAcara} akan DIPADAM.` : ''}`)) return
+    const nFasa = heatFasaSalah.length
+    if (!window.confirm(
+      `Jadikan acara #${acara.noAcara} ${acara.namaAcara} TERUS FINAL?\n\n` +
+      `Peringkat ${acara.peringkat} → akhir. Peserta & keputusan KEKAL.` +
+      (nFasa ? `\n${nFasa} heat: fasa 'heat' → 'final' (WAJIB, kalau tidak pingat tak masuk).` : '') +
+      (padamAnak ? `\nAnak final #${anakFinal.noAcara} akan DIPADAM.` : '')
+    )) return
     setTfApplying(true)
     setTfLog([`🔧 Memproses acara #${acara.noAcara}...`])
     try {
       await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', acara.id),
         { peringkat: 'akhir', updatedAt: serverTimestamp() })
       setTfLog(l => [...l, `✓ Peringkat ditukar → akhir (terus final)`])
+
+      // Betulkan fasa heat SERENTAK — inilah yang menentukan `grantMedal`.
+      // Tanpa langkah ini, peringkat betul tetapi pingat tetap TIDAK masuk.
+      if (heatFasaSalah.length) {
+        const batch = writeBatch(db)
+        heatFasaSalah.forEach(h => {
+          batch.update(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', h.id),
+            { fasa: 'final', updatedAt: serverTimestamp() })
+        })
+        await batch.commit()
+        setTfLog(l => [...l, `✓ ${heatFasaSalah.length} heat: fasa 'heat' → 'final'`])
+      }
       if (padamAnak) {
         await deleteDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', anakFinal.id))
         setTfLog(l => [...l, `✓ Anak final #${anakFinal.noAcara} dipadam`])

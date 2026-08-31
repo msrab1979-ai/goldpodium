@@ -154,6 +154,35 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 - `grantMedal` BUKAN field doc — dikira dari peringkat+fasa masa `runPostRasmi`. Cukup ubah
   `peringkat`. Detail penuh + kes 111/121 di memori `project_saringan_tak_cukup.md`.
 
+### heat.fasa WAJIB selaras dengan peringkat — fix 2026-08-31
+**Punca "pingat tak masuk" walau peringkat betul.** `grantMedal` perlukan DUA syarat:
+- `admin/InputKeputusan.jsx`: `!isSaringan && (heat.fasa==='final'||'terus_final')`
+- `pencatat/InputKeputusan.jsx`: `!isSaringan && (fasaFinal || heats.length===1)`
+
+Acara `peringkat:'akhir'` yang heatnya masih `fasa:'heat'` GAGAL syarat kedua →
+pingat TIDAK masuk, dan puncanya tidak jelas kepada pencatat. Rekod TIDAK terjejas
+(guna `acaraDoc.peringkat` sahaja, `postRasmiUtils` ~baris 248).
+
+**Fix 1 — panel:** `tfJadikanFinal` (HealthCheck) kini tulis `heat.fasa='final'`
+serentak dengan `peringkat='akhir'` (batch). Heat ber-`statusKeputusan` rasmi/diterima
+DILANGKAU (pingat sudah dikira — perlu rollback+kira semula, bukan tukar medan).
+`tfNilaiAcara` pulangkan `heatFasaSalah[]`; mesej confirm papar bilangan heat terlibat.
+
+**Fix 2 — data sedia ada:** `fix-fasa-heat.mjs` imbas SEMUA tenant, betulkan
+`fasa:'heat'` → `'final'` untuk acara berperingkat final. DRY RUN lalai, `--write`
+untuk laksana, `--undo` untuk pulih. Cipta sesi anon sementara (rules perlukan
+session doc) dan buangnya selepas selesai.
+
+**Dilaksana live 2026-08-31:** mssdppki #108 (5 heat) + #115 (14 heat) = 19 heat.
+Disahkan: grantMedal FALSE→TRUE; 143 peserta + lorong + keputusan UTUH; imbasan
+ulangan 0 kes tertinggal.
+
+**Ujian:** `test-grantmedal.cjs` 26/26 (formula kedua-dua laluan), 
+`test-fasa-medal-e2e.mjs` 13/13 (emulator, panggil `runPostRasmi` SEBENAR —
+sebelum fix 0 pingat, selepas fix 3 pingat betul, saringan tetap 0).
+
+**JANGAN** tukar `peringkat` tanpa menyelaraskan `heat.fasa` — itulah puncanya.
+
 ### Kaedah SKRIP bila panel SEKAT (heat sudah rasmi) — 2026-07-27
 Panel HealthCheck SENGAJA sekat acara yg heat `statusKeputusan` rasmi/diterima (gate ke-3,
 elak rosak medal). Untuk kes begini (keputusan DAH masuk, cuma `peringkat` tertinggal
@@ -1359,6 +1388,8 @@ serentak; (4) logout satu tab membunuh SEMUA tab.
 - Jangan guna `h.peringkat` dalam heat doc — field itu tidak wujud, guna `h.fasa`
 - Jangan simpan `noKP` dalam heat docs, rekod, medal_tally, tuntutan (PDPA — public readable)
 - Jangan deploy ke peringkat daerah/negeri sebelum Firestore rules diketatkan
+- Jangan tukar `acara.peringkat` ke final tanpa menyelaras `heat.fasa` — `grantMedal`
+  perlukan KEDUA-DUANYA; kalau tidak pingat tak masuk (lihat "heat.fasa WAJIB selaras")
 - Jangan tukar Firebase Auth ke `browserLocalPersistence` — punca clash sesi
   banyak slug/peranan (lihat "Sesi Serentak"); kekalkan `browserSessionPersistence`
 - **Jangan ubah kod tanpa izin user**
