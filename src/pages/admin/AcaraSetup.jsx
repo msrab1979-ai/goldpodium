@@ -22,6 +22,7 @@ import {
   serverTimestamp, query, orderBy, where, writeBatch, getDoc, deleteField,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { sahkanNoPapar } from '../../utils/acaraPaparUtils'
 import { useAuth } from '../../context/AuthContext'
 import { rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import jsPDF from 'jspdf'
@@ -276,6 +277,7 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
     peringkatMode:     peringkatMode0,
     parentAcaraId:     acara.parentAcaraId     || '',
     adaHandTiming:     acara.adaHandTiming     || false,
+    noAcaraPapar:      acara.noAcaraPapar      || '',
     isIndividu:        acara.isIndividu ?? (acara.jenisAcara !== 'relay'),
   })
   const [saving, setSaving]             = useState(false)
@@ -396,10 +398,20 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
         unitUkuran:        isPadang ? 'm' : 's',
         hadAtletPerSekolah: Number(form.hadAtletPerSekolah),
         adaHandTiming:     form.adaHandTiming || false,
+        // Nombor PAPARAN sahaja — ID dokumen tidak pernah berubah.
+        // deleteField() bila kosong supaya medan tidak tinggal kosong.
+        noAcaraPapar:      String(form.noAcaraPapar || '').trim() || deleteField(),
         isIndividu:        form.isIndividu,
         isTerbuka:         isTerbuka,
         kategoriTerbuka:   isTerbuka ? katTerbuka : [],
         updatedAt:         serverTimestamp(),
+      }
+      // Sahkan nombor paparan sebelum tulis — tolak perlanggaran yang
+      // akan menyebabkan dua baris kelihatan sama kepada pengguna.
+      {
+        const semak = sahkanNoPapar(form.noAcaraPapar, { ...acara, id: docId, noAcara: docId }, acaraList || [])
+        if (!semak.ok) { setErr(semak.ralat); setSaving(false); return }
+        updates.noAcaraPapar = semak.nilai ? semak.nilai : deleteField()
       }
       await updateDoc(doc(db, aPath, docId), updates)
       await createNextAcara(docId)
@@ -412,10 +424,19 @@ function EditAcaraRow({ acara, schoolId, kejId, kategoriList, acaraList, onSaved
   return (
     <>
       <tr className="bg-amber-50/60 border-b border-amber-200/40">
-        {/* No — read-only (tukar no = guna modal penuh) */}
+        {/* No — ID tetap (tukar ID = guna modal penuh).
+            Nombor PAPARAN pilihan: yang dilihat penonton dalam jadual, start
+            list dan PDF. ID dokumen tidak berubah, jadi heat, pendaftaran,
+            mata dan medal tally kekal utuh. */}
         <td className="px-3 py-1.5">
           <span className="font-black text-[#003399] text-xs">{acara.noAcara}</span>
-          <p className="text-[8px] text-gray-400 leading-none mt-0.5">tetap</p>
+          <p className="text-[8px] text-gray-400 leading-none mt-0.5">ID tetap</p>
+          <input type="text" value={form.noAcaraPapar}
+            onChange={e => set('noAcaraPapar', e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onCancel() }}
+            placeholder="papar"
+            title="Nombor paparan (pilihan). Kosongkan untuk guna nombor sebenar."
+            className="mt-1 w-14 bg-white border border-blue-200 rounded px-1 py-0.5 text-[10px] text-center font-bold text-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-400" />
         </td>
         {/* Masa */}
         <td className="px-1.5 py-1.5">

@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, getDocsFromServer, query, where, doc, deleteDoc, updateDoc, setDoc, getDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
+import { noAcaraPapar, sahkanNoPapar, adaNoPapar } from '../../utils/acaraPaparUtils'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -435,7 +436,7 @@ export default function HealthCheck() {
       gateGagal.push(`Daftar masih DIBUKA (bypass ON): ${bypassSekolah.join(', ')} — tutup daftar dulu, peserta boleh berubah.`)
 
     return { acara, nP, bilL, anakFinal, anakKosong, adaKeputusan, bypassAda, heatFasaSalah,
-             gateGagal, selamat: gateGagal.length === 0, kejId }
+             acaraList, gateGagal, selamat: gateGagal.length === 0, kejId }
   }
 
   async function tfJalanSemak() {
@@ -613,12 +614,35 @@ export default function HealthCheck() {
       (nFasa ? `\n${nFasa} heat: fasa 'heat' → 'final' (WAJIB, kalau tidak pingat tak masuk).` : '') +
       (padamAnak ? `\nAnak final #${anakFinal.noAcara} akan DIPADAM.` : '')
     )) return
+    // Nombor PAPARAN (pilihan) — ID dokumen kekal, hanya teks yang dilihat orang
+    // berubah. Menukar ID sebenar akan meyatimkan heat, pendaftaran, mata dan
+    // medal tally, jadi ia sengaja TIDAK ditawarkan.
+    let noPaparBaru = null
+    const cadangan = anakFinal ? String(anakFinal.noAcara ?? '') : ''
+    const jawapan = window.prompt(
+      `Nombor PAPARAN untuk acara ini?\n\n` +
+      `Kosongkan = kekal #${acara.noAcara} (disyorkan).\n` +
+      (cadangan ? `Taip ${cadangan} untuk papar sebagai nombor final.\n` : '') +
+      `\nNota: ID sebenar kekal ${acara.id} — start list, keputusan dan pingat tidak terjejas.`,
+      noAcaraPapar(acara) === String(acara.noAcara ?? '') ? '' : noAcaraPapar(acara)
+    )
+    if (jawapan === null) return   // admin batal
+    {
+      const semak = sahkanNoPapar(jawapan, acara, n.acaraList || [])
+      if (!semak.ok) { setTfLog([`❌ ${semak.ralat}`]); return }
+      noPaparBaru = semak.nilai
+    }
+
     setTfApplying(true)
     setTfLog([`🔧 Memproses acara #${acara.noAcara}...`])
     try {
+      // deleteField() bila kosong — elak menyimpan medan kosong yang tiada makna
       await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'acara', acara.id),
-        { peringkat: 'akhir', updatedAt: serverTimestamp() })
+        { peringkat: 'akhir',
+          noAcaraPapar: noPaparBaru ? noPaparBaru : deleteField(),
+          updatedAt: serverTimestamp() })
       setTfLog(l => [...l, `✓ Peringkat ditukar → akhir (terus final)`])
+      if (noPaparBaru) setTfLog(l => [...l, `✓ Nombor paparan → ${noPaparBaru} (ID sebenar kekal ${acara.id})`])
 
       // Betulkan fasa heat SERENTAK — inilah yang menentukan `grantMedal`.
       // Tanpa langkah ini, peringkat betul tetapi pingat tetap TIDAK masuk.
@@ -1627,7 +1651,14 @@ export default function HealthCheck() {
                     <div key={it.acara.id} className="border border-gray-200 rounded-lg px-3 py-2 space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-[11px] font-bold text-gray-800 truncate">#{it.acara.noAcara} {it.acara.namaAcara}</p>
+                          <p className="text-[11px] font-bold text-gray-800 truncate">
+                            #{it.acara.noAcara} {it.acara.namaAcara}
+                            {adaNoPapar(it.acara) && (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[9px] font-bold">
+                                papar #{noAcaraPapar(it.acara)}
+                              </span>
+                            )}
+                          </p>
                           <p className="text-[10px] text-gray-500">
                             <span className="font-mono">{it.acara.peringkat}</span> · <span className="font-bold text-emerald-600">{it.nP}</span>/{it.bilL} lorong
                             {it.anakFinal && <> · anak #{it.anakFinal.noAcara} {it.anakKosong ? '(kosong)' : '(ADA)'}</>}

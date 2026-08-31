@@ -15,6 +15,7 @@ import {
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { db } from '../../firebase/config'
+import { noAcaraPapar } from '../../utils/acaraPaparUtils'
 import { useAuth } from '../../context/AuthContext'
 import { withPortalView } from '../../hooks/useSchoolId'
 import { selectFinalists } from '../../utils/finalistUtils'
@@ -197,7 +198,7 @@ async function cetakHadiahPDF({
     // Info acara
     const col2 = M + 32
     const infoRows = [
-      ['No. Acara', String(acara.noAcara || '—')],
+      ['No. Acara', String(noAcaraPapar(acara) || '—')],
       ['Kategori',  katLabel],
       ['Acara',     acara.namaAcara || '—'],
     ]
@@ -355,7 +356,7 @@ async function cetakHadiahPDF({
     pdf.setTextColor(0, 0, 0)
   }
 
-  pdf.save(`Keputusan_No${acara.noAcara || 'Acara'}_${katLabel}.pdf`)
+  pdf.save(`Keputusan_No${noAcaraPapar(acara) || 'Acara'}_${katLabel}.pdf`)
 }
 
 // ─── Komponen ────────────────────────────────────────────────────────────────
@@ -660,7 +661,7 @@ export default function CetakanHadiah() {
                   }`}
                 >
                   <p className={`text-[10px] font-mono font-bold ${isActive ? 'text-blue-200' : 'text-[#003399]'}`}>
-                    No. {a.noAcara}
+                    No. {noAcaraPapar(a)}
                   </p>
                   <p className={`text-xs font-semibold leading-tight mt-0.5 ${isActive ? 'text-white' : 'text-gray-800'}`}>
                     {a.namaAcara}

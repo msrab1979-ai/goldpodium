@@ -154,6 +154,37 @@ Hanya 4 pilihan — `separuh_akhir` TIDAK boleh dibuat manual:
 - `grantMedal` BUKAN field doc — dikira dari peringkat+fasa masa `runPostRasmi`. Cukup ubah
   `peringkat`. Detail penuh + kes 111/121 di memori `project_saringan_tak_cukup.md`.
 
+### Nombor PAPARAN acara (`noAcaraPapar`) — 2026-08-31
+Admin boleh pilih nombor yang DILIHAT orang tanpa menukar ID dokumen.
+
+**Kenapa bukan tukar ID:** `noAcara` ialah doc ID (`acara/101`). Firestore tak
+boleh rename doc, dan nombor itu dirujuk 6 tempat — `heat.aceraId`, `heatId`
+(`101-H1`), `pendaftaran.acaraIds[]`, `parentAcaraId`, `mata.acaraDetail_101`,
+`medal_tally.contrib_101-H1_*`. Tukar ID = semua jadi yatim.
+
+**Mekanisme:** medan PILIHAN `acara.noAcaraPapar`. Util kongsi
+`src/utils/acaraPaparUtils.js`:
+- `noAcaraPapar(acara)` — nombor untuk PAPARAN (fallback ke `noAcara`)
+- `adaNoPapar(acara)` — adakah papar ≠ sebenar (untuk lencana admin)
+- `sahkanNoPapar(nilai, acara, acaraList)` — tolak perlanggaran dgn ID sebenar
+  atau nombor papar acara lain; kosong = kembali ke nombor sebenar
+
+**PERATURAN:** guna `noAcaraPapar()` HANYA untuk teks yang dilihat pengguna.
+JANGAN guna untuk carian, padanan, atau kunci dokumen — itu kekal `acara.id`.
+
+**Disambung:** SchoolLanding (kad + PDF jadual), CetakAcara, CetakanHadiah,
+CetakKeputusan, HealthCheck (prompt semasa ⚡ Terus Final + lencana biru),
+AcaraSetup (input dalam baris edit, bawah "ID tetap").
+
+**Serasi belakang:** acara tanpa medan ini berkelakuan PERSIS seperti sebelum —
+tiada migrasi. Laluan edit AcaraSetup guna `updateDoc` senarai medan tetap, jadi
+medan ini tidak terpadam semasa edit biasa. `deleteField()` bila dikosongkan.
+
+**Ujian:** `test-no-papar.cjs` 31/31 (serasi belakang, kes tepi, pengesahan,
+kontrak "papar bukan rujukan") · `test-no-papar-selamat.mjs` 19/19 emulator —
+disahkan ID doc tak berubah, heat/pendaftaran/parent kekal padan, pingat MASIH
+masuk via `runPostRasmi` sebenar, buang medan pulihkan keadaan asal.
+
 ### heat.fasa WAJIB selaras dengan peringkat — fix 2026-08-31
 **Punca "pingat tak masuk" walau peringkat betul.** `grantMedal` perlukan DUA syarat:
 - `admin/InputKeputusan.jsx`: `!isSaringan && (heat.fasa==='final'||'terus_final')`
@@ -1388,6 +1419,7 @@ serentak; (4) logout satu tab membunuh SEMUA tab.
 - Jangan guna `h.peringkat` dalam heat doc — field itu tidak wujud, guna `h.fasa`
 - Jangan simpan `noKP` dalam heat docs, rekod, medal_tally, tuntutan (PDPA — public readable)
 - Jangan deploy ke peringkat daerah/negeri sebelum Firestore rules diketatkan
+- Jangan guna `noAcaraPapar()` untuk carian/padanan/kunci doc — paparan sahaja
 - Jangan tukar `acara.peringkat` ke final tanpa menyelaras `heat.fasa` — `grantMedal`
   perlukan KEDUA-DUANYA; kalau tidak pingat tak masuk (lihat "heat.fasa WAJIB selaras")
 - Jangan tukar Firebase Auth ke `browserLocalPersistence` — punca clash sesi

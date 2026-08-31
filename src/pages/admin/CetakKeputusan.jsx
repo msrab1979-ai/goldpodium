@@ -14,6 +14,7 @@ import {
   collection, getDocs, getDoc, doc, query, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { noAcaraPapar } from '../../utils/acaraPaparUtils'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -371,7 +372,7 @@ export default function CetakKeputusan() {
         if (!isSelesai(heat)) {
           const janLbl = acara.jantina === 'L' ? 'Lelaki' : acara.jantina === 'P' ? 'Perempuan' : ''
           const title  = [
-            acara.noAcara ? `[${acara.noAcara}]` : '',
+            acara.noAcara ? `[${noAcaraPapar(acara)}]` : '',
             acara.namaAcara || '', janLbl,
             acara.kategoriKod ? `Kat ${acara.kategoriKod}` : '',
             `— ${heatLabel(heat, heats.length)}`,
@@ -419,7 +420,7 @@ export default function CetakKeputusan() {
         // Header acara + label heat
         const janLabel   = acara.jantina === 'L' ? 'Lelaki' : acara.jantina === 'P' ? 'Perempuan' : ''
         const acaraTitle = [
-          acara.noAcara ? `[${acara.noAcara}]` : '',
+          acara.noAcara ? `[${noAcaraPapar(acara)}]` : '',
           acara.namaAcara || '',
           janLabel,
           acara.kategoriKod ? `Kat ${acara.kategoriKod}` : '',
@@ -621,7 +622,7 @@ export default function CetakKeputusan() {
 
             if (!isSelesai(heat)) {
               rows.push([
-                acara.noAcara || '', acara.namaAcara || '', acara.kategoriKod || '',
+                noAcaraPapar(acara) || '', acara.namaAcara || '', acara.kategoriKod || '',
                 acara.jantina === 'L' ? 'Lelaki' : acara.jantina === 'P' ? 'Perempuan' : '',
                 heatLabel(heat, heats.length),
                 '', 'BELUM ADA KEPUTUSAN', '', '', '', '',

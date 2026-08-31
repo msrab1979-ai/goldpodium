@@ -5,6 +5,7 @@ import {
   orderBy, limit, where, updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
+import { noAcaraPapar } from '../utils/acaraPaparUtils'
 import { useAuth } from '../context/AuthContext'
 import { hashPin } from '../utils/hashPin'
 import { usePWATitle } from '../hooks/usePWATitle'
@@ -595,7 +596,8 @@ function KeputusanExpanded({ heats, acara, sekolahMap, isLoading, finalSetup, re
 
 function AcaraTableRow({ item, isExpanded, onToggle, heats, isLoading, sekolahMap, kategoriMap, finalSetup, rekodDNK, schoolId }) {
   const { acara, masaMula } = item
-  const noAcara      = acara.noAcara || acara.id || '—'
+  // Paparan guna nombor papar; isihan & carian kekal guna nombor sebenar
+  const noAcara      = noAcaraPapar(acara) || '—'
   const status       = acara.statusAcara || 'akan_datang'
   const hasResult    = ['ada_keputusan', 'rasmi', 'tidak_rasmi'].includes(status)
   const adaHeat      = (heats || []).some(h => (h.peserta || []).length > 0)
@@ -1561,7 +1563,7 @@ export default function SchoolLanding() {
             : a.peringkat === 'final'         ? 'Final'
             : a.parentAcaraId ? 'Final' : 'Terus Final'
           return [
-            a.noAcara    || '—',
+            noAcaraPapar(a) || '—',
             a.masa       || '—',
             a.namaAcara  || '—',
             a.kategoriKod || '—',

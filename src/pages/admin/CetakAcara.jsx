@@ -14,6 +14,7 @@ import {
   collection, getDocs, getDoc, doc, query, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase/config'
+import { noAcaraPapar } from '../../utils/acaraPaparUtils'
 import { useAuth } from '../../context/AuthContext'
 import { withPortalView } from '../../hooks/useSchoolId'
 import { useNavigate } from 'react-router-dom'
@@ -89,7 +90,7 @@ function cetakSlipHadiah({ acara, pesertaFinal, rekodSemasa, rekodTuntutan, cfg,
   // ── Maklumat Acara ──
   pdf.setFontSize(12)
   pdf.setFont('helvetica', 'bold')
-  pdf.text(`No. ${acara.noAcara || '—'} — ${acara.namaAcara}`, pageW / 2, y, { align: 'center' })
+  pdf.text(`No. ${noAcaraPapar(acara) || '—'} — ${acara.namaAcara}`, pageW / 2, y, { align: 'center' })
   y += 6
   pdf.setFontSize(9)
   pdf.setFont('helvetica', 'normal')
@@ -177,7 +178,7 @@ function cetakSlipHadiah({ acara, pesertaFinal, rekodSemasa, rekodTuntutan, cfg,
     pdf.setTextColor(0, 0, 0)
   }
 
-  pdf.save(`SlipHadiah_${acara.noAcara || acara.namaAcara}.pdf`)
+  pdf.save(`SlipHadiah_${noAcaraPapar(acara) || acara.namaAcara}.pdf`)
 }
 
 // ─── PDF: Kertas Juruhebah ────────────────────────────────────────────────────
@@ -217,7 +218,7 @@ function cetakKertasJuruhebah({ acara, pesertaFinal, rekodSemasa, rekodTuntutan,
   // ── No & Nama Acara (besar) ──
   pdf.setFontSize(18)
   pdf.setFont('helvetica', 'bold')
-  pdf.text(`ACARA ${acara.noAcara || '—'}`, pageW / 2, y, { align: 'center' })
+  pdf.text(`ACARA ${noAcaraPapar(acara) || '—'}`, pageW / 2, y, { align: 'center' })
   y += 9
 
   pdf.setFontSize(16)
@@ -307,7 +308,7 @@ function cetakKertasJuruhebah({ acara, pesertaFinal, rekodSemasa, rekodTuntutan,
     pdf.setTextColor(0, 0, 0)
   }
 
-  pdf.save(`Juruhebah_${acara.noAcara || acara.namaAcara}.pdf`)
+  pdf.save(`Juruhebah_${noAcaraPapar(acara) || acara.namaAcara}.pdf`)
 }
 
 // ─── PDF: Borang Teknikal Padang ──────────────────────────────────────────────
