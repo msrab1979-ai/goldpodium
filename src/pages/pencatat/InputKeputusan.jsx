@@ -11,7 +11,7 @@
  *
  * Flow: Senarai acara (hari tabs | search | accordion kategori)
  *       → Pilih acara → Tab heat (atau Mod Semua Peserta)
- *       → Input → Simpan Draf / Hantar Rasmi
+ *       → Input → Simpan & Hantar (rasmi) — tiada Simpan Draf (user keliru)
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
@@ -19,9 +19,9 @@ import {
   collection, getDocs, getDoc, doc, updateDoc, setDoc, deleteDoc,
   query, where, orderBy, serverTimestamp, onSnapshot, runTransaction,
 } from 'firebase/firestore'
-import { selectFinalists, getFinalistSetup, serpentineSeed } from '../../utils/finalistUtils'
+import { selectFinalists, getFinalistSetup, serpentineSeed, bandingFinalis, infoWildcardTanpaMasa } from '../../utils/finalistUtils'
 import { assignLorongFinal, detectJenisLorong, WA_LORONG_KUMPULAN_DEFAULT, deserializeKumpulan, resolveIsLompatTinggi, buatStartListPDFUnified } from '../../utils/startListPdfUtils'
-import { runPostRasmi, rollbackPostRasmi } from '../../utils/postRasmiUtils'
+import { runPostRasmi, rollbackPostRasmi, adaKeputusan, bandingTanpaMasa } from '../../utils/postRasmiUtils'
 import { db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { withPortalView } from '../../hooks/useSchoolId'
@@ -48,7 +48,9 @@ function fmtJam(d) {
 
 function parseMasaInput(raw) {
   if (raw === '' || raw == null) return ''
-  const s = String(raw).trim().replace(/:/g, '.')
+  // Buang suffix 's' dari paparan fmtMasaDisplay ("12.50s") — kalau tidak,
+  // klik semula kotak masa → "50s" dibaca 0 → masa jadi 12.00
+  const s = String(raw).trim().replace(/s$/i, '').trim().replace(/:/g, '.')
   const parts = s.split('.')
   if (parts.length === 3) {
     const mm = Number(parts[0]) || 0
@@ -73,6 +75,11 @@ function fmtMasaDisplay(saat) {
   const m = Math.floor(n / 60)
   const s = (n % 60).toFixed(2).padStart(5, '0')
   return m > 0 ? `${m}:${s}` : `${Number(s).toFixed(2)}s`
+}
+
+// Lorong tertinggi yang ada peserta dalam heat (0 jika tiada)
+function lorongTertinggi(heat) {
+  return Math.max(0, ...(heat?.peserta || []).map(p => Number(p.lorong) || 0))
 }
 
 // ─── Ranking helpers ──────────────────────────────────────────────────────────
@@ -472,7 +479,9 @@ function InputSemuaPeserta({ heats, acara, keputusanSemua, onChange, sekolahMap 
 // ─── Input Lorong ─────────────────────────────────────────────────────────────
 
 function InputLorong({ acara, heat, keputusan, onChange, onWind, windSpeed, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
-  const bilLorong   = acara.bilanganLorong || heat.bilanganLorong || 8
+  // Jangan sorok atlet: heat boleh dijana dgn lorong lebih dari tetapan acara
+  // (admin ubah kotak lorong dalam modal Jana Heat) — papar sampai lorong tertinggi heat
+  const bilLorong   = Math.max(acara.bilanganLorong || heat.bilanganLorong || 8, lorongTertinggi(heat))
   const isWind      = acara.isWindReading || false
   const overflowSlots = (heat.peserta || [])
     .map((p, i) => (p.lorong == null ? `overflow_${p.noBib || i}` : null))
@@ -963,7 +972,7 @@ function InputMassStart({ acara, heat, keputusan, onChange, sekolahMap = {}, bib
 // ─── Input Relay ──────────────────────────────────────────────────────────────
 
 function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPrefixMap = {}, carianBib = '' }) {
-  const bilPasukan = acara.bilPasukan || heat.bilPasukan || acara.bilanganLorong || 8
+  const bilPasukan = Math.max(acara.bilPasukan || heat.bilPasukan || acara.bilanganLorong || 8, lorongTertinggi(heat))
   const overflowSlots = (heat.peserta || [])
     .map((p, i) => (p.lorong == null ? `overflow_${p.noBib || i}` : null))
     .filter(Boolean)
@@ -1106,7 +1115,7 @@ function InputRelay({ acara, heat, keputusan, onChange, sekolahMap = {}, bibPref
 
 // ─── Jana Final Panel ─────────────────────────────────────────────────────────
 
-function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup, fasaJana, sekolahMap = {}, bibPrefixMap = {}, lorongKumpulan = null }) {
+function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, finalSetup, fasaJana, sekolahMap = {}, bibPrefixMap = {}, lorongKumpulan = null, kapasiti = null, wildcardDilangkau = false }) {
   const { bestHeat, bestTime } = getFinalistSetup(acara || {}, finalSetup, fasaJana)
   const isPadang = ['padang_lompat', 'padang_balin'].includes(acara?.jenisAcara)
   const isRelay  = acara?.jenisAcara === 'relay'
@@ -1117,9 +1126,7 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
   const [manualMode, setManualMode] = useState(false)
 
   function buildWAPreview(list) {
-    const sorted = [...list].sort((a, b) =>
-      isPadang ? (b.keputusan ?? 0) - (a.keputusan ?? 0) : (a.keputusan ?? 999) - (b.keputusan ?? 999)
-    )
+    const sorted = [...list].sort((a, b) => bandingFinalis(a, b, isPadang))
     if (!isLorongAcara) return sorted.map((f, i) => ({ ...f, lorong: null }))
     return assignLorongFinal(sorted, detectJenisLorong(acara || {}), lorongKumpulan, null, Number(acara?.bilanganLorong) || 8)
   }
@@ -1178,6 +1185,23 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
         </button>
       </div>
 
+      {/* Finalis melebihi lorong peringkat seterusnya — lebihan tiada lorong */}
+      {isLorongAcara && kapasiti > 0 && finalists.length > kapasiti && (
+        <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
+          <p className="font-bold">
+            ⚠ {finalists.length} finalis layak, tapi {fasaJana === 'sukuKeSeparuh' ? 'Separuh Akhir' : 'Final'} hanya {kapasiti} lorong.
+          </p>
+          <p className="mt-0.5">
+            {finalists.length - kapasiti} {isRelay ? 'pasukan' : 'atlet'} tiada lorong. Kurangkan Best Heat di Tetapan Final, atau tambah lorong.
+          </p>
+        </div>
+      )}
+      {wildcardDilangkau && (
+        <p className="text-[10px] text-gray-500 italic">
+          Wildcard masa dilangkau untuk atlet tanpa masa — atlet Kddk sahaja layak melalui Best Heat sahaja.
+        </p>
+      )}
+
       {allowManual && (
         <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
           <input type="checkbox" checked={manualMode} onChange={e => handleManualToggle(e.target.checked)}
@@ -1232,7 +1256,8 @@ function JanaFinalPanel({ finalists, acara, onJana, loading, finalDijanaKe, fina
             </div>
             <div className="px-1.5 py-2 flex items-center justify-center">
               <span className="text-[11px] font-mono font-bold text-gray-800">
-                {f.keputusan ? (isPadang ? Number(f.keputusan).toFixed(2) : fmtMasaDisplay(f.keputusan)) : '—'}
+                {f.keputusan ? (isPadang ? Number(f.keputusan).toFixed(2) : fmtMasaDisplay(f.keputusan))
+                  : f.kedudukan ? `K${f.kedudukan}` : '—'}
               </span>
             </div>
             <div className="px-1.5 py-2 flex items-center justify-center">
@@ -1669,13 +1694,17 @@ export default function PencatatInputKeputusan() {
       const val = kp.keputusan !== '' && kp.keputusan !== undefined
         ? (Number(kp.keputusan) || null) : p.keputusan
 
-      const kedudukan = (kp.kedudukan !== '' && kp.kedudukan != null)
-        ? kp.kedudukan : (p.kedudukan ?? null)
+      // kp.kedudukan '' = pencatat kosongkan Kddk → null (jangan kembali ke nilai lama)
+      const kedudukan = kp.kedudukan === undefined
+        ? (p.kedudukan ?? null)
+        : (kp.kedudukan === '' || kp.kedudukan == null ? null : kp.kedudukan)
 
       const rawStatus = kp.status || p.status || 'belum'
       const isFlagged = ['DNS', 'DNF', 'DQ'].includes(rawStatus)
-      const hasResult = val != null && !isNaN(Number(val)) && Number(val) > 0
-      const finalStatus = isFlagged ? rawStatus : hasResult ? 'selesai' : rawStatus
+      // Masa > 0, ATAU Kddk sahaja (kejohanan tanpa jam)
+      const hasResult = adaKeputusan({ keputusan: val, kedudukan, status: rawStatus })
+      // Status lama 'selesai' tanpa keputusan lagi (masa & Kddk dikosongkan) → kembali 'belum'
+      const finalStatus = isFlagged ? rawStatus : hasResult ? 'selesai' : (rawStatus === 'selesai' ? 'belum' : rawStatus)
 
       return { ...p, keputusan: val, kedudukan, status: finalStatus, updatedBy: userData?.uid || '' }
     })
@@ -1684,8 +1713,10 @@ export default function PencatatInputKeputusan() {
     const isLompatTinggi = resolveIsLompatTinggi(acara)
 
     const finishers = [...updatedPeserta]
-      .filter(p => p.status === 'selesai' && p.keputusan != null)
+      .filter(p => p.status === 'selesai' && adaKeputusan(p))
       .sort((a, b) => {
+        const tm = bandingTanpaMasa(a, b)
+        if (tm !== null) return tm
         if (isPadangLocal) return Number(b.keputusan) - Number(a.keputusan)
         const diff = Number(a.keputusan) - Number(b.keputusan)
         if (diff !== 0) return diff
@@ -1725,48 +1756,11 @@ export default function PencatatInputKeputusan() {
 
     return updatedPeserta.map(p => ({
       ...p,
-      rankDalamHeat: (p.status === 'selesai' && p.keputusan != null)
+      rankDalamHeat: (p.status === 'selesai' && adaKeputusan(p))
         ? (autoRankMap.get(rankKey(p)) || null) : null,
       pecahRekod: null,
       samaiRekod: null,
     }))
-  }
-
-  async function handleSave() {
-    if (!schoolId || !kejId || !selectedAcara || !selectedHeat || !bolehEdit) return
-    if (sistemTutup) { showToast('Sistem ditutup — input keputusan dihalang.', 'err'); return }
-    setSaving(true); setSaved(false)
-    try {
-      const heatRef = doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId)
-      const stripUndef = obj => Object.fromEntries(Object.entries(obj).filter(([k, v]) => !k.startsWith('_') && v !== undefined))
-      const acara = selectedAcara
-      const kpMap = keputusan
-      const windSpeedVal = selectedAcara.isWindReading && windSpeed !== '' ? (Number(windSpeed) || null) : undefined
-
-      let savedPeserta = null
-
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(heatRef)
-        if (!snap.exists()) throw new Error('Heat tidak wujud')
-        const freshHeat = { heatId: heatRef.id, ...snap.data() }
-        const pesertaDenganRank = buildUpdatedPeserta(acara, freshHeat, kpMap)
-        const updates = { peserta: pesertaDenganRank.map(stripUndef), updatedAt: serverTimestamp() }
-        if (windSpeedVal !== undefined) updates.windSpeed = windSpeedVal
-        tx.update(heatRef, updates)
-        savedPeserta = pesertaDenganRank
-      })
-
-      localPesertaHashRef.current = hashPeserta(savedPeserta)
-      setRemoteKemaskini(false)
-      const curStatus = selectedHeat.statusKeputusan
-      setSelectedHeat(prev => ({ ...prev, statusKeputusan: curStatus, peserta: savedPeserta }))
-      setHeats(prev => prev.map(h => h.heatId === selectedHeat.heatId ? { ...h, statusKeputusan: curStatus, peserta: savedPeserta } : h))
-      setSaved(true)
-    } catch (e) {
-      showToast(`Ralat menyimpan: ${e.message}`, 'err', 5000)
-    } finally {
-      setSaving(false)
-    }
   }
 
   async function handleHantar() {
@@ -1896,7 +1890,8 @@ export default function PencatatInputKeputusan() {
               ? (Number(kp.keputusan) || null) : p.keputusan
             const rawStatus = kp.status || p.status || 'belum'
             const isFlagged = ['DNS', 'DNF', 'DQ'].includes(rawStatus)
-            const hasResult = val != null && val !== '' && !isNaN(Number(val)) && Number(val) > 0
+            // Mod ini tiada kolum Kddk — Kddk sedia ada (diisi per-heat) dikekalkan
+            const hasResult = adaKeputusan({ keputusan: val, kedudukan: p.kedudukan, status: rawStatus })
             const finalStatus = isFlagged ? rawStatus : hasResult ? 'selesai' : rawStatus
             return { ...p, keputusan: val, status: finalStatus, updatedBy: userData?.uid || '' }
           })
@@ -1909,6 +1904,10 @@ export default function PencatatInputKeputusan() {
             const rk = jenisAcara === 'relay' ? p.lorong : p.noBib
             autoRankMap.set(rk, i + 1)
           })
+          // Atlet Kddk sahaja (tanpa masa) → rank = Kddk
+          updatedPeserta
+            .filter(p => p.status === 'selesai' && p.keputusan == null && adaKeputusan(p))
+            .forEach(p => autoRankMap.set(jenisAcara === 'relay' ? p.lorong : p.noBib, Number(p.kedudukan)))
           finalPeserta = updatedPeserta.map(p => {
             const rk = jenisAcara === 'relay' ? p.lorong : p.noBib
             return { ...p, rankDalamHeat: autoRankMap.get(rk) ?? null }
@@ -1985,6 +1984,16 @@ export default function PencatatInputKeputusan() {
     return selectFinalists(heats, selectedAcara, finalSetup, fasaJana)
   }, [isSaringanAcara, allHeatsDone, heats, selectedAcara, finalSetup, fasaJana])
 
+  // Kapasiti peringkat seterusnya (untuk amaran panel) — lorong acara anak,
+  // sama seperti handleJanaFinal; QF→SF = bil heat SF × lorong
+  const kapasitiSeterusnya = (() => {
+    if (!selectedAcara) return null
+    const ids = [String(selectedAcara.noAcara || selectedAcara.aceraId || selectedAcara.id), String(selectedAcara.aceraId || selectedAcara.id)]
+    const nextAcara = acaraList.find(a => ids.includes(String(a.parentAcaraId)))
+    const bilLorong = Number(nextAcara?.bilanganLorong || selectedAcara.bilanganLorong) || 8
+    return fasaJana === 'sukuKeSeparuh' ? bilHeatSF * bilLorong : bilLorong
+  })()
+
   async function handleJanaFinal(finalistList, isManual = false) {
     if (!schoolId || !kejId || !selectedAcara || !finalistList.length) return
     setJanaFinalLoading(true)
@@ -2012,17 +2021,13 @@ export default function PencatatInputKeputusan() {
 
       if (fasaJana === 'sukuKeSeparuh') {
         // ── QF → SF: serpentine seeding ke bilHeatSF heat ────────────────────
-        const finalisByRank = [...finalistList].sort((a, b) =>
-          isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
-        )
+        const finalisByRank = [...finalistList].sort((a, b) => bandingFinalis(a, b, isPadang))
         const heatGroups = serpentineSeed(finalisByRank, bilHeatSF)
 
         await Promise.all(heatGroups.map(async (kumpulan, idx) => {
           const noHeat  = idx + 1
           const heatId  = `heat_${fasaHeat}_${noHeat}_${Date.now()}`
-          const sorted  = [...kumpulan].sort((a, b) =>
-            isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999)
-          )
+          const sorted  = [...kumpulan].sort((a, b) => bandingFinalis(a, b, isPadang))
           const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
           const peserta = (isPadang || isMass
             ? kumpulan
@@ -2040,7 +2045,7 @@ export default function PencatatInputKeputusan() {
         const heatId = `heat_${fasaHeat}_${Date.now()}`
         const sorted = isManual
           ? [...finalistList].sort((a, b) => (a.lorong ?? 99) - (b.lorong ?? 99))
-          : [...finalistList].sort((a, b) => isPadang ? b.keputusan - a.keputusan : (a.keputusan ?? 999) - (b.keputusan ?? 999))
+          : [...finalistList].sort((a, b) => bandingFinalis(a, b, isPadang))
         const resetPeserta = p => ({ ...p, keputusan: null, status: 'belum', kedudukan: null, rankDalamHeat: null, pecahRekod: null, samaiRekod: null })
         const peserta = (isPadang || isMass
           ? sorted
@@ -2535,6 +2540,15 @@ export default function PencatatInputKeputusan() {
   const namaKej = kejData?.namaKejohanan || 'Kejohanan'
   const isRasmi = ['rasmi', 'diterima'].includes(selectedHeat?.statusKeputusan)
   const isDalamBantahan = selectedHeat?.statusKeputusan === 'dalam_bantahan'
+  // Campur atlet bermasa (tanpa Kddk) + atlet Kddk sahaja (tanpa masa) → kedudukan
+  // auto dari masa boleh bertindih dgn Kddk manual. Amaran sahaja, Hantar tak disekat.
+  const amaranCampurKddk = (() => {
+    if (!selectedAcara) return false
+    const rows = Object.values(keputusan || {}).filter(k => !['DNS', 'DNF', 'DQ'].includes(k.status))
+    const adaKddkSahaja    = rows.some(k => !(Number(k.keputusan) > 0) && Number(k.kedudukan) > 0)
+    const adaMasaTanpaKddk = rows.some(k => Number(k.keputusan) > 0 && !(Number(k.kedudukan) > 0))
+    return adaKddkSahaja && adaMasaTanpaKddk
+  })()
   const bolehInputSekarang = bolehEdit && !sistemTutup
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -2585,15 +2599,6 @@ export default function PencatatInputKeputusan() {
           </div>
           {/* Jam live */}
           <span className="text-[10px] font-mono text-gray-400 shrink-0">{fmtJam(new Date(now))}</span>
-          {/* Butang Draf shortcut — step input sahaja */}
-          {step === 'input' && bolehInputSekarang && (
-            <button onClick={handleSave} disabled={saving}
-              className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
-                saved ? 'bg-green-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-              }`}>
-              {saving ? '…' : saved ? '✓' : 'Draf'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -2908,7 +2913,7 @@ export default function PencatatInputKeputusan() {
                         <div className="flex gap-2">
                           <button
                             onClick={async () => {
-                              if (!window.confirm('Edit semula keputusan ini? Status akan bertukar ke Draf.')) return
+                              if (!window.confirm('Edit semula keputusan ini? Selepas ubah, tekan SIMPAN & HANTAR semula.')) return
                               try {
                                 await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejId, 'heat', selectedHeat.heatId), { statusKeputusan: 'tidak_rasmi' })
                                 setSelectedHeat(prev => ({ ...prev, statusKeputusan: 'tidak_rasmi' }))
@@ -2955,8 +2960,15 @@ export default function PencatatInputKeputusan() {
                           selectedHeat.statusKeputusan === 'tidak_rasmi' ? 'bg-amber-400' : 'bg-gray-300'
                         }`} />
                         <span className="font-bold text-gray-600">
-                          {selectedHeat.statusKeputusan === 'tidak_rasmi' ? 'Draf' : 'Belum Input'}
+                          {selectedHeat.statusKeputusan === 'tidak_rasmi' ? 'Sedang Edit — tekan SIMPAN & HANTAR' : 'Belum Input'}
                         </span>
+                      </div>
+                    )}
+
+                    {amaranCampurKddk && (
+                      <div className="px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                        <p className="font-bold">⚠ Ada atlet dengan Kddk sahaja (tanpa masa)</p>
+                        <p className="mt-0.5">Sila isi kolum <strong>Kddk</strong> untuk SEMUA atlet supaya kedudukan tidak bertindih.</p>
                       </div>
                     )}
 
@@ -2981,25 +2993,18 @@ export default function PencatatInputKeputusan() {
                   </>
                 )}
 
-                {/* #4f — Butang: grid 2 col, label HANTAR ▶, nota bawah */}
+                {/* #4f — Satu butang sahaja: Simpan & Hantar (Simpan Draf dibuang — user keliru).
+                    Ubah selepas hantar: guna EDIT / PADAM pada banner Keputusan Rasmi. */}
                 {bolehEdit && (
                   <div className="space-y-1.5 pt-1">
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => modSemua ? handleSaveSemuaPeserta() : handleSave()}
-                        disabled={saving}
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-50">
-                        {saving ? 'Menyimpan…' : '💾 Simpan Draf'}
-                      </button>
-                      <button
-                        onClick={() => modSemua ? handleSaveSemuaPeserta({ danHantar: true }) : handleHantar()}
-                        disabled={saving}
-                        className="bg-[#003399] hover:bg-[#002277] text-white font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-40 shadow-lg shadow-[#003399]/20">
-                        {saving ? 'Menghantar…' : 'HANTAR ▶'}
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => modSemua ? handleSaveSemuaPeserta({ danHantar: true }) : handleHantar()}
+                      disabled={saving}
+                      className="w-full bg-[#003399] hover:bg-[#002277] text-white font-bold py-3.5 rounded-2xl text-sm transition-colors disabled:opacity-40 shadow-lg shadow-[#003399]/20">
+                      {saving ? 'Menghantar…' : 'SIMPAN & HANTAR ▶'}
+                    </button>
                     <p className="text-[10px] text-gray-400 text-center">
-                      Simpan Draf — simpan sementara. HANTAR — tandakan rasmi &amp; kira pingat.
+                      Keputusan jadi rasmi &amp; pingat dikira. Perlu ubah? Tekan EDIT atau PADAM.
                     </p>
                   </div>
                 )}
@@ -3060,6 +3065,8 @@ export default function PencatatInputKeputusan() {
                     sekolahMap={sekolahMap}
                     bibPrefixMap={bibPrefixMap}
                     lorongKumpulan={lorongKumpulan}
+                    kapasiti={kapasitiSeterusnya}
+                    wildcardDilangkau={infoWildcardTanpaMasa(heats, selectedAcara, finalSetup, fasaJana)}
                   />
                 )}
 

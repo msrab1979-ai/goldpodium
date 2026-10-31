@@ -30,7 +30,7 @@ import useSchoolId from '../../hooks/useSchoolId'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { cariRekodUntukAcara, formatPrestasiRekod, tahunRekod, lokasiRekod } from '../../utils/rekodUtils'
-import { selectFinalists, getFinalistSetup, getJenisTab, serpentineSeed } from '../../utils/finalistUtils'
+import { selectFinalists, getFinalistSetup, getJenisTab, serpentineSeed, bandingFinalis, infoWildcardTanpaMasa } from '../../utils/finalistUtils'
 import { rollbackPostRasmi } from '../../utils/postRasmiUtils'
 import {
   WA_LORONG_KUMPULAN_DEFAULT,
@@ -314,6 +314,23 @@ function FasaBadge({ fasa }) {
   return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colors[fasa]||'bg-gray-100 text-gray-500'}`}>{FASA_LABEL[fasa]||fasa}</span>
 }
 
+// Lorong dipilih dlm modal ≠ tetapan acara → amaran. Bila Jana, tetapan acara
+// dikemas kini supaya skrin pencatat (baca acara.bilanganLorong) papar semua lorong.
+function lorongBezaAcara(acara, bilanganLorong) {
+  return !!acara.bilanganLorong && Number(bilanganLorong) > 0
+    && Number(bilanganLorong) !== Number(acara.bilanganLorong)
+}
+
+function AmaranLorongBeza({ acara, bilanganLorong }) {
+  if (!lorongBezaAcara(acara, bilanganLorong)) return null
+  return (
+    <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800">
+      <p className="font-bold">⚠ Tetapan acara: {acara.bilanganLorong} lorong. Anda pilih: {bilanganLorong} lorong.</p>
+      <p className="mt-0.5">Bila Jana, tetapan acara akan dikemas kini kepada {bilanganLorong} lorong supaya skrin pencatat papar semua lorong.</p>
+    </div>
+  )
+}
+
 // ─── Modal: Tetapan Generate Heat ─────────────────────────────────────────────
 
 function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, schoolId = '', atletBibMap = {}, kejDefaultLorong = 8 }) {
@@ -450,7 +467,9 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
       await batch.commit()
       // Rekod masa heat dijana — untuk gate pendaftaran PP
       await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'acara', aceraKey), {
-        heatDijanaAt: serverTimestamp()
+        heatDijanaAt: serverTimestamp(),
+        ...(!isPadang && !isMass && lorongBezaAcara(acara, bilanganLorong)
+          ? { bilanganLorong: Number(bilanganLorong) } : {}),
       }).catch(() => {})
       onGenerated()
       onClose()
@@ -494,6 +513,7 @@ function GenerateModal({ acara, peserta, onClose, onGenerated, sekolahMap = {}, 
               </div>
             </div>
           )}
+          {isLorong && <AmaranLorongBeza acara={acara} bilanganLorong={bilanganLorong} />}
 
           {/* Info fasa */}
           {isLorong && (
@@ -1122,7 +1142,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
       if (fasaJana === 'sukuKeSeparuh') {
         // ── Serpentine seeding: bahagi finalis kepada N heat SF ──────────────
         // Finalis disusun ikut rank (terpantas dulu) sebelum serpentine
-        const finalisByRank = [...finalis].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999))
+        const finalisByRank = [...finalis].sort((a, b) => bandingFinalis(a, b))
         const heatGroups    = serpentineSeed(finalisByRank, bilHeatSF)
 
         const batch = writeBatch(db)
@@ -1132,7 +1152,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
           const ref    = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
           // Assign lorong dalam setiap heat (WA — terpantas dapat lorong tengah)
           const assigned = assignLorongFinal(
-            [...kumpulan].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999)),
+            [...kumpulan].sort((a, b) => bandingFinalis(a, b)),
             jenisLorong,
             lorongKumpulan,
             null,
@@ -1162,7 +1182,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
         const ref    = doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'heat', heatId)
 
         const finalisUntukAssign = (!isPadang && !isMass)
-          ? [...finalis].sort((a, b) => (a.keputusan ?? 999) - (b.keputusan ?? 999))
+          ? [...finalis].sort((a, b) => bandingFinalis(a, b))
           : finalis
         const pesertaAssigned = isPadang || isMass
           ? assignGiliran(finalis)
@@ -1309,7 +1329,7 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
                           </>
                         )}
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-gray-700">
-                          {fmtPrestasi(p.keputusan)}
+                          {p.keputusan == null && p.kedudukan ? `Kddk ${p.kedudukan}` : fmtPrestasi(p.keputusan)}
                         </td>
                         <td className="px-3 py-2.5 text-center text-gray-400 text-[10px]">
                           H{p.noHeat}
@@ -1322,10 +1342,26 @@ function JanaFinalModal({ acara, heatList, kejohananId, onClose, onGenerated, se
             )}
           </div>
 
-          {!isPadang && !isMass && fasaJana !== 'sukuKeSeparuh' && finalis.length > bilLorongAcara && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              ⚠️ {finalis.length} finalis melebihi {bilLorongAcara} lorong trek — finalis lebihan tidak akan
-              dapat lorong. Semak tetapan gate finalis (KategoriSetup) atau bilangan lorong acara.
+          {/* Kapasiti peringkat seterusnya: Final = lorong; QF→SF = bil heat SF × lorong */}
+          {!isPadang && !isMass && (() => {
+            const kapasiti = fasaJana === 'sukuKeSeparuh' ? bilHeatSF * bilLorongAcara : bilLorongAcara
+            if (finalis.length <= kapasiti) return null
+            const lebih = finalis.length - kapasiti
+            return (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <p className="font-bold">
+                  ⚠️ {finalis.length} finalis layak, tapi {fasaJana === 'sukuKeSeparuh' ? 'Separuh Akhir' : 'Final'} hanya {kapasiti} lorong
+                  {fasaJana === 'sukuKeSeparuh' ? ` (${bilHeatSF} heat × ${bilLorongAcara})` : ''}.
+                </p>
+                <p className="mt-0.5">
+                  {lebih} {isRelay ? 'pasukan' : 'atlet'} tiada lorong. Kurangkan Best Heat di Tetapan Final, atau tambah lorong.
+                </p>
+              </div>
+            )
+          })()}
+          {infoWildcardTanpaMasa(heatPhaseHeats, acara, finalSetup, fasaJana) && (
+            <p className="text-[11px] text-gray-500 italic">
+              Wildcard (Best Time) dilangkau untuk atlet tanpa masa — atlet Kddk sahaja layak melalui Best Heat sahaja.
             </p>
           )}
 
@@ -1438,6 +1474,11 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
         }, { merge: false })
       }
       await batch.commit()
+      if (!isPadang && !isMass && lorongBezaAcara(acara, bilanganLorong)) {
+        await updateDoc(doc(db, 'tenants', schoolId, 'kejohanan', kejohananId, 'acara', aceraKey), {
+          bilanganLorong: Number(bilanganLorong),
+        }).catch(() => {})
+      }
       onDone()
       onClose()
     } catch (e) {
@@ -1507,6 +1548,7 @@ function QuickJanaModal({ acara, kejohananId, onClose, onDone, schoolId = '', at
                   </div>
                 </div>
               )}
+              {!isPadang && !isMass && <AmaranLorongBeza acara={acara} bilanganLorong={bilanganLorong} />}
 
               {/* Preview heats */}
               {preview && (

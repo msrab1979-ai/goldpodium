@@ -32,6 +32,28 @@ import { resolveIsLompatTinggi } from './startListPdfUtils'
 const NAMA_PINGAT = { 1: 'emas', 2: 'perak', 3: 'gangsa', 4: 'tempat4', 5: 'tempat5' }
 const DEFAULT_MATA_PINGAT = { 1: 5, 2: 3, 3: 2, 4: 1 }
 
+// ─── Keputusan "kedudukan sahaja" (tanpa masa/jarak) ──────────────────────────
+// Kejohanan rumah sukan / kanak-kanak kadang tiada jam — pencatat pilih Kddk sahaja.
+// Sah di SEMUA peringkat. Saringan: atlet Kddk sahaja layak via Best Heat sahaja
+// (wildcard perlukan masa — finalistUtils). Rekod tetap perlukan masa.
+// Atlet ada keputusan: masa/jarak > 0, ATAU Kddk diisi
+export function adaKeputusan(p) {
+  if (['DNS', 'DNF', 'DQ'].includes(p.status)) return false
+  if (p.keputusan != null && Number(p.keputusan) > 0) return true
+  return Number(p.kedudukan) > 0
+}
+
+// Pembanding awal untuk sort finishers: atlet tanpa masa diletak SELEPAS atlet
+// bermasa, sesama mereka ikut Kddk. Pulang null bila kedua-dua ada masa
+// (caller teruskan sort ikut masa/jarak seperti biasa).
+export function bandingTanpaMasa(a, b) {
+  const aAda = Number(a.keputusan) > 0
+  const bAda = Number(b.keputusan) > 0
+  if (aAda && bAda) return null
+  if (aAda !== bAda) return aAda ? -1 : 1
+  return (Number(a.kedudukan) || 0) - (Number(b.kedudukan) || 0)
+}
+
 export function rekodKeyStr(namaAcara, jantina, kategoriKod, peringkat) {
   // Normalize nama acara supaya format konsisten:
   // "5000 METER" → "5000M", "5000 M" → "5000M", "5000METER" → "5000M"
@@ -90,8 +112,10 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   const semua    = heatDoc.peserta || []
   const isLompatTinggi = resolveIsLompatTinggi(acaraDoc)
   const finishers = semua
-    .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
+    .filter(p => adaKeputusan(p))
     .sort((a, b) => {
+      const tm = bandingTanpaMasa(a, b)
+      if (tm !== null) return tm
       if (isPadang) return Number(b.keputusan) - Number(a.keputusan)
       const diff = Number(a.keputusan) - Number(b.keputusan)
       if (diff !== 0) return diff
@@ -139,7 +163,7 @@ export async function runPostRasmi(db, heatDoc, acaraDoc, kejId, config = {}) {
   for (const p of semua) {
     const rank      = computedRankMap.get(pKey(p)) || p.rankDalamHeat || null
     const isFlagged = ['DNS','DNF','DQ'].includes(p.status)
-    const hasResult = p.keputusan != null && Number(p.keputusan) > 0
+    const hasResult = adaKeputusan(p)
     if (!rank || isFlagged || !hasResult) continue
 
     // ── Mata olahragawan (individu, bukan relay, top 4, fasa final sahaja) ─────

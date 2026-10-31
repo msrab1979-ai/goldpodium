@@ -248,6 +248,55 @@ lama). SUMBER KEBENARAN = doc pendaftaran. `fix-pindah-232.mjs`: (1) selaras BIB
 dlm SEMUA heat peserta itu, (2) buang dari peserta[] heat salah, tambah ke peserta[] heat
 betul (lorong kosong, kategoriKod ikut acara destinasi). JANGAN buang — pindah sahaja.
 
+## Keputusan Kddk Sahaja (tanpa masa) + Simpan & Hantar — 2026-10-31
+**Aduan:** sk-cheneh `KOAM-2026-TMC2` #121/#122 (80M) — selepas Hantar, nama &
+keputusan tak keluar, 0 pingat. **Punca:** pencatat pilih Kddk sahaja, masa kosong →
+sistem lama WAJIB `keputusan > 0` → status kekal `belum`, `rankDalamHeat=null`,
+`runPostRasmi` langkau. Kejohanan rumah sukan/sekolah tak perlu masa.
+
+**Peraturan baru (SEMUA peringkat, semua tenant):** pencatat isi masa, ATAU Kddk,
+ATAU kedua-dua. Kddk menang atas rank dari masa (sama seperti dulu).
+- Helper kongsi `postRasmiUtils.js`: `adaKeputusan(p)` (masa>0 ATAU Kddk>0, bukan
+  DNS/DNF/DQ) + `bandingTanpaMasa(a,b)` (bermasa dulu, sesama tanpa masa ikut Kddk;
+  pulang `null` bila dua-dua bermasa → sort asal). Dipakai: `runPostRasmi`, pencatat
+  `buildUpdatedPeserta` + `handleSaveSemuaPeserta`, `CetakanHadiah` (4 penapis)
+- Saringan tetap TIADA pingat; rekod tetap perlukan masa (Kddk sahaja tak pecah rekod)
+- Kddk dikosongkan kini jadi `null` (dulu kembali ke nilai lama — tak boleh padam Kddk)
+- Amaran amber bila heat campur "masa tanpa Kddk" + "Kddk tanpa masa" (risiko bertindih)
+- SchoolLanding/CetakKeputusan sedia handle (susun ikut kedudukan, masa null → `—`)
+
+**Finalis saringan (`finalistUtils.js`):**
+- Best Heat (Q): terima Kddk sahaja. **Wildcard (q): HANYA atlet bermasa** (tanpa masa
+  tak boleh banding antara heat) — keputusan user, JANGAN tambah wildcard ikut Kddk
+- `toEntry` simpan `keputusan: null` (bukan `Number(null)=0` — dulu atlet tanpa masa
+  jadi "paling laju") + `kedudukan`
+- `bandingFinalis(a,b,isPadang)` — WAJIB untuk seeding lorong (ganti `(keputusan ?? 999)`
+  di pencatat `JanaFinalPanel`/`handleJanaFinal` + admin `JanaFinalModal`): bermasa ikut
+  masa; Kddk sahaja → semua Kddk 1 dulu, seri → heat awal
+- `infoWildcardTanpaMasa()` → nota "wildcard dilangkau" di panel
+- Amaran kapasiti di kedua-dua panel: finalis > lorong (Final) atau > bilHeatSF × lorong
+  (QF→SF) → "X tiada lorong. Kurangkan Best Heat atau tambah lorong"
+
+**Lorong tersorok (fix C):** modal Jana Heat benarkan ubah kotak lorong (5→6) tapi
+nilai TAK disimpan → pencatat `InputLorong` lukis 1..`acara.bilanganLorong` → atlet
+lorong 6 hilang (15 acara sk-cheneh). Fix: (1) `InputLorong`/`InputRelay` guna
+`max(bilanganLorong, lorongTertinggi(heat))`; (2) `GenerateModal` + `QuickJanaModal`
+papar amaran `AmaranLorongBeza` + tulis `acara.bilanganLorong` bila Jana.
+Nota: sk-cheneh #128 ada atlet lorong 23 (data pelik) — admin patut jana semula.
+
+**Parse masa (fix D):** `fmtMasaDisplay` pulang `"12.50s"`; klik semula kotak →
+`parseMasaInput` baca `"50s"`=0 → 12.00. Fix: buang suffix `s` sebelum parse.
+
+**Simpan Draf DIBUANG (pencatat):** user keliru. Satu butang **SIMPAN & HANTAR ▶**
+(`handleHantar` / `handleSaveSemuaPeserta({danHantar:true})`). `handleSave` dipadam.
+EDIT (→ `tidak_rasmi`, label "Sedang Edit") + PADAM kekal. Tab penapis "⏳ Draf" di
+senarai acara KEKAL (heat di-EDIT belum hantar semula). Admin InputKeputusan tak disentuh.
+
+**Ujian:** `test-kddk-sahaja-e2e.mjs` 52/52 (emulator, `runPostRasmi` + `selectFinalists`
+sebenar, fungsi pencatat diekstrak dari fail). Emulator perlu rules TERBUKA sementara
+(config di luar repo) — `test-fasa-medal-e2e.mjs` juga gagal PERMISSION_DENIED dgn
+`firestore.rules` sebenar. Data #121/#122 perlu pencatat EDIT → SIMPAN & HANTAR semula.
+
 ## Rekod System (TERKINI)
 
 ### Peringkat Rekod
@@ -1424,4 +1473,7 @@ serentak; (4) logout satu tab membunuh SEMUA tab.
   perlukan KEDUA-DUANYA; kalau tidak pingat tak masuk (lihat "heat.fasa WAJIB selaras")
 - Jangan tukar Firebase Auth ke `browserLocalPersistence` — punca clash sesi
   banyak slug/peranan (lihat "Sesi Serentak"); kekalkan `browserSessionPersistence`
+- Jangan wajibkan masa untuk keputusan — Kddk sahaja sah (guna `adaKeputusan`);
+  jangan tambah wildcard (q) untuk atlet tanpa masa; jangan kembalikan Simpan Draf pencatat
+- Jangan sort finalis guna `(keputusan ?? 999)` — guna `bandingFinalis`
 - **Jangan ubah kod tanpa izin user**

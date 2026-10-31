@@ -19,7 +19,7 @@ import { noAcaraPapar } from '../../utils/acaraPaparUtils'
 import { useAuth } from '../../context/AuthContext'
 import { withPortalView } from '../../hooks/useSchoolId'
 import { selectFinalists } from '../../utils/finalistUtils'
-import { rekodKeyStr } from '../../utils/postRasmiUtils'
+import { rekodKeyStr, adaKeputusan, bandingTanpaMasa } from '../../utils/postRasmiUtils'
 import { resolveIsLompatTinggi } from '../../utils/startListPdfUtils'
 import { bundarHT, isAcaraHT } from '../../utils/htUtils'
 
@@ -94,8 +94,8 @@ async function cetakHadiahPDF({
   if (isLompatTinggiCH) {
     // Auto-suggest LT: sort desc by keputusan, tinggi sama = rank sama
     const finishers = (finalHeat.peserta || [])
-      .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
-      .sort((a, b) => Number(b.keputusan) - Number(a.keputusan))
+      .filter(p => adaKeputusan(p))
+      .sort((a, b) => bandingTanpaMasa(a, b) ?? (Number(b.keputusan) - Number(a.keputusan)))
     pesertaFinal = finishers.map((p, i) => {
       // Manual override menang atas auto
       if (p.kedudukan) return { ...p, rankDalamHeat: Number(p.kedudukan) }
@@ -111,10 +111,10 @@ async function cetakHadiahPDF({
   } else {
     // Lain: sequential auto, manual kedudukan override kalau ada
     pesertaFinal = (finalHeat.peserta || [])
-      .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
-      .sort((a, b) => isPadangAcaraCH
+      .filter(p => adaKeputusan(p))
+      .sort((a, b) => bandingTanpaMasa(a, b) ?? (isPadangAcaraCH
         ? Number(b.keputusan) - Number(a.keputusan)
-        : Number(a.keputusan) - Number(b.keputusan))
+        : Number(a.keputusan) - Number(b.keputusan)))
       .map((p, i) => ({ ...p, rankDalamHeat: p.kedudukan ? Number(p.kedudukan) : i + 1 }))
       .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
       .filter(p => p.rankDalamHeat <= cetakBilangan)
@@ -537,8 +537,8 @@ export default function CetakanHadiah() {
   if (finalHeat) {
     if (isLompatTinggiUI) {
       const finishers = (finalHeat.peserta || [])
-        .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
-        .sort((a, b) => Number(b.keputusan) - Number(a.keputusan))
+        .filter(p => adaKeputusan(p))
+        .sort((a, b) => bandingTanpaMasa(a, b) ?? (Number(b.keputusan) - Number(a.keputusan)))
       pemenang = finishers.map((p, i) => {
         if (p.kedudukan) return { ...p, rankDalamHeat: Number(p.kedudukan) }
         const suggested = (i > 0 && Number(finishers[i - 1].keputusan) === Number(p.keputusan))
@@ -551,10 +551,10 @@ export default function CetakanHadiah() {
         .slice(0, 8)
     } else {
       pemenang = (finalHeat.peserta || [])
-        .filter(p => !['DNS','DNF','DQ'].includes(p.status) && p.keputusan != null && Number(p.keputusan) > 0)
-        .sort((a, b) => isPadangAcaraUI
+        .filter(p => adaKeputusan(p))
+        .sort((a, b) => bandingTanpaMasa(a, b) ?? (isPadangAcaraUI
           ? Number(b.keputusan) - Number(a.keputusan)
-          : Number(a.keputusan) - Number(b.keputusan))
+          : Number(a.keputusan) - Number(b.keputusan)))
         .map((p, i) => ({ ...p, rankDalamHeat: p.kedudukan ? Number(p.kedudukan) : i + 1 }))
         .sort((a, b) => a.rankDalamHeat - b.rankDalamHeat)
         .slice(0, 8)

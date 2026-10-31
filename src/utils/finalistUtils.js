@@ -106,20 +106,25 @@ export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
     kodSekolah:   p.kodSekolah   || '',
     pasukanRelay: p.pasukanRelay || 'A',
     ahliPasukan:  p.ahliPasukan  || [],
-    keputusan:    Number(p.keputusan),
+    keputusan:    Number(p.keputusan) > 0 ? Number(p.keputusan) : null,
+    kedudukan:    Number(p.kedudukan) > 0 ? Number(p.kedudukan) : null,
     heatId:       heat.heatId    || heat.id || '',
     noHeat:       heat.noHeat    || 0,
   }) : ({
     noBib:      p.noBib      || '',
     namaAtlet:  p.namaAtlet  || '',
     kodSekolah: p.kodSekolah || '',
-    keputusan:  Number(p.keputusan),
+    keputusan:  Number(p.keputusan) > 0 ? Number(p.keputusan) : null,
+    kedudukan:  Number(p.kedudukan) > 0 ? Number(p.kedudukan) : null,
     heatId:     heat.heatId  || heat.id || '',
     noHeat:     heat.noHeat  || 0,
   })
 
-  const isValid  = p => !['DNS', 'DNF', 'DQ'].includes(p.status) && Number(p.keputusan) > 0
-  const sortFn   = (a, b) => isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan
+  // Sah: ada masa/jarak, ATAU Kddk sahaja (kejohanan tanpa jam — layak via Best Heat)
+  const isValid  = p => !['DNS', 'DNF', 'DQ'].includes(p.status)
+    && (Number(p.keputusan) > 0 || Number(p.kedudukan) > 0)
+  const adaMasa  = p => Number(p.keputusan) > 0
+  const sortFn   = (a, b) => bandingFinalis(a, b, isPadang)
   const selected = new Map() // key → entry
 
   // Step 1: top bestHeat dari setiap heat → qualifyType 'Q'
@@ -135,10 +140,11 @@ export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
   }
 
   // Step 2: wildcard bestTime dari baki → qualifyType 'q'
+  // HANYA atlet bermasa — tanpa masa tak boleh dibanding antara heat berbeza
   if (bestTime > 0) {
     const wildcards = []
     saringanHeats.forEach(heat => {
-      ;(heat.peserta || []).filter(isValid).forEach(p => {
+      ;(heat.peserta || []).filter(p => isValid(p) && adaMasa(p)).forEach(p => {
         if (!selected.has(getKey(p))) wildcards.push(toEntry(p, heat))
       })
     })
@@ -152,13 +158,37 @@ export function selectFinalists(heats, acara, finalSetup, fasa = 'toFinal') {
 }
 
 /**
+ * Pembanding susunan finalis (rank terbaik dulu) — guna untuk seeding lorong.
+ *   - Kedua-dua bermasa → ikut masa/jarak (seperti dulu)
+ *   - Bermasa didahulukan atas Kddk sahaja
+ *   - Sesama Kddk sahaja → Kddk kecil dulu (Kddk 1 semua heat setara), seri → heat awal
+ */
+export function bandingFinalis(a, b, isPadang = false) {
+  const aM = Number(a.keputusan) > 0
+  const bM = Number(b.keputusan) > 0
+  if (aM && bM) return isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan
+  if (aM !== bM) return aM ? -1 : 1
+  return ((Number(a.kedudukan) || 99) - (Number(b.kedudukan) || 99))
+    || ((a.noHeat || 0) - (b.noHeat || 0))
+}
+
+/**
+ * Info gate untuk amaran panel Jana Final:
+ *   wildcardDilangkau — Best Time > 0 tapi ada atlet Kddk sahaja (tak layak wildcard)
+ */
+export function infoWildcardTanpaMasa(heats, acara, finalSetup, fasa = 'toFinal') {
+  const { bestTime } = getFinalistSetup(acara, finalSetup, fasa)
+  if (!(bestTime > 0)) return false
+  return heats.some(h => !['final', 'terus_final'].includes(h.fasa) && (h.peserta || []).some(p =>
+    !['DNS', 'DNF', 'DQ'].includes(p.status) && !(Number(p.keputusan) > 0) && Number(p.kedudukan) > 0))
+}
+
+/**
  * Assign lorong kepada finalis mengikut prestasi.
  * Rank 1 → lorong 4, Rank 2 → lorong 5, dst.
  */
 export function assignLorong(finalists, isPadang) {
-  const ranked = [...finalists].sort((a, b) =>
-    isPadang ? b.keputusan - a.keputusan : a.keputusan - b.keputusan
-  )
+  const ranked = [...finalists].sort((a, b) => bandingFinalis(a, b, isPadang))
   return ranked.map((f, i) => ({ ...f, lorong: LANE_ORDER[i] || (i + 1) }))
 }
 
